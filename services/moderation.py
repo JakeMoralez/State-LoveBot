@@ -3,14 +3,68 @@
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 
 from vkbottle import API
+from vkbottle.exception_factory import VKAPIError
 
 from database.repository.chat_repo import ChatRepository
 from database.repository.moderation_repo import ModerationRepository
 
 logger = logging.getLogger(__name__)
+
+_CODE_KICK_REASON: dict[int, str] = {
+    15: "Нет прав у бота",
+    917: "Бот не в беседе",
+    932: "Бот не может работать с этой беседой",
+    935: "Пользователь не в беседе",
+}
+
+
+def humanize_kick_error(exc: BaseException | str | None) -> str:
+    """Текст для пользователя вместо сырого ответа VK API."""
+    if exc is None:
+        return "Нет прав у бота"
+
+    code: int | None = None
+    msg = ""
+
+    if isinstance(exc, VKAPIError):
+        code = getattr(exc, "code", None)
+        msg = (exc.error_msg or str(exc)).lower()
+    else:
+        raw = str(exc).strip()
+        if not raw:
+            return "Нет прав у бота"
+        match = re.search(r"\[(\d+)\]", raw)
+        if match:
+            code = int(match.group(1))
+        msg = raw.lower()
+
+    if code == 15:
+        if "can't remove" in msg or "cant remove" in msg:
+            return "Нет прав: нельзя исключить (админ беседы?)"
+        if "no access to call" in msg:
+            return "Нет прав у бота на этот метод"
+        return _CODE_KICK_REASON[15]
+
+    if code and code in _CODE_KICK_REASON:
+        return _CODE_KICK_REASON[code]
+
+    if "not found in chat" in msg or "not in chat" in msg or "user not found" in msg:
+        return "Пользователь не в беседе"
+    if "don't have access to this chat" in msg or "no access to this chat" in msg:
+        return "Бот не в беседе"
+    if "community can't interact" in msg or "cant interact with this peer" in msg:
+        return "Бот не может работать с этой беседой"
+    if "access denied" in msg:
+        return "Нет прав у бота"
+
+    raw_out = exc.error_msg if isinstance(exc, VKAPIError) else str(exc)
+    if len(raw_out) > 72:
+        return raw_out[:69] + "..."
+    return raw_out or "Неизвестная ошибка"
 
 
 @dataclass
@@ -63,7 +117,8 @@ class PullKickReport:
             if item.success:
                 lines.append(f"• {name} — Исключён ✅")
             else:
-                lines.append(f"• {name} — Ошибка ❌")
+                reason = item.error or "Нет прав у бота"
+                lines.append(f"• {name} — {reason} ❌")
 
         if reason:
             lines.extend(["", f"📝 Причина: {reason}"])
@@ -94,7 +149,11 @@ class ModerationService:
             return KickResult(peer_id=peer_id, success=True)
         except Exception as exc:
             logger.warning("kick failed peer=%s target=%s: %s", peer_id, target_vk_id, exc)
-            return KickResult(peer_id=peer_id, success=False, error=str(exc))
+            return KickResult(
+                peer_id=peer_id,
+                success=False,
+                error=humanize_kick_error(exc),
+            )
 
     async def kick(
         self,
