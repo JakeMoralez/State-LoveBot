@@ -1,0 +1,25 @@
+# VK Bot (async)
+vkbottle>=4.3.12
+loguru>=0.7.0
+
+# ORM & DB
+tortoise-orm>=0.21.0
+aiosqlite>=0.20.0
+aerich>=0.7.2
+pydantic>=2.0.0
+
+# Config
+python-dotenv>=1.0.0
+
+# HTTP / Forum (arizona-forum-api-async + antibot bypass через dukpy)
+aiohttp>=3.9.0
+aiohttp-socks>=0.11.0
+requests>=2.32.0
+beautifulsoup4>=4.12.0
+lxml>=6.0.0
+dukpy>=0.5.0
+packaging>=23.0
+arizona-forum-api-async @ git+https://github.com/fakelag28/Arizona-Forum-API-Async.git
+arizona-forum-api-async
+# Legacy sync VK (forum_bot only)
+vk-api>=11.10.0

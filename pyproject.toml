@@ -1,0 +1,10 @@
+[tool.aerich]
+tortoise_orm = "config.settings.TORTOISE_ORM"
+location = "./database/migrations"
+src_folder = "./."
+
+[project]
+name = "state-lovebot"
+version = "2.0.0"
+description = "VK bot for Arizona RP server administration"
+requires-python = ">=3.11"
