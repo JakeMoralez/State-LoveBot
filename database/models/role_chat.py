@@ -13,6 +13,7 @@ class ForumRoleKey:
     ADMIN = "admin"
     MINISTRY = "ministry_of_justice"
     CONGRESS = "congress"
+    SLED_CA = "sled_ca"
 
 
 class RoleChat(Model):

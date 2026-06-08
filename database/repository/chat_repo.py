@@ -76,3 +76,13 @@ class ChatRepository:
         if pool_id is not None:
             qs = qs.filter(pool_id=pool_id)
         return await qs.order_by("alias")
+
+    @staticmethod
+    async def unlink_from_pool(peer_id: int) -> Chat | None:
+        chat = await ChatRepository.get_by_peer_id(peer_id)
+        if not chat or chat.pool_id is None:
+            return None
+        chat.pool_id = None
+        chat.alias = None
+        await chat.save()
+        return chat

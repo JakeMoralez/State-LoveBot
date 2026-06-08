@@ -64,6 +64,7 @@ TORTOISE_ORM: dict = {
                 "database.models.moderation",
                 "database.models.notification",
                 "database.models.role_chat",
+                "database.models.chat_settings",
             ],
             "default_connection": "default",
         },

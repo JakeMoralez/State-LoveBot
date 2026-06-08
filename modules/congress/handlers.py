@@ -10,8 +10,9 @@ from vkbottle.bot import Bot, Message
 from database.models.user import AccessLevel
 from database.repository.congress_repo import CONGRESS_DEFAULT_ALIAS, CongressRepository
 from middlewares.access import requires_level
+from middlewares.ca_access import requires_ca_scope
 from middlewares.action_logger import ActionLogger
-from services.command_utils import dual, dual_args, dual_with_args
+from services.command_utils import dual, dual_args
 from services.display_name import DisplayNameService
 from services.vk_resolver import VKResolver
 
@@ -21,7 +22,7 @@ logger = logging.getLogger(__name__)
 async def _format_congress_info(api: API, server_id: int) -> str:
     peer_id = await CongressRepository.get_congress_peer_id()
     if not peer_id:
-        return "📭 Беседа конгресса не зарегистрирована.\nИспользуйте /regcongress в конференции."
+        return "📭 Беседа конгресса не зарегистрирована.\nИспользуйте /regrole congress в конференции."
 
     alias = await CongressRepository.get_congress_alias(server_id)
     names = DisplayNameService(api)
@@ -56,71 +57,9 @@ def register_congress(bot: Bot, api: API, action_logger: ActionLogger) -> None:
     resolver = VKResolver(api)
     names = DisplayNameService(api)
 
-    async def _register_congress_chat(
-        message: Message,
-        server_id: int,
-        alias: str | None = None,
-    ) -> None:
-        if message.peer_id < 2_000_000_000:
-            await message.answer("❌ Регистрация только в беседе конференции.")
-            return
-
-        title = None
-        try:
-            conv = await api.messages.get_conversations_by_id(peer_ids=[message.peer_id])
-            if conv.items:
-                title = conv.items[0].chat_settings.title
-        except Exception as exc:
-            logger.warning("Не удалось получить название беседы конгресса: %s", exc)
-
-        try:
-            normalized = await CongressRepository.register_chat(
-                message.peer_id,
-                message.from_id or 0,
-                server_id,
-                alias=alias,
-                title=title,
-            )
-        except ValueError as exc:
-            await message.answer(f"❌ {exc}")
-            return
-
-        await message.answer(
-            f"✅ Беседа конгресса привязана.\n"
-            f"Алиас /msg: {normalized}\n"
-            f"Спикер и вице: /setnick, /kick, /msg {normalized} — только здесь "
-            f"(или /msg из ЛС бота).\n"
-            f"Назначение: /setspeaker, /setvice"
-        )
-        await action_logger.log_user(
-            "regcongress",
-            message.from_id,
-            f"peer {message.peer_id}, алиас {normalized}",
-            "Беседа конгресса привязана",
-            source_peer_id=message.peer_id,
-        )
-
-    @bot.on.message(text=dual("regcongress"))
-    @requires_level(AccessLevel.ZGS)
-    async def reg_congress(
-        message: Message,
-        server_id: int = 0,
-        access_level: int = 0,
-    ) -> None:
-        await _register_congress_chat(message, server_id)
-
-    @bot.on.message(text=dual_with_args("regcongress", "<alias>"))
-    @requires_level(AccessLevel.ZGS)
-    async def reg_congress_alias(
-        message: Message,
-        alias: str,
-        server_id: int = 0,
-        access_level: int = 0,
-    ) -> None:
-        await _register_congress_chat(message, server_id, alias=alias)
-
     @bot.on.message(text=dual("congress"))
     @requires_level(AccessLevel.PGS, require_registered=True)
+    @requires_ca_scope
     async def congress_info(
         message: Message,
         server_id: int = 0,
@@ -133,6 +72,7 @@ def register_congress(bot: Bot, api: API, action_logger: ActionLogger) -> None:
 
     @bot.on.message(text=dual_args("setspeaker"))
     @requires_level(AccessLevel.ZGS)
+    @requires_ca_scope
     async def set_speaker(
         message: Message,
         args: str | None = None,
@@ -154,9 +94,12 @@ def register_congress(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             else None
         )
         target_raw = VKResolver.extract_reference(args or "")
-        resolved = await resolver.resolve_from_message(
+        resolved, hint = await resolver.resolve_from_message_with_hint(
             target_raw, reply_from_id=reply_id
         )
+        if hint:
+            await message.answer(hint, disable_mentions=1)
+            return
         if not resolved:
             await message.answer("❌ Пользователь не найден.")
             return
@@ -182,6 +125,7 @@ def register_congress(bot: Bot, api: API, action_logger: ActionLogger) -> None:
 
     @bot.on.message(text=dual_args("setvice"))
     @requires_level(AccessLevel.ZGS)
+    @requires_ca_scope
     async def set_vice(
         message: Message,
         args: str | None = None,
@@ -203,9 +147,12 @@ def register_congress(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             else None
         )
         target_raw = VKResolver.extract_reference(args or "")
-        resolved = await resolver.resolve_from_message(
+        resolved, hint = await resolver.resolve_from_message_with_hint(
             target_raw, reply_from_id=reply_id
         )
+        if hint:
+            await message.answer(hint, disable_mentions=1)
+            return
         if not resolved:
             await message.answer("❌ Пользователь не найден.")
             return
@@ -231,6 +178,7 @@ def register_congress(bot: Bot, api: API, action_logger: ActionLogger) -> None:
 
     @bot.on.message(text=dual("removespeaker"))
     @requires_level(AccessLevel.ZGS)
+    @requires_ca_scope
     async def remove_speaker(
         message: Message,
         server_id: int = 0,
@@ -241,6 +189,7 @@ def register_congress(bot: Bot, api: API, action_logger: ActionLogger) -> None:
 
     @bot.on.message(text=dual("removevice"))
     @requires_level(AccessLevel.ZGS)
+    @requires_ca_scope
     async def remove_vice(
         message: Message,
         server_id: int = 0,

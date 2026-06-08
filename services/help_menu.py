@@ -20,6 +20,7 @@ _LEVEL_EMOJI: dict[int, str] = {
 
 _SPECIAL_EMOJI = {
     "forum": "⚖️",
+    "ca": "🏛",
 }
 
 
@@ -28,6 +29,7 @@ class HelpEntry:
     cmd: str
     desc: str
     level: int | str = 0
+    ca: bool = False
 
 
 @dataclass(frozen=True)
@@ -42,6 +44,9 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
         (
             HelpEntry("/me", "Ваш профиль"),
             HelpEntry("/getid", "ID беседы"),
+            HelpEntry("/find", "Поиск по нику или VK", 0),
+            HelpEntry("/reg", "Дата регистрации VK", 0),
+            HelpEntry("/online", "Кто онлайн в беседе", 0),
             HelpEntry("/help", "Список команд"),
             HelpEntry("/ping", "Проверка бота"),
         ),
@@ -49,29 +54,36 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
     HelpCategory(
         "👤 Профиль",
         (
-            HelpEntry("/setnick", "Ник (/snick): [@user|vk.ru] [ник]", 1),
-            HelpEntry("/who", "Карточка пользователя (ответом)", 0),
-            HelpEntry("/members", "Участники беседы (ссылки, без пинга)", 0),
-            HelpEntry("/staff", "Список людей с уровнями доступа", 1),
+            HelpEntry("/setnick", "Установить ник [@user] [ник]", 1),
+            HelpEntry("/who", "Карточка пользователя", 0),
+            HelpEntry("/members", "Участники беседы", 0),
+            HelpEntry("/staff", "Список доступов и ролей", 1),
         ),
     ),
     HelpCategory(
         "🛡 Модерация",
         (
-            HelpEntry("/kick", "Исключить из беседы (ответом)", 3),
+            HelpEntry("/kick", "Исключить из беседы", 3),
             HelpEntry("/poolkick", "Исключить из всех бесед пула", 3),
-            HelpEntry("/pin", "Закрепить сообщение (ответом)", 2),
-            HelpEntry("/unpin", "Открепить сообщение (ответом)", 2),
-            HelpEntry("/msg", "Оповещение в беседу с пингами", 2),
+            HelpEntry("/mute", "Мут [@user] [время] [причина]", 2),
+            HelpEntry("/unmute", "Снять мут", 2),
+            HelpEntry("/stitle", "Название беседы", 3),
+            HelpEntry("/pin", "Закрепить сообщение", 2),
+            HelpEntry("/unpin", "Открепить сообщение", 2),
+            HelpEntry("/del", "Удалить сообщение", 2),
+            HelpEntry("/msg", "Оповещение в беседу", 2),
+            HelpEntry("/chatsettings", "Настройки беседы", 3),
+            HelpEntry("/rejoinkick", "Автокик при выходе: on / ask", 3),
         ),
     ),
     HelpCategory(
         "📂 Пулы и беседы",
         (
-            HelpEntry("/pools", "Список пулов и алиасов", 1),
+            HelpEntry("/pools", "Список пулов", 1),
             HelpEntry("/createpool", "Создать пул", 5),
             HelpEntry("/regchat", "Привязать беседу к пулу", 5),
-            HelpEntry("/setlevel", "Уровень (/setlvl), vk.com/vk.ru", 3),
+            HelpEntry("/unregchat", "Отвязать беседу от пула", 5),
+            HelpEntry("/setlevel", "Уровень [@user] [0–8]", 3),
         ),
     ),
     HelpCategory(
@@ -84,48 +96,62 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
         ),
     ),
     HelpCategory(
-        "🏛 Конгресс",
+        "🏛 ЦА",
         (
-            HelpEntry("/regcongress", "Привязать беседу конгресса [алиас]", 3),
-            HelpEntry("/setspeaker", "Назначить спикера", 3),
-            HelpEntry("/setvice", "Назначить вице-спикера", 3),
-            HelpEntry("/congress", "Инфо: беседа, спикер, алиас", 1),
+            HelpEntry("/setca", "Выдать или снять доступ ЦА [@user] [off]", 3, ca=True),
+            HelpEntry("/raccess", "Снять роли с пользователя [@user]", 3, ca=True),
+            HelpEntry(
+                "/regrole",
+                "Привязать беседу: court, congress, sledca",
+                3,
+                ca=True,
+            ),
         ),
     ),
     HelpCategory(
-        "⚖️ Управление судьями",
+        "🏛 Конгресс",
         (
-            HelpEntry("/addcourt", "Назначить судью", 2),
-            HelpEntry("/court", "Список судей", 3),
-            HelpEntry("/regcourt", "Привязать беседу судей", 3),
-            HelpEntry("/rcourt", "Снять с себя доступ судьи (кратко)", 2),
-            HelpEntry("/removecourt", "Снять с себя доступ судьи (полно)", 2),
+            HelpEntry("/setspeaker", "Назначить спикера", 3, ca=True),
+            HelpEntry("/setvice", "Назначить вице-спикера", 3, ca=True),
+            HelpEntry("/congress", "Инфо о конгрессе", 1, ca=True),
+            HelpEntry("/removespeaker", "Снять спикера", 3, ca=True),
+            HelpEntry("/removevice", "Снять вице-спикера", 3, ca=True),
+        ),
+    ),
+    HelpCategory(
+        "⚖️ Судьи",
+        (
+            HelpEntry("/addcourt", "Назначить судью", 2, ca=True),
+            HelpEntry("/court", "Список судей", 3, ca=True),
             HelpEntry("/deluser", "Удалить пользователя из БД", 10),
         ),
     ),
 )
 
 
-def _level_marker(level: int | str) -> str:
-    if isinstance(level, str):
-        return _SPECIAL_EMOJI.get(level, "•")
-    return _LEVEL_EMOJI.get(level, "•")
+def _level_marker(entry: HelpEntry) -> str:
+    if isinstance(entry.level, str):
+        return _SPECIAL_EMOJI.get(entry.level, "•")
+    base = _LEVEL_EMOJI.get(entry.level, "•")
+    if entry.ca:
+        return f"{base}🏛"
+    return base
 
 
 def build_help_text() -> str:
-    lines = ["📗 Команды State-LoveBot (/help):", ""]
+    lines = ["📗 Команды State-LoveBot", ""]
 
     for category in HELP_CATEGORIES:
         lines.append(category.title)
         for entry in category.entries:
-            marker = _level_marker(entry.level)
+            marker = _level_marker(entry)
             lines.append(f"{marker} {entry.cmd} — {entry.desc}")
         lines.append("")
 
     lines.extend(
         [
-            "🌐 — всем  ·  1️⃣–9️⃣ — мин. уровень  ·  ⚖️ — судебный доступ",
-            "💡 Команды: / и ! · алиасы: /snick, /setlvl, /pkick…",
+            "🌐 — всем  ·  1️⃣–9️⃣ — мин. уровень  ·  🏛 — доступ ЦА (ур. 1–4)",
+            "⚖️ — судебный доступ к форуму  ·  / и !",
         ]
     )
     return "\n".join(lines)

@@ -137,6 +137,32 @@ class DisplayNameService:
         """Ссылка [id|ник] — отправлять с disable_mentions=1 (без уведомления)."""
         return await self.mention_user(vk_id)
 
+    async def format_actor_badge(self, vk_id: int, server_id: int) -> str:
+        """Кликабельный инициатор: ［ЗГС ЦА］ Isaac_Grozny."""
+        from middlewares.access import AccessChecker
+
+        level = await UserRepository.get_access_level(vk_id, server_id)
+        title = AccessChecker.level_name(level) if level else "—"
+        nick = await self.get_nickname(vk_id)
+        label = self.sanitize_vk_label(f"［{title}］ {nick}", vk_id=vk_id)
+        return f"[id{vk_id}|{label}]"
+
+    async def format_kick_announce(
+        self,
+        *,
+        target_id: int,
+        actor_id: int,
+        server_id: int,
+        reason: str | None,
+    ) -> str:
+        target_m = await self.link_user(target_id)
+        actor_m = await self.link_user(actor_id)
+        reason_text = reason.strip() if reason and reason.strip() else "."
+        return (
+            f"🚫 {target_m} был(а) исключён(а) по запросу {actor_m}.\n"
+            f"📝 Причина: {reason_text}"
+        )
+
     async def profile_link_user(self, vk_id: int) -> str:
         return await self.link_user(vk_id)
 

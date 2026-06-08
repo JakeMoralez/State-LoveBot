@@ -18,6 +18,7 @@ from middlewares.action_logger import ActionLogger
 from services.command_utils import dual, dual_with_args, matches_cmd, strip_cmd
 from services.display_name import DisplayNameService
 from services.nickname import NicknameValidator
+from services.staff_display import format_staff_list
 from services.vk_resolver import VKResolver
 
 logger = logging.getLogger(__name__)
@@ -42,67 +43,62 @@ _SETNICK_LEAD = re.compile(
 )
 
 
+_SETNICK_FORMAT_ERR = (
+    "❌ Неверный формат.\n"
+    "Сначала пинг: @user, [id|имя] или vk.ru/…, затем ник.\n"
+    "Или ответом на сообщение."
+)
+
+
 async def _parse_setnick(message: Message, api: API) -> tuple[int | None, str | None, str | None]:
     """(target_id, nickname, error_message)."""
     args = strip_cmd(message.text or "", "setnick")
     if not args:
-        return None, None, (
-            "❌ Использование: /setnick (/snick) [@user|vk.com|vk.ru] [никнейм]\n"
-            "Пример: /snick @user @user [Speaker] Имя\n"
-            "Или ответом на сообщение: /setnick [никнейм]"
-        )
+        return None, None, _SETNICK_FORMAT_ERR
 
     resolver = VKResolver(api)
 
     if message.reply_message and message.reply_message.from_id > 0:
-        return message.reply_message.from_id, args.strip(), None
+        nick = args.strip()
+        if not nick:
+            return None, None, "❌ Укажите никнейм."
+        return message.reply_message.from_id, nick, None
 
     lead = _SETNICK_LEAD.match(args)
-    if lead:
-        vk_id_raw, screen, url_ref, nickname = (
-            lead.group(1),
-            lead.group(2),
-            lead.group(3),
-            lead.group(4).strip(),
-        )
-        if vk_id_raw:
-            return int(vk_id_raw), nickname, None
-        if screen:
-            resolved = await resolver.resolve(f"@{screen}")
-            if resolved:
-                return resolved.vk_id, nickname, None
-        if url_ref:
-            resolved = await resolver.resolve(url_ref)
-            if resolved:
-                return resolved.vk_id, nickname, None
+    if not lead:
+        return None, None, _SETNICK_FORMAT_ERR
 
-    parts = args.split(maxsplit=1)
-    if len(parts) == 2:
-        resolved = await resolver.resolve(parts[0])
+    vk_id_raw, screen, url_ref, nickname = (
+        lead.group(1),
+        lead.group(2),
+        lead.group(3),
+        lead.group(4).strip(),
+    )
+    if not nickname:
+        return None, None, "❌ Укажите никнейм."
+
+    if vk_id_raw:
+        return int(vk_id_raw), nickname, None
+
+    if screen:
+        resolved = await resolver.resolve(f"@{screen}")
         if resolved:
-            return resolved.vk_id, parts[1].strip(), None
+            return resolved.vk_id, nickname, None
+        return None, None, _SETNICK_FORMAT_ERR
 
-    return message.from_id, args.strip(), None
+    if url_ref:
+        resolved = await resolver.resolve(url_ref)
+        if resolved:
+            return resolved.vk_id, nickname, None
+        return None, None, _SETNICK_FORMAT_ERR
+
+    return None, None, _SETNICK_FORMAT_ERR
 
 
 async def format_who_card(vk_id: int, api: API) -> str:
     emoji = random.choice(_WHO_EMOJIS)
     link = await DisplayNameService(api).link_user(vk_id)
     return f"{emoji} {link}"
-
-
-async def format_staff_list(server_id: int, api: API) -> str:
-    rows = await UserRepository.list_server_access(server_id)
-    if not rows:
-        return "📭 Пользователей с доступом нет."
-
-    names = DisplayNameService(api)
-    lines = [f"🔐 Доступы ({len(rows)}):"]
-    for user, level in rows:
-        link = await names.link_user(user.vk_id)
-        title = AccessChecker.level_name(level)
-        lines.append(f"• {link} — {title} ({level})")
-    return "\n".join(lines)
 
 
 def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
@@ -185,7 +181,7 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
     ) -> None:
         max_lvl = 9 if await UserRepository.is_developer(message.from_id or 0) else 8
         await message.answer(
-            f"❌ Использование: /setlevel (/setlvl) [ссылка vk.com/vk.ru|ID|@user] [1-{max_lvl}]"
+            f"❌ Использование: /setlevel [vk.ru|ID|@user|ник] [0-{max_lvl}]"
         )
 
     @bot.on.message(text=dual_with_args("setlevel", "<target> <level>"))
@@ -203,10 +199,10 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         try:
             new_level = int(level)
         except ValueError:
-            await message.answer(f"❌ Уровень — число от 1 до {max_grant}.")
+            await message.answer(f"❌ Уровень — число от 0 до {max_grant}.")
             return
-        if new_level < 1 or new_level > max_grant:
-            await message.answer(f"❌ Доступны уровни 1–{max_grant}.")
+        if new_level < 0 or new_level > max_grant:
+            await message.answer(f"❌ Доступны уровни 0–{max_grant}.")
             return
 
         granter_level = access_level
@@ -217,9 +213,15 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             return
 
         resolver = VKResolver(api)
-        resolved = await resolver.resolve(target.strip())
+        resolved, hint = await resolver.resolve_with_hint(target.strip())
+        if hint:
+            await message.answer(hint, disable_mentions=1)
+            return
         if not resolved:
-            await message.answer("❌ Пользователь не найден.")
+            await message.answer(
+                "❌ Пользователь не найден.\n"
+                "Укажите VK-ссылку, id или ник из /setnick."
+            )
             return
 
         await UserRepository.ensure_user(
@@ -233,16 +235,21 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             level=new_level,
             granted_by=message.from_id,
         )
-        name = AccessChecker.level_name(new_level)
+        if new_level == 0:
+            result_text = "Доступ снят (ур. 0)."
+            log_detail = "Снят"
+        else:
+            name = AccessChecker.level_name(new_level)
+            result_text = f"Выдан уровень {name}."
+            log_detail = "Выдан"
         await message.answer(
-            f"✅ {await format_who_card(resolved.vk_id, api)}\n"
-            f"Выдан уровень {name}.",
+            f"✅ {await format_who_card(resolved.vk_id, api)}\n{result_text}",
             disable_mentions=1,
         )
         await action_logger.log_user(
             "setlevel",
             message.from_id,
-            f"id{resolved.vk_id} → ур. {new_level} ({name})",
-            "Выдан",
+            f"id{resolved.vk_id} → ур. {new_level}",
+            log_detail,
             source_peer_id=message.peer_id,
         )

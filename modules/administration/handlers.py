@@ -38,23 +38,19 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
         *,
         target_id: int,
         actor_id: int,
+        server_id: int,
         reason: str | None,
-        pool_label: str | None = None,
     ) -> None:
-        target_m = await names.link_user(target_id)
-        actor_m = await names.link_user(actor_id)
-
-        lines = [
-            f"🚫 {target_m} был(а) исключён(а) по запросу {actor_m}.",
-        ]
-        if pool_label:
-            lines.append(f"📂 Пул: {pool_label}")
-        if reason:
-            lines.append(f"📝 Причина: {reason}")
+        text = await names.format_kick_announce(
+            target_id=target_id,
+            actor_id=actor_id,
+            server_id=server_id,
+            reason=reason,
+        )
         try:
             await api.messages.send(
                 peer_id=peer_id,
-                message="\n".join(lines),
+                message=text,
                 random_id=0,
                 disable_mentions=1,
             )
@@ -119,6 +115,7 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
                 message.peer_id,
                 target_id=resolved.vk_id,
                 actor_id=message.from_id,
+                server_id=server_id,
                 reason=reason,
             )
             await action_logger.log_user(
@@ -193,13 +190,18 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
                     item.peer_id,
                     target_id=resolved.vk_id,
                     actor_id=message.from_id,
+                    server_id=server_id,
                     reason=reason,
-                    pool_label=pool_name,
                 )
 
+        target_link = await names.link_user(resolved.vk_id)
         await message.answer(
-            f"📋 Poolkick: {report.summary()}"
-            + (f"\n📝 {reason}" if reason else "")
+            report.format_message(
+                target_label=target_link,
+                pool_name=pool_name,
+                reason=reason,
+            ),
+            disable_mentions=1,
         )
         await action_logger.log_user(
             "poolkick",

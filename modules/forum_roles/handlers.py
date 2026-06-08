@@ -1,4 +1,4 @@
-"""Судебные роли: /addcourt, /regcourt, /court, /rcourt, /removecourt."""
+"""Судебные роли: /addcourt, /court."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from database.models.user import AccessLevel
 from database.repository.forum_role_repo import ForumRoleRepository
 from database.repository.user_repo import UserRepository
 from middlewares.access import requires_developer, requires_level
+from middlewares.ca_access import requires_ca_scope
 from middlewares.action_logger import ActionLogger
 from middlewares.forum_access import requires_court_manager
 from services.command_utils import dual, dual_args
@@ -54,6 +55,7 @@ def register_forum_roles(bot: Bot, api: API, action_logger: ActionLogger) -> Non
 
     @bot.on.message(text=dual_args("addcourt"))
     @requires_level(AccessLevel.SUPERVISOR)
+    @requires_ca_scope
     async def add_court(
         message: Message,
         args: str | None = None,
@@ -75,7 +77,12 @@ def register_forum_roles(bot: Bot, api: API, action_logger: ActionLogger) -> Non
             else None
         )
         target_raw, note = _parse_target_and_note(args or "")
-        resolved = await resolver.resolve_from_message(target_raw, reply_from_id=reply_id)
+        resolved, hint = await resolver.resolve_from_message_with_hint(
+            target_raw, reply_from_id=reply_id
+        )
+        if hint:
+            await message.answer(hint, disable_mentions=1)
+            return
         if not resolved:
             await message.answer("❌ Пользователь не найден.")
             return
@@ -143,72 +150,6 @@ def register_forum_roles(bot: Bot, api: API, action_logger: ActionLogger) -> Non
             message.from_id,
             target_label,
             "Удалён" if ok else "Не найден",
-            source_peer_id=message.peer_id,
-        )
-
-    @bot.on.message(text=dual("rcourt"))
-    @requires_level(AccessLevel.SUPERVISOR)
-    async def rcourt_self(message: Message, server_id: int = 0, access_level: int = 0) -> None:
-        ok = await ForumRoleRepository.clear_judge_role(message.from_id)
-        await message.answer("✅ Доступ судьи снят." if ok else "❌ Вы не судья.")
-        if ok:
-            await action_logger.log_user(
-                "remove_judge",
-                message.from_id,
-                f"id{message.from_id}",
-                "Снят (rcourt)",
-                source_peer_id=message.peer_id,
-            )
-
-    @bot.on.message(text=dual("removecourt"))
-    @requires_level(AccessLevel.SUPERVISOR)
-    async def removecourt_self(message: Message, server_id: int = 0, access_level: int = 0) -> None:
-        user = await UserRepository.get_by_vk_id(message.from_id)
-        if not user or not user.is_judge:
-            await message.answer("❌ Вы не зарегистрированы как судья.")
-            return
-        since = _judge_since(user)
-        ok = await ForumRoleRepository.clear_judge_role(message.from_id)
-        if ok:
-            link = await DisplayNameService(api).link_user(message.from_id)
-            await message.answer(
-                f"✅ С вас снят статус судьи.\n"
-                f"• {link} — Судья с {since}\n"
-                f"Доступ к судебным функциям отозван.",
-                disable_mentions=1,
-            )
-        else:
-            await message.answer("❌ Не удалось снять доступ.")
-        if ok:
-            await action_logger.log_user(
-                "remove_judge",
-                message.from_id,
-                f"id{message.from_id}",
-                "Снят (removecourt)",
-                source_peer_id=message.peer_id,
-            )
-
-    @bot.on.message(text=dual("regcourt"))
-    @requires_court_manager
-    async def reg_court_chat(message: Message, server_id: int = 0) -> None:
-        if message.peer_id < 2_000_000_000:
-            await message.answer("❌ Только в беседах.")
-            return
-        await ForumRoleRepository.save_role_chat(
-            ForumRoleKey.JUDGE,
-            message.peer_id,
-            message.from_id or 0,
-            server_id,
-        )
-        await message.answer(
-            "✅ Беседа судей привязана.\n"
-            "При выходе из неё роль судьи снимается автоматически."
-        )
-        await action_logger.log_user(
-            "regcourt",
-            message.from_id,
-            f"peer {message.peer_id}",
-            "Беседа судей привязана",
             source_peer_id=message.peer_id,
         )
 

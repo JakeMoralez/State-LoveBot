@@ -312,6 +312,34 @@ def register_pools(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             source_peer_id=message.peer_id,
         )
 
+    @bot.on.message(text=dual("unregchat"))
+    @requires_level(AccessLevel.ZGS_GOS)
+    async def unregchat(
+        message: Message,
+        server_id: int = 0,
+        access_level: int = 0,
+    ) -> None:
+        if message.peer_id < 2_000_000_000:
+            await message.answer("❌ Команда доступна только в беседах.")
+            return
+
+        chat = await ChatRepository.unlink_from_pool(message.peer_id)
+        if not chat:
+            await message.answer("❌ Беседа не привязана к пулу.")
+            return
+
+        await message.answer(
+            f"✅ Беседа отвязана от пула.\n"
+            f"Алиас снят. Peer: {chat.peer_id}"
+        )
+        await action_logger.log_user(
+            "unregchat",
+            message.from_id,
+            f"peer {message.peer_id}",
+            "Отвязана от пула",
+            source_peer_id=message.peer_id,
+        )
+
     @bot.on.message(text=dual_with_args("msg", "<alias> <text>"))
     @requires_msg
     async def pool_msg(

@@ -37,6 +37,20 @@ class UserRepository:
         return await User.filter(nickname__iexact=nickname).first()
 
     @staticmethod
+    async def search_users(query: str, *, limit: int = 10) -> list[User]:
+        q = (query or "").strip().lstrip("@")
+        if not q:
+            return []
+        if q.isdigit():
+            user = await User.get_or_none(vk_id=int(q))
+            return [user] if user else []
+        from tortoise.expressions import Q
+
+        return await User.filter(
+            Q(nickname__icontains=q) | Q(username__icontains=q)
+        ).limit(limit)
+
+    @staticmethod
     async def is_registered(vk_id: int) -> bool:
         return await User.filter(vk_id=vk_id).exists()
 
@@ -65,6 +79,43 @@ class UserRepository:
         return [(row.user, row.access_level) for row in rows]
 
     @staticmethod
+    async def list_staff(
+        server_id: int,
+    ) -> list[tuple[User, int, UserServerAccess | None]]:
+        """Все с ур. 1+, доступом ЦА или форумной/конгресс-ролью."""
+        from tortoise.expressions import Q
+
+        by_id: dict[int, tuple[User, int, UserServerAccess | None]] = {}
+
+        rows = await UserServerAccess.filter(server_id=server_id).prefetch_related(
+            "user"
+        )
+        for row in rows:
+            if row.access_level >= AccessLevel.PGS or row.has_ca_access:
+                by_id[row.user_id] = (row.user, row.access_level, row)
+
+        role_q = (
+            Q(is_judge=True)
+            | Q(is_congress_speaker=True)
+            | Q(is_congress_vice=True)
+            | Q(is_attorney=True)
+            | Q(is_leader=True)
+            | Q(is_admin=True)
+        )
+        for user in await User.filter(role_q):
+            if user.vk_id in by_id:
+                continue
+            acc = await UserServerAccess.get_or_none(
+                user_id=user.vk_id, server_id=server_id
+            )
+            level = acc.access_level if acc else 0
+            by_id[user.vk_id] = (user, level, acc)
+
+        result = list(by_id.values())
+        result.sort(key=lambda item: (-item[1], item[0].vk_id))
+        return result
+
+    @staticmethod
     async def get_access_level(vk_id: int, server_id: int) -> int:
         """Эффективный уровень: 10 глобально, иначе уровень на сервере."""
         if await UserRepository.is_developer(vk_id):
@@ -75,6 +126,10 @@ class UserRepository:
             server_id=server_id,
         )
         return access.access_level if access else 0
+
+    @staticmethod
+    async def get_server_access(vk_id: int, server_id: int) -> UserServerAccess | None:
+        return await UserServerAccess.get_or_none(user_id=vk_id, server_id=server_id)
 
     @staticmethod
     async def set_access_level(
@@ -94,6 +149,117 @@ class UserRepository:
         access.granted_by = granted_by
         await access.save()
         return access
+
+    @staticmethod
+    async def has_ca_access(vk_id: int, server_id: int) -> bool:
+        access = await UserServerAccess.get_or_none(user_id=vk_id, server_id=server_id)
+        return bool(access and access.has_ca_access)
+
+    @staticmethod
+    async def set_ca_access(
+        vk_id: int,
+        server_id: int,
+        *,
+        enabled: bool,
+        granted_by: int | None = None,
+    ) -> UserServerAccess:
+        user = await User.get(vk_id=vk_id)
+        server = await Server.get(id=server_id)
+        access, _ = await UserServerAccess.get_or_create(
+            user=user,
+            server=server,
+            defaults={"access_level": 0, "granted_by": granted_by},
+        )
+        access.has_ca_access = enabled
+        await access.save()
+        return access
+
+    @staticmethod
+    async def can_use_ca_scope(vk_id: int, server_id: int) -> bool:
+        """Ур. 5+ — без флага ЦА; иначе — флаг has_ca_access (уровень может быть 0)."""
+        if await UserRepository.is_developer(vk_id):
+            return True
+        level = await UserRepository.get_access_level(vk_id, server_id)
+        if level >= AccessLevel.ZGS_GOS:
+            return True
+        return await UserRepository.has_ca_access(vk_id, server_id)
+
+    @staticmethod
+    async def grant_sled_ca_from_chat(
+        vk_id: int,
+        server_id: int,
+        peer_id: int,
+    ) -> tuple[bool, str]:
+        """Вход в беседу след. ЦА: ур. 1 + доступ ЦА."""
+        user = await User.get(vk_id=vk_id)
+        server = await Server.get(id=server_id)
+        access, _ = await UserServerAccess.get_or_create(
+            user=user,
+            server=server,
+            defaults={"access_level": AccessLevel.PGS},
+        )
+        changed: list[str] = []
+        if access.access_level < AccessLevel.PGS:
+            access.access_level = AccessLevel.PGS
+            access.ca_auto_peer_id = peer_id
+            changed.append("ур. 1 (ПГС)")
+        if not access.has_ca_access:
+            access.has_ca_access = True
+            changed.append("доступ ЦА")
+        elif access.ca_auto_peer_id is None and access.access_level <= AccessLevel.PGS:
+            access.ca_auto_peer_id = peer_id
+        await access.save()
+        if not changed and access.ca_auto_peer_id == peer_id:
+            return False, ""
+        if not changed:
+            return False, ""
+        return True, ", ".join(changed)
+
+    @staticmethod
+    async def revoke_sled_ca_from_chat(
+        vk_id: int,
+        server_id: int,
+        peer_id: int,
+    ) -> tuple[bool, str]:
+        """Выход/кик из беседы след. ЦА: снять авто-уровень и ЦА (если выдано этой беседой)."""
+        access = await UserServerAccess.get_or_none(user_id=vk_id, server_id=server_id)
+        if not access:
+            return False, ""
+
+        level = access.access_level
+        if level >= AccessLevel.ZGS_GOS:
+            return False, ""
+
+        if access.ca_auto_peer_id != peer_id:
+            if access.has_ca_access and level <= AccessLevel.PGS:
+                access.has_ca_access = False
+                await access.save()
+                return True, "доступ ЦА"
+            return False, ""
+
+        access.access_level = 0
+        access.has_ca_access = False
+        access.ca_auto_peer_id = None
+        access.granted_by = None
+        await access.save()
+        return True, "ур. 1 и доступ ЦА"
+
+    @staticmethod
+    async def revoke_self_ca_access(vk_id: int, server_id: int) -> str | None:
+        """Снять с себя доступ ЦА / след. ЦА (авто-уровень из беседы)."""
+        access = await UserServerAccess.get_or_none(user_id=vk_id, server_id=server_id)
+        if not access:
+            return None
+        if not access.has_ca_access and not access.ca_auto_peer_id:
+            return None
+        from_sled = bool(access.ca_auto_peer_id)
+        access.has_ca_access = False
+        if access.ca_auto_peer_id:
+            access.access_level = 0
+            access.ca_auto_peer_id = None
+            access.granted_by = None
+        await access.save()
+        return "доступ след. ЦА" if from_sled else "доступ ЦА"
 
     @staticmethod
     async def set_nickname(vk_id: int, nickname: str) -> User:

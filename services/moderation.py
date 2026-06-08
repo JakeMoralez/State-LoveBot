@@ -18,6 +18,7 @@ class KickResult:
     peer_id: int
     success: bool
     error: str | None = None
+    title: str | None = None
 
 
 @dataclass
@@ -28,12 +29,44 @@ class PullKickReport:
     results: list[KickResult] = field(default_factory=list)
 
     def summary(self) -> str:
-        lines = [
-            f"Пользователь кикнут из {self.kicked}/{self.total} бесед пула.",
-        ]
-        no_rights = [r for r in self.results if not r.success and r.error]
-        if no_rights:
-            lines.append(f"Не удалось в {len(no_rights)} беседах (нет прав или ошибка API).")
+        return f"Исключён из {self.kicked}/{self.total} бесед пула."
+
+    def format_message(
+        self,
+        *,
+        target_label: str,
+        pool_name: str,
+        reason: str | None = None,
+    ) -> str:
+        if self.total == 0:
+            return "❌ В пуле нет зарегистрированных бесед."
+
+        if self.kicked == self.total:
+            header = (
+                f"✅ | {target_label} был(а) исключён(а) "
+                f"из всех конференций пула «{pool_name}»!"
+            )
+        elif self.kicked > 0:
+            header = (
+                f"⚠️ | {target_label} исключён(а) "
+                f"из {self.kicked}/{self.total} конференций пула «{pool_name}»"
+            )
+        else:
+            header = (
+                f"❌ | Не удалось исключить {target_label} "
+                f"из конференций пула «{pool_name}»"
+            )
+
+        lines = [header, "", "📂 Список конференций:"]
+        for item in self.results:
+            name = item.title or f"Беседа {item.peer_id}"
+            if item.success:
+                lines.append(f"• {name} — Исключён ✅")
+            else:
+                lines.append(f"• {name} — Ошибка ❌")
+
+        if reason:
+            lines.extend(["", f"📝 Причина: {reason}"])
         return "\n".join(lines)
 
 
@@ -101,6 +134,7 @@ class ModerationService:
 
         for chat in chats:
             result = await self.kick_from_chat(chat.peer_id, target_vk_id)
+            result.title = chat.title or chat.alias or f"peer {chat.peer_id}"
             report.results.append(result)
             if result.success:
                 report.kicked += 1

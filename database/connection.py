@@ -35,11 +35,25 @@ async def _ensure_congress_columns() -> None:
             pass
 
 
+async def _ensure_ca_access_columns() -> None:
+    conn = Tortoise.get_connection("default")
+    for ddl in (
+        "ALTER TABLE user_server_access ADD COLUMN has_ca_access INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE user_server_access ADD COLUMN ca_auto_peer_id BIGINT NULL",
+    ):
+        try:
+            await conn.execute_query(ddl)
+            logger.info("Миграция CA: %s", ddl.split("ADD COLUMN ")[1].split()[0])
+        except Exception:
+            pass
+
+
 async def init_db() -> None:
     await Tortoise.init(config=TORTOISE_ORM)
     await Tortoise.generate_schemas(safe=True)
     await _ensure_chat_alias_column()
     await _ensure_congress_columns()
+    await _ensure_ca_access_columns()
     await _bootstrap_defaults()
     logger.info("База данных инициализирована")
 

@@ -81,6 +81,8 @@ class UserServerAccess(Model):
     access_level = fields.IntField(default=AccessLevel.PGS)
     granted_by = fields.BigIntField(null=True)
     granted_at = fields.DatetimeField(auto_now_add=True)
+    has_ca_access = fields.BooleanField(default=False)
+    ca_auto_peer_id = fields.BigIntField(null=True)
 
     class Meta:
         table = "user_server_access"

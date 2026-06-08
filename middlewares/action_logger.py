@@ -58,9 +58,16 @@ _ACTION_EMOJI: dict[str, str] = {
     "pool_msg": "📢",
     "deluser": "➖",
     "regcourt": "⚖️",
+    "regsledca": "👁",
+    "ca_access_grant": "🏛",
+    "ca_access_revoke": "🏛",
+    "raccess": "🔓",
+    "setca": "🏛",
+    "unregchat": "📂",
     "remove_judge": "⚖️",
     "pin_message": "📌",
     "unpin_message": "📍",
+    "delete_message": "🗑",
     "court_stats": "📊",
 }
 

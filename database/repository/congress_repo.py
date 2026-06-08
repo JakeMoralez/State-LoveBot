@@ -148,9 +148,45 @@ class CongressRepository:
         return updated > 0
 
     @staticmethod
+    async def clear_speaker_for(vk_id: int) -> bool:
+        user = await User.get_or_none(vk_id=vk_id)
+        if not user or not user.is_congress_speaker:
+            return False
+        user.is_congress_speaker = False
+        await user.save()
+        return True
+
+    @staticmethod
+    async def clear_vice_for(vk_id: int) -> bool:
+        user = await User.get_or_none(vk_id=vk_id)
+        if not user or not user.is_congress_vice:
+            return False
+        user.is_congress_vice = False
+        await user.save()
+        return True
+
+    @staticmethod
     async def get_speaker() -> User | None:
         return await User.filter(is_congress_speaker=True).first()
 
     @staticmethod
     async def get_vice() -> User | None:
         return await User.filter(is_congress_vice=True).first()
+
+    @staticmethod
+    async def revoke_officer_on_leave(peer_id: int, vk_id: int) -> str | None:
+        """Снять спикера/вице при выходе из беседы конгресса."""
+        if not await CongressRepository.is_congress_chat(peer_id):
+            return None
+        user = await User.get_or_none(vk_id=vk_id)
+        if not user:
+            return None
+        if user.is_congress_speaker:
+            user.is_congress_speaker = False
+            await user.save()
+            return "speaker"
+        if user.is_congress_vice:
+            user.is_congress_vice = False
+            await user.save()
+            return "vice"
+        return None

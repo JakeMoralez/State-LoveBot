@@ -10,7 +10,7 @@ COMMAND_ALIASES: dict[str, tuple[str, ...]] = {
     "poolkick": ("pkick", "pullkick"),
     "addcourt": ("acourt",),
     "deluser": ("du",),
-    "members": ("mems", "member"),
+    "members": ("mems", "member", "nlist", "nicklist"),
     "regchat": ("rchat",),
     "createpool": ("cpool",),
     "staff": ("access", "accesses"),
@@ -18,10 +18,17 @@ COMMAND_ALIASES: dict[str, tuple[str, ...]] = {
     "msg": ("notify",),
     "pools": ("pool",),
     "regcongress": ("regcong",),
+    "regrole": ("regcourt", "regsledco", "regsledca"),
+    "setca": ("adostupca", "dostupca", "caaccess"),
+    "raccess": ("rcourt", "removecourt", "rrole"),
+    "unregchat": ("unlinkchat", "delchat", "unpool"),
     "setspeaker": ("speaker",),
     "setvice": ("vice",),
     "removespeaker": ("rmspeaker",),
     "removevice": ("rmvice",),
+    "find": ("search", "f"),
+    "rejoinkick": ("rjkick",),
+    "chatsettings": ("csettings", "chcfg"),
 }
 
 

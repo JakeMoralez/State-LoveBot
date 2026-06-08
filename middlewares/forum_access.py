@@ -24,11 +24,13 @@ R = TypeVar("R")
 class ForumAccessChecker:
     @staticmethod
     async def can_manage_court_roles(user_id: int, server_id: int) -> bool:
-        """Выдача судей, /regcourt и т.п. — ЗГС ЦА (ур. 3+) или разраб."""
+        """ЗГС (3+) и доступ ЦА для ур. 1–4; ур. 5+ — без флага ЦА."""
         if await UserRepository.is_developer(user_id):
             return True
         level = await UserRepository.get_access_level(user_id, server_id)
-        return level >= AccessLevel.ZGS
+        if level < AccessLevel.ZGS:
+            return False
+        return await UserRepository.can_use_ca_scope(user_id, server_id)
 
     @staticmethod
     async def is_thread_allowed(user_id: int, forum_category_id: int, server_id: int) -> bool:
@@ -57,7 +59,9 @@ def requires_court_manager(
 
         server_id = await AccessChecker.resolve_server_id(message.peer_id)
         if not await ForumAccessChecker.can_manage_court_roles(user_id, server_id):
-            await message.answer("⛔ Требуется уровень ЗГС ЦА (3+) или выше.")
+            await message.answer(
+                "⛔ Требуется ЗГС (3+) и доступ ЦА (ур. 1–4) или ур. 5+."
+            )
             return None
 
         kwargs["server_id"] = server_id

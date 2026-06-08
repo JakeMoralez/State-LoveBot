@@ -179,6 +179,37 @@ class MessagingService:
         lines.extend(["", f"📍 {text}", "", f"🗣 {sender}"])
         return "\n".join(lines)
 
+    async def format_welcome_notice(
+        self,
+        vk_id: int,
+        *,
+        server_id: int,
+        invited_by: int | None = None,
+    ) -> str:
+        from database.repository.forum_role_repo import ForumRoleRepository
+        from database.repository.user_repo import UserRepository
+        from middlewares.access import AccessChecker
+
+        link = await self.names.link_user(vk_id)
+        level = await UserRepository.get_access_level(vk_id, server_id)
+        level_name = (
+            AccessChecker.level_name(level) if level else "нет доступа"
+        )
+
+        lines = [
+            f"➕ В беседу {'добавлен' if invited_by else 'вступил'}: {link}",
+        ]
+        if invited_by and invited_by > 0 and invited_by != vk_id:
+            inviter = await self.names.link_user(invited_by)
+            lines.append(f"👤 Пригласил: {inviter}")
+
+        lines.append(f"🔐 Доступ к боту: {level_name}")
+        if await ForumRoleRepository.is_judge(vk_id):
+            lines.append("⚖️ Судебный доступ: есть")
+
+        lines.append("💡 /me — профиль · /help — команды")
+        return "\n".join(lines)
+
     async def format_invite_notice(self, vk_id: int) -> str:
         link = await self.names.link_user(vk_id)
         return f"➕ В беседу добавлен: {link}"
