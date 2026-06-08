@@ -1,0 +1,19 @@
+[Unit]
+Description=State-LoveBot VK bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=lovebot
+Group=lovebot
+WorkingDirectory=/opt/State-LoveBot
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/State-LoveBot/venv/bin/python main.py
+Restart=on-failure
+RestartSec=10
+StandardOutput=append:/var/log/state-lovebot/bot.log
+StandardError=append:/var/log/state-lovebot/bot.log
+
+[Install]
+WantedBy=multi-user.target

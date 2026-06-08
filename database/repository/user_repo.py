@@ -41,6 +41,14 @@ class UserRepository:
         return await User.filter(vk_id=vk_id).exists()
 
     @staticmethod
+    async def is_pingable_in_chat(vk_id: int, server_id: int) -> bool:
+        """7+ ур. не пингуются в /msg и /members; ур. 10 (разработчик) — исключение."""
+        level = await UserRepository.get_access_level(vk_id, server_id)
+        if level == AccessLevel.DEVELOPER:
+            return True
+        return level < AccessLevel.CURATOR
+
+    @staticmethod
     async def list_server_access(
         server_id: int,
         *,

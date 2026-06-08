@@ -25,7 +25,7 @@ async def handle_role_chat_leave(peer_id: int, user_id: int, api: API) -> str | 
         return None
 
     names = DisplayNameService(api)
-    link = await names.mention_user(user_id)
+    link = await names.link_user(user_id)
 
     logger.info("judge role revoked: vk_id=%s peer=%s", user_id, peer_id)
     return f"🔰 {link} — доступ судьи снят (выход из беседы)."

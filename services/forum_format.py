@@ -31,6 +31,43 @@ def format_thread_card(info: dict[str, Any]) -> str:
     )
 
 
+def plural_cases(
+    count: int,
+    *,
+    one: str,
+    few: str,
+    many: str,
+) -> str:
+    n = abs(count) % 100
+    n1 = n % 10
+    if 11 <= n <= 19:
+        return many
+    if n1 == 1:
+        return one
+    if 2 <= n1 <= 4:
+        return few
+    return many
+
+
+def case_word(category_title: str, count: int) -> str:
+    if "жалоб" in category_title.lower():
+        return plural_cases(count, one="жалобу", few="жалобы", many="жалоб")
+    return plural_cases(count, one="иск", few="иска", many="исков")
+
+
+def format_duration_seconds(seconds: float) -> str:
+    if seconds <= 0:
+        return "—"
+    total_minutes = int(seconds // 60)
+    if total_minutes < 60:
+        return f"{total_minutes} м."
+    hours = total_minutes // 60
+    minutes = total_minutes % 60
+    if minutes:
+        return f"{hours} ч. {minutes} м."
+    return f"{hours} ч."
+
+
 def format_created_date(timestamp: int | None) -> str:
     if not timestamp:
         return "Неизвестно"

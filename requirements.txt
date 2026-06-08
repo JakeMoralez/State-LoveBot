@@ -20,6 +20,5 @@ lxml>=6.0.0
 dukpy>=0.5.0
 packaging>=23.0
 arizona-forum-api-async @ git+https://github.com/fakelag28/Arizona-Forum-API-Async.git
-arizona-forum-api-async
 # Legacy sync VK (forum_bot only)
 vk-api>=11.10.0

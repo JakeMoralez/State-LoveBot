@@ -37,7 +37,7 @@ def register_system(bot: Bot, api: API) -> None:
         level_name = AccessChecker.level_name(level) if level else "нет доступа"
 
         names = DisplayNameService(api)
-        link = await names.mention_user(user_id)
+        link = await names.link_user(user_id)
 
         lines = [
             "📝 Основая информация о пользователе ⬇",
@@ -47,4 +47,4 @@ def register_system(bot: Bot, api: API) -> None:
         if await ForumRoleRepository.is_judge(user_id):
             lines.append("⚖️ Судебный доступ: есть")
 
-        await message.answer("\n".join(lines), disable_mentions=0)
+        await message.answer("\n".join(lines), disable_mentions=1)

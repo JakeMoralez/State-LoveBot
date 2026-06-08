@@ -147,6 +147,13 @@ activemq-data/
 # SageMath parsed files
 *.sage.py
 
+# Bot runtime
+bot.db
+bot.db-*
+*.db-journal
+firefox_profile/
+.vkbottle/
+
 # Environments
 .env
 .envrc

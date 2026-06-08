@@ -1,0 +1,10 @@
+services:
+  bot:
+    build: .
+    container_name: state-lovebot
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: sqlite:///app/data/bot.db
+    volumes:
+      - ./data:/app/data

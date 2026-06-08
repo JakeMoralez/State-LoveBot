@@ -279,7 +279,7 @@ def register_forum(
             return
 
         mode, value = parsed
-        await message.answer("⚙️ Загрузка статистики судебных исков...")
+        await message.answer("⚙️ Загрузка статистики исков...")
         if mode == "days":
             report = await forum.get_court_stats(days=value)
         else:

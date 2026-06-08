@@ -8,6 +8,7 @@ import random
 from vkbottle import API
 
 from config.settings import VK_GROUP_ID, VK_USER_TOKEN
+from database.repository.user_repo import UserRepository
 from services.display_name import DisplayNameService
 
 logger = logging.getLogger(__name__)
@@ -123,14 +124,33 @@ class MessagingService:
         )
         return []
 
-    async def format_members_list(self, peer_id: int) -> str:
+    async def _pingable_members(
+        self,
+        member_ids: list[int],
+        server_id: int,
+        *,
+        exclude_id: int | None = None,
+    ) -> list[int]:
+        result: list[int] = []
+        for mid in member_ids:
+            if exclude_id and mid == exclude_id:
+                continue
+            if await UserRepository.is_pingable_in_chat(mid, server_id):
+                result.append(mid)
+        return result
+
+    async def format_members_list(self, peer_id: int, server_id: int) -> str:
         member_ids = await self.get_member_ids(peer_id)
         if not member_ids:
             return "❌ Не удалось получить список участников беседы."
 
-        lines = [f"👥 Участники беседы ({len(member_ids)}):", ""]
-        for mid in sorted(member_ids):
-            lines.append(f"• {await self.names.mention_user(mid)}")
+        visible = await self._pingable_members(member_ids, server_id)
+        if not visible:
+            return "📭 Нет участников для отображения."
+
+        lines = [f"👥 Участники беседы ({len(visible)}):"]
+        for mid in sorted(visible):
+            lines.append(f"• {await self.names.link_user(mid)}")
         return "\n".join(lines)
 
     async def build_alert_message(
@@ -139,16 +159,19 @@ class MessagingService:
         peer_id: int,
         text: str,
         sender_vk_id: int,
+        server_id: int,
     ) -> str:
-        member_ids = [
-            mid for mid in await self.get_member_ids(peer_id) if mid != sender_vk_id
-        ]
+        member_ids = await self._pingable_members(
+            await self.get_member_ids(peer_id),
+            server_id,
+            exclude_id=sender_vk_id,
+        )
 
         pings = "".join(
             DisplayNameService.nick_link(mid, "👤") for mid in member_ids
         )
 
-        sender = await self.names.mention_user(sender_vk_id)
+        sender = await self.names.link_user(sender_vk_id)
 
         lines = ["❗ Оповещение❗", ""]
         if pings:
@@ -157,7 +180,7 @@ class MessagingService:
         return "\n".join(lines)
 
     async def format_invite_notice(self, vk_id: int) -> str:
-        link = await self.names.mention_user(vk_id)
+        link = await self.names.link_user(vk_id)
         return f"➕ В беседу добавлен: {link}"
 
     @staticmethod

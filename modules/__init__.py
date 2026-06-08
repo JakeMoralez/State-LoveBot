@@ -8,6 +8,7 @@ from vkbottle.bot import Bot
 from middlewares.action_logger import ActionLogger
 from modules.administration.handlers import register_administration
 from modules.chat.handlers import register_chat
+from modules.congress.handlers import register_congress
 from modules.forum.handlers import register_forum
 from modules.forum_roles.handlers import register_forum_roles
 from modules.pools.handlers import register_pools
@@ -28,4 +29,5 @@ def register_all_modules(
     register_profile(bot, api, action_logger)
     register_administration(bot, api, action_logger)
     register_forum_roles(bot, api, action_logger)
+    register_congress(bot, api, action_logger)
     register_forum(bot, api, action_logger, forum_service=forum_service)

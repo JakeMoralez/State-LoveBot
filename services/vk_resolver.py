@@ -7,8 +7,15 @@ from dataclasses import dataclass
 
 from vkbottle import API
 
+# [id123|name], @user, https://vk.com/... https://vk.ru/..., id123, 123456
 VK_MENTION_RE = re.compile(
-    r"(?:\[id(\d+)\|[^\]]+\]|@([a-zA-Z0-9_.]+)|https?://vk\.com/(?:id(\d+)|([a-zA-Z0-9_.]+))|^(?:id)?(\d+)$)",
+    r"(?:"
+    r"\[id(\d+)\|[^\]]+\]"
+    r"|@([a-zA-Z0-9_.]+)"
+    r"|(?:https?://)?(?:m\.)?(?:vk\.com|vk\.ru)/(?:id(\d+)|([a-zA-Z0-9_.]+))"
+    r"|^id(\d+)$"
+    r"|^(\d+)$"
+    r")",
     re.IGNORECASE,
 )
 
@@ -26,7 +33,7 @@ class VKResolver:
 
     @staticmethod
     def parse_reference(raw: str) -> tuple[int | None, str | None]:
-        """Извлекает vk_id или screen_name из строки."""
+        """Извлекает vk_id или screen_name из строки (в т.ч. vk.com / vk.ru)."""
         raw = raw.strip()
         match = VK_MENTION_RE.search(raw)
         if not match:
@@ -35,21 +42,36 @@ class VKResolver:
             if raw.startswith("@"):
                 return None, raw[1:]
             return None, raw
-        groups = match.groups()
-        if groups[0]:
-            return int(groups[0]), None
-        if groups[1]:
-            return None, groups[1]
-        if groups[2]:
-            return int(groups[2]), None
-        if groups[3]:
-            return None, groups[3]
-        if groups[4]:
-            return int(groups[4]), None
+
+        vk_id, screen, url_id, url_screen, id_prefix, digits = match.groups()
+        if vk_id:
+            return int(vk_id), None
+        if screen:
+            return None, screen
+        if url_id:
+            return int(url_id), None
+        if url_screen:
+            return None, url_screen
+        if id_prefix:
+            return int(id_prefix), None
+        if digits:
+            return int(digits), None
         return None, None
 
+    @staticmethod
+    def extract_reference(raw: str) -> str:
+        """Первое упоминание/ссылка/id в аргументах команды."""
+        raw = (raw or "").strip()
+        if not raw:
+            return ""
+        match = VK_MENTION_RE.search(raw)
+        if match:
+            return match.group(0)
+        return raw.split(maxsplit=1)[0]
+
     async def resolve(self, raw: str) -> ResolvedUser | None:
-        vk_id, screen_name = self.parse_reference(raw)
+        ref = self.extract_reference(raw)
+        vk_id, screen_name = self.parse_reference(ref)
         if vk_id:
             users = await self.api.users.get(user_ids=[vk_id])
             if users:

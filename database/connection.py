@@ -23,10 +23,23 @@ async def _ensure_chat_alias_column() -> None:
         pass
 
 
+async def _ensure_congress_columns() -> None:
+    conn = Tortoise.get_connection("default")
+    for column in ("is_congress_speaker", "is_congress_vice"):
+        try:
+            await conn.execute_query(
+                f"ALTER TABLE users ADD COLUMN {column} INTEGER NOT NULL DEFAULT 0"
+            )
+            logger.info("Добавлена колонка users.%s", column)
+        except Exception:
+            pass
+
+
 async def init_db() -> None:
     await Tortoise.init(config=TORTOISE_ORM)
     await Tortoise.generate_schemas(safe=True)
     await _ensure_chat_alias_column()
+    await _ensure_congress_columns()
     await _bootstrap_defaults()
     logger.info("База данных инициализирована")
 

@@ -20,6 +20,7 @@ VK_USER_TOKEN: str = os.getenv("VK_USER_TOKEN", "")
 DEFAULT_SERVER_SLUG: str = os.getenv("DEFAULT_SERVER_SLUG", "default")
 DEFAULT_SERVER_NAME: str = os.getenv("DEFAULT_SERVER_NAME", "Основной сервер")
 SERVER_NUMBER: int = int(os.getenv("SERVER_NUMBER", "0"))
+SERVER_TAG: str = os.getenv("SERVER_TAG", "").strip()
 
 # Администратор / разработчик
 MAIN_ADMIN_ID: int = int(os.getenv("MAIN_ADMIN_ID", "0"))

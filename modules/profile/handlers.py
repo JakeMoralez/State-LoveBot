@@ -13,8 +13,9 @@ from vkbottle.dispatch.rules.base import FuncRule
 from database.models.user import AccessLevel
 from database.repository.user_repo import UserRepository
 from middlewares.access import AccessChecker, requires_level, requires_public
+from middlewares.congress_access import requires_setnick
 from middlewares.action_logger import ActionLogger
-from services.command_utils import dual, matches_cmd, strip_cmd
+from services.command_utils import dual, dual_with_args, matches_cmd, strip_cmd
 from services.display_name import DisplayNameService
 from services.nickname import NicknameValidator
 from services.vk_resolver import VKResolver
@@ -34,9 +35,10 @@ _WHO_EMOJIS = (
 )
 
 
+_VK_REF = r"(?:https?://)?(?:m\.)?(?:vk\.com|vk\.ru)/(?:id\d+|[\w.]+)"
 _SETNICK_LEAD = re.compile(
-    r"^(?:\[id(\d+)\|[^\]]+\]|@(\S+))(?:\s+)(.+)$",
-    re.DOTALL,
+    rf"^(?:\[id(\d+)\|[^\]]+\]|@(\S+)|({_VK_REF}))(?:\s+)(.+)$",
+    re.DOTALL | re.IGNORECASE,
 )
 
 
@@ -45,8 +47,8 @@ async def _parse_setnick(message: Message, api: API) -> tuple[int | None, str | 
     args = strip_cmd(message.text or "", "setnick")
     if not args:
         return None, None, (
-            "❌ Использование: /setnick [@user] [никнейм]\n"
-            "Пример: /setnick @user @user [Speaker] Имя\n"
+            "❌ Использование: /setnick (/snick) [@user|vk.com|vk.ru] [никнейм]\n"
+            "Пример: /snick @user @user [Speaker] Имя\n"
             "Или ответом на сообщение: /setnick [никнейм]"
         )
 
@@ -57,12 +59,22 @@ async def _parse_setnick(message: Message, api: API) -> tuple[int | None, str | 
 
     lead = _SETNICK_LEAD.match(args)
     if lead:
-        vk_id_raw, screen, nickname = lead.group(1), lead.group(2), lead.group(3).strip()
+        vk_id_raw, screen, url_ref, nickname = (
+            lead.group(1),
+            lead.group(2),
+            lead.group(3),
+            lead.group(4).strip(),
+        )
         if vk_id_raw:
             return int(vk_id_raw), nickname, None
-        resolved = await resolver.resolve(f"@{screen}")
-        if resolved:
-            return resolved.vk_id, nickname, None
+        if screen:
+            resolved = await resolver.resolve(f"@{screen}")
+            if resolved:
+                return resolved.vk_id, nickname, None
+        if url_ref:
+            resolved = await resolver.resolve(url_ref)
+            if resolved:
+                return resolved.vk_id, nickname, None
 
     parts = args.split(maxsplit=1)
     if len(parts) == 2:
@@ -75,7 +87,7 @@ async def _parse_setnick(message: Message, api: API) -> tuple[int | None, str | 
 
 async def format_who_card(vk_id: int, api: API) -> str:
     emoji = random.choice(_WHO_EMOJIS)
-    link = await DisplayNameService(api).mention_user(vk_id)
+    link = await DisplayNameService(api).link_user(vk_id)
     return f"{emoji} {link}"
 
 
@@ -87,7 +99,7 @@ async def format_staff_list(server_id: int, api: API) -> str:
     names = DisplayNameService(api)
     lines = [f"🔐 Доступы ({len(rows)}):"]
     for user, level in rows:
-        link = await names.mention_user(user.vk_id)
+        link = await names.link_user(user.vk_id)
         title = AccessChecker.level_name(level)
         lines.append(f"• {link} — {title} ({level})")
     return "\n".join(lines)
@@ -95,7 +107,7 @@ async def format_staff_list(server_id: int, api: API) -> str:
 
 def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
     @bot.on.message(FuncRule(lambda m: matches_cmd(m.text or "", "setnick")))
-    @requires_level(AccessLevel.PGS, require_registered=True)
+    @requires_setnick
     async def setnick(
         message: Message,
         server_id: int = 0,
@@ -125,7 +137,7 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
 
         await UserRepository.set_nickname(target_id, nickname)
         link = DisplayNameService.nick_link(target_id, nickname)
-        await message.answer(f"✅ Никнейм установлен: {link}", disable_mentions=0)
+        await message.answer(f"✅ Никнейм установлен: {link}", disable_mentions=1)
         await action_logger.log_user(
             "setnick",
             message.from_id,
@@ -142,7 +154,7 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         access_level: int = 0,
     ) -> None:
         text = await format_staff_list(server_id, api)
-        await message.answer(text, disable_mentions=0)
+        await message.answer(text, disable_mentions=1)
 
     @bot.on.message(text=["/who", "!who", "кто"])
     @requires_public
@@ -162,18 +174,21 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             return
 
         card = await format_who_card(target_id, api)
-        await message.answer(card, disable_mentions=0)
+        await message.answer(card, disable_mentions=1)
 
-    @bot.on.message(text=["/setlevel", "!setlevel"])
+    @bot.on.message(text=dual("setlevel"))
     @requires_level(AccessLevel.ZGS)
     async def setlevel_usage(
         message: Message,
         server_id: int = 0,
         access_level: int = 0,
     ) -> None:
-        await message.answer("❌ Использование: /setlevel [ссылка/ID] [1-8]")
+        max_lvl = 9 if await UserRepository.is_developer(message.from_id or 0) else 8
+        await message.answer(
+            f"❌ Использование: /setlevel (/setlvl) [ссылка vk.com/vk.ru|ID|@user] [1-{max_lvl}]"
+        )
 
-    @bot.on.message(text=["/setlevel <target> <level>", "!setlevel <target> <level>"])
+    @bot.on.message(text=dual_with_args("setlevel", "<target> <level>"))
     @requires_level(AccessLevel.ZGS)
     async def set_level(
         message: Message,
@@ -182,17 +197,20 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         server_id: int = 0,
         access_level: int = 0,
     ) -> None:
+        is_dev = await UserRepository.is_developer(message.from_id)
+        max_grant = 9 if is_dev else 8
+
         try:
             new_level = int(level)
         except ValueError:
-            await message.answer("❌ Уровень — число от 1 до 8.")
+            await message.answer(f"❌ Уровень — число от 1 до {max_grant}.")
             return
-        if new_level < 1 or new_level > 8:
-            await message.answer("❌ Доступны уровни 1–8.")
+        if new_level < 1 or new_level > max_grant:
+            await message.answer(f"❌ Доступны уровни 1–{max_grant}.")
             return
 
         granter_level = access_level
-        if await UserRepository.is_developer(message.from_id):
+        if is_dev:
             granter_level = AccessLevel.DEVELOPER
         if new_level > granter_level:
             await message.answer("❌ Нельзя выдать уровень выше своего.")
@@ -219,7 +237,7 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         await message.answer(
             f"✅ {await format_who_card(resolved.vk_id, api)}\n"
             f"Выдан уровень {name}.",
-            disable_mentions=0,
+            disable_mentions=1,
         )
         await action_logger.log_user(
             "setlevel",

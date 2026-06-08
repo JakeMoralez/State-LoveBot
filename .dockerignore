@@ -1,0 +1,13 @@
+.git
+.github
+venv
+.venv
+__pycache__
+*.pyc
+.env
+bot.db
+bot.db-*
+firefox_profile
+.vkbottle
+*.log
+data

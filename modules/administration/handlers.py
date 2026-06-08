@@ -10,7 +10,9 @@ from vkbottle.bot import Bot, Message
 from database.models.user import AccessLevel
 from database.repository.chat_repo import ChatRepository
 from middlewares.access import requires_level
+from middlewares.congress_access import requires_chat_kick
 from middlewares.action_logger import ActionLogger
+from services.command_utils import dual, dual_with_args
 from services.display_name import DisplayNameService
 from services.moderation import ModerationService
 from services.vk_resolver import VKResolver
@@ -22,7 +24,8 @@ def _parse_target_and_reason(args: str) -> tuple[str, str | None]:
     parts = args.strip().split(maxsplit=1)
     if not parts:
         return "", None
-    return parts[0], parts[1] if len(parts) > 1 else None
+    target = VKResolver.extract_reference(parts[0])
+    return target, parts[1] if len(parts) > 1 else None
 
 
 def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> None:
@@ -38,8 +41,8 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
         reason: str | None,
         pool_label: str | None = None,
     ) -> None:
-        target_m = await names.mention_user(target_id)
-        actor_m = await names.mention_user(actor_id)
+        target_m = await names.link_user(target_id)
+        actor_m = await names.link_user(actor_id)
 
         lines = [
             f"🚫 {target_m} был(а) исключён(а) по запросу {actor_m}.",
@@ -53,12 +56,12 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
                 peer_id=peer_id,
                 message="\n".join(lines),
                 random_id=0,
-                disable_mentions=0,
+                disable_mentions=1,
             )
         except Exception as exc:
             logger.warning("kick announce failed peer=%s: %s", peer_id, exc)
 
-    @bot.on.message(text=["/kick", "!kick"])
+    @bot.on.message(text=dual("kick"))
     @requires_level(AccessLevel.ZGS)
     async def kick_usage(
         message: Message,
@@ -66,12 +69,12 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
         access_level: int = 0,
     ) -> None:
         await message.answer(
-            "❌ /kick [ссылка/ID/@user] [причина]\n"
+            "❌ /kick (/k) [ссылка vk.com/vk.ru|ID|@user] [причина]\n"
             "Можно ответом на сообщение: /kick причина"
         )
 
-    @bot.on.message(text=["/kick <args>", "!kick <args>"])
-    @requires_level(AccessLevel.ZGS)
+    @bot.on.message(text=dual_with_args("kick", "<args>"))
+    @requires_chat_kick
     async def kick(
         message: Message,
         args: str,
@@ -137,16 +140,18 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
                 source_peer_id=message.peer_id,
             )
 
-    @bot.on.message(text=["/poolkick", "!poolkick", "/pullkick", "!pullkick"])
+    @bot.on.message(text=dual("poolkick"))
     @requires_level(AccessLevel.ZGS)
     async def poolkick_usage(
         message: Message,
         server_id: int = 0,
         access_level: int = 0,
     ) -> None:
-        await message.answer("❌ /poolkick [ссылка/ID] [причина]")
+        await message.answer(
+            "❌ /poolkick (/pkick) [ссылка vk.com/vk.ru|ID|@user] [причина]"
+        )
 
-    @bot.on.message(text=["/poolkick <args>", "!poolkick <args>", "/pullkick <args>", "!pullkick <args>"])
+    @bot.on.message(text=dual_with_args("poolkick", "<args>"))
     @requires_level(AccessLevel.ZGS)
     async def poolkick(
         message: Message,

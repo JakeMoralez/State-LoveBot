@@ -9,8 +9,13 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from config import FORUM_COOKIES, FORUM_USER_AGENT
-from config.settings import JUDGE_FORUM_ID, SERVER_NUMBER
-from services.forum_format import format_created_date
+from config.settings import JUDGE_FORUM_ID, SERVER_NUMBER, SERVER_TAG
+from services.forum_format import (
+    case_word,
+    format_created_date,
+    format_duration_seconds,
+    plural_cases,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -231,62 +236,75 @@ class ForumService:
             logger.error("edit_thread_title %s: %s", thread_id, exc)
             return False, f"Ошибка: {exc}"
 
-    async def _collect_thread_ids_by_pages(self, category: Any, pages: int) -> list[int]:
+    @staticmethod
+    def _is_under_review(prefix: str | None) -> bool:
+        if not prefix:
+            return False
+        lowered = prefix.lower()
+        return "рассмотр" in lowered or "ожидан" in lowered
+
+    async def _fetch_category_page(
+        self,
+        category: Any,
+        page: int,
+    ) -> list[dict[str, Any]]:
+        try:
+            rows = await category.get_thread_category_detail(page=page)
+        except Exception as exc:
+            logger.error("court stats page %s: %s", page, exc)
+            return []
+        if not rows:
+            return []
+        return list(rows)
+
+    async def _collect_threads_by_pages(
+        self,
+        category: Any,
+        pages: int,
+    ) -> tuple[list[dict[str, Any]], int]:
         page_data = await asyncio.gather(
-            *[category.get_threads(page=p) for p in range(1, pages + 1)],
+            *[
+                self._fetch_category_page(category, p)
+                for p in range(1, pages + 1)
+            ],
             return_exceptions=True,
         )
-        all_thread_ids: list[int] = []
-        for page, threads_dict in enumerate(page_data, start=1):
-            if isinstance(threads_dict, Exception):
-                logger.error("court stats page %s: %s", page, threads_dict)
+        threads: list[dict[str, Any]] = []
+        pages_scanned = 0
+        for page, rows in enumerate(page_data, start=1):
+            if isinstance(rows, Exception):
+                logger.error("court stats page %s: %s", page, rows)
                 continue
-            if not threads_dict:
+            if not rows:
                 continue
-            all_thread_ids.extend(threads_dict.get("unpins") or [])
-        return all_thread_ids
+            pages_scanned += 1
+            threads.extend(rows)
+        return threads, pages_scanned
 
-    async def _collect_thread_ids_by_days(self, category: Any, days: int) -> list[int]:
+    async def _collect_threads_by_days(
+        self,
+        category: Any,
+        days: int,
+    ) -> tuple[list[dict[str, Any]], int]:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).timestamp()
-        sem = asyncio.Semaphore(12)
-        all_thread_ids: list[int] = []
+        threads: list[dict[str, Any]] = []
+        pages_scanned = 0
         empty_streak = 0
 
-        async def _in_range(thread_id: int) -> int | None:
-            async with sem:
-                try:
-                    thread = await self._api.get_thread(thread_id)
-                    if not thread:
-                        return None
-                    created = getattr(thread, "create_date", None)
-                    if created is None or created >= cutoff:
-                        return thread_id
-                except Exception as exc:
-                    logger.error("court stats thread %s: %s", thread_id, exc)
-                return None
-
         for page in range(1, 81):
-            try:
-                threads_dict = await category.get_threads(page=page)
-            except Exception as exc:
-                logger.error("court stats page %s: %s", page, exc)
-                break
-            if not threads_dict:
+            rows = await self._fetch_category_page(category, page)
+            if not rows:
                 break
 
-            unpins = threads_dict.get("unpins") or []
-            if not unpins:
-                empty_streak += 1
-                if empty_streak >= 2:
-                    break
-                continue
-
+            pages_scanned += 1
             matched = [
-                tid
-                for tid in await asyncio.gather(*[_in_range(t) for t in unpins])
-                if tid is not None
+                row
+                for row in rows
+                if row.get("created_date") is not None
+                and row["created_date"] >= cutoff
             ]
-            all_thread_ids.extend(matched)
+            threads.extend(matched)
+
             if matched:
                 empty_streak = 0
             else:
@@ -294,7 +312,38 @@ class ForumService:
                 if empty_streak >= 2:
                     break
 
-        return all_thread_ids
+        return threads, pages_scanned
+
+    @staticmethod
+    def _server_label() -> str:
+        base = f"Arizona №{SERVER_NUMBER}" if SERVER_NUMBER else "Arizona"
+        if SERVER_TAG:
+            return f"{base} [{SERVER_TAG}]"
+        return base
+
+    async def _resolve_closer_name(self, row: dict[str, Any]) -> str:
+        closer = (row.get("username_last_message") or "").strip()
+        if closer:
+            return closer
+
+        thread_id = row.get("thread_id")
+        if not thread_id:
+            return "Неизвестно"
+
+        try:
+            thread = await self._api.get_thread(int(thread_id))
+            if not thread:
+                return "Неизвестно"
+            post_ids = await thread.get_posts()
+            if not post_ids:
+                return "Неизвестно"
+            last_post = await self._api.get_post(post_ids[-1])
+            creator = getattr(last_post, "creator", None)
+            if creator and getattr(creator, "username", None):
+                return creator.username
+        except Exception as exc:
+            logger.warning("court stats closer thread=%s: %s", thread_id, exc)
+        return "Неизвестно"
 
     async def get_court_stats(
         self,
@@ -302,7 +351,7 @@ class ForumService:
         pages: int | None = None,
         days: int | None = None,
     ) -> str:
-        """Статистика закрытых исков в разделе судей (JUDGE_FORUM_ID)."""
+        """Статистика исков/жалоб в разделе JUDGE_FORUM_ID."""
         if not self._api:
             return "❌ Форум не подключён."
 
@@ -310,94 +359,125 @@ class ForumService:
         if not category:
             return "❌ Раздел судебных исков не найден"
 
+        category_title = getattr(category, "title", "Судебные иски")
+
         if days is not None:
             days = max(1, min(days, 365))
-            all_thread_ids = await self._collect_thread_ids_by_days(category, days)
-            scan_label = f"последние {days} дн."
+            threads, pages_scanned = await self._collect_threads_by_days(category, days)
+            period_label = f"за {days} дней"
             empty_hint = "📭 За указанный период нет тем"
         else:
             pages = max(1, min(pages or 1, 20))
-            all_thread_ids = await self._collect_thread_ids_by_pages(category, pages)
-            scan_label = "страницу" if pages == 1 else f"страниц: {pages}"
+            threads, pages_scanned = await self._collect_threads_by_pages(
+                category, pages
+            )
+            period_label = ""
             empty_hint = "📭 На просканированных страницах нет тем"
 
-        total_threads = len(all_thread_ids)
+        total_threads = len(threads)
         if total_threads == 0:
             return empty_hint
 
-        closed_by_stats: dict[str, int] = {}
-        closed_count = 0
-        open_count = 0
-        sem = asyncio.Semaphore(12)
-
-        async def _closer_name(thread: Any) -> str:
-            try:
-                post_ids = await thread.get_posts()
-                if post_ids:
-                    last_post = await self._api.get_post(post_ids[-1])
-                    creator = getattr(last_post, "creator", None)
-                    if creator and getattr(creator, "username", None):
-                        return creator.username
-            except Exception:
-                pass
-            return "Неизвестно"
-
-        async def _analyze(thread_id: int) -> tuple[str, str | None] | None:
-            async with sem:
-                try:
-                    thread = await self._api.get_thread(thread_id)
-                    if not thread:
-                        return None
-                    if thread.is_closed:
-                        return "closed", await _closer_name(thread)
-                    return "open", None
-                except Exception as exc:
-                    logger.error("court stats thread %s: %s", thread_id, exc)
-                    return None
-
-        results = await asyncio.gather(*[_analyze(tid) for tid in all_thread_ids])
-        for item in results:
-            if not item:
-                continue
-            status, closer = item
-            if status == "closed":
-                closed_count += 1
-                name = closer or "Неизвестно"
-                closed_by_stats[name] = closed_by_stats.get(name, 0) + 1
-            else:
-                open_count += 1
-
-        server_label = f"Arizona №{SERVER_NUMBER}" if SERVER_NUMBER else "Arizona"
-        msg = (
-            f"🔱 Статистика Судебных исков | {server_label} 🔱\n\n"
-            f"📊 Просканировано {scan_label}\n"
-            f"📩 Всего тем: {total_threads}\n"
-            f"🔐 Закрыто: {closed_count}\n"
-            f"🔓 Открыто: {open_count}\n\n"
+        pinned_count = sum(1 for row in threads if row.get("is_pinned"))
+        closed_count = sum(1 for row in threads if row.get("is_closed"))
+        open_count = total_threads - closed_count
+        review_count = sum(
+            1
+            for row in threads
+            if not row.get("is_closed")
+            and self._is_under_review(row.get("prefix"))
         )
 
+        close_durations: list[float] = []
+        closed_by_stats: dict[str, int] = {}
+        unknown_closers: list[dict[str, Any]] = []
+
+        for row in threads:
+            if not row.get("is_closed"):
+                continue
+
+            created = row.get("created_date")
+            closed_at = row.get("last_message_date")
+            if created and closed_at and closed_at >= created:
+                close_durations.append(float(closed_at - created))
+
+            closer = (row.get("username_last_message") or "").strip()
+            if closer:
+                closed_by_stats[closer] = closed_by_stats.get(closer, 0) + 1
+            else:
+                unknown_closers.append(row)
+
+        if unknown_closers:
+            sem = asyncio.Semaphore(8)
+
+            async def _fill_closer(row: dict[str, Any]) -> tuple[str, int]:
+                async with sem:
+                    name = await self._resolve_closer_name(row)
+                    return name, int(row.get("thread_id") or 0)
+
+            resolved = await asyncio.gather(
+                *[_fill_closer(row) for row in unknown_closers]
+            )
+            for name, _tid in resolved:
+                closed_by_stats[name] = closed_by_stats.get(name, 0) + 1
+
+        if period_label:
+            header = (
+                f"👻 Статистика {period_label} | {self._server_label()} | "
+                f"{category_title} 👻"
+            )
+        else:
+            header = (
+                f"👻 Статистика | {self._server_label()} | {category_title} 👻"
+            )
+
+        if "жалоб" in category_title.lower():
+            found_label = "жалоб"
+        else:
+            found_label = plural_cases(
+                total_threads, one="иск", few="иска", many="исков"
+            )
+        found_line = f"📩 Найдено {found_label}: {total_threads}"
+        if pages_scanned:
+            found_line += f" ({pages_scanned} стр.)"
+
+        avg_close = "—"
+        if close_durations:
+            avg_close = format_duration_seconds(
+                sum(close_durations) / len(close_durations)
+            )
+
+        lines = [
+            header,
+            "",
+            found_line,
+            f"📁 На рассмотрении: {review_count}",
+            f"📌 Закреплено: {pinned_count}",
+            f"🔓 Открыто: {open_count}",
+            f"🔐 Закрыто: {closed_count}",
+            f"🔔 Ср. время закрытия: {avg_close}",
+            "",
+        ]
+
         if closed_count == 0:
-            msg += "📭 Нет закрытых исков за выбранный период"
-            return msg
+            lines.append("📭 Нет закрытых тем за выбранный период")
+            return "\n".join(lines)
 
         sorted_stats = sorted(closed_by_stats.items(), key=lambda x: x[1], reverse=True)
         num_emoji = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣"]
         for i, (closer, count) in enumerate(sorted_stats, 1):
             percentage = count / closed_count * 100
-            if count % 10 == 1 and count % 100 != 11:
-                word = "иск"
-            elif 2 <= count % 10 <= 4 and (count % 100 < 10 or count % 100 >= 20):
-                word = "иска"
-            else:
-                word = "исков"
+            word = case_word(category_title, count)
             if i <= 9:
-                msg += (
+                lines.append(
                     f"{num_emoji[i - 1]} {closer} закрыл(-а) {count} {word} "
-                    f"[~{percentage:.0f}%]\n"
+                    f"[~{percentage:.0f}%]"
                 )
             else:
-                msg += f"{i}. {closer} закрыл(-а) {count} {word} [~{percentage:.0f}%]\n"
-        return msg
+                lines.append(
+                    f"{i}. {closer} закрыл(-а) {count} {word} [~{percentage:.0f}%]"
+                )
+        return "\n".join(lines)
 
     async def is_logged_in(self) -> bool:
         if not self._api:

@@ -49,9 +49,9 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
     HelpCategory(
         "👤 Профиль",
         (
-            HelpEntry("/setnick", "Ник: /setnick [@user] [ник] или ответом", 1),
+            HelpEntry("/setnick", "Ник (/snick): [@user|vk.ru] [ник]", 1),
             HelpEntry("/who", "Карточка пользователя (ответом)", 0),
-            HelpEntry("/members", "Участники беседы с никами", 0),
+            HelpEntry("/members", "Участники беседы (ссылки, без пинга)", 0),
             HelpEntry("/staff", "Список людей с уровнями доступа", 1),
         ),
     ),
@@ -71,7 +71,7 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
             HelpEntry("/pools", "Список пулов и алиасов", 1),
             HelpEntry("/createpool", "Создать пул", 5),
             HelpEntry("/regchat", "Привязать беседу к пулу", 5),
-            HelpEntry("/setlevel", "Выдать уровень (не выше своего)", 3),
+            HelpEntry("/setlevel", "Уровень (/setlvl), vk.com/vk.ru", 3),
         ),
     ),
     HelpCategory(
@@ -81,6 +81,15 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
             HelpEntry("/fclose · /fopen", "Закрыть / открыть тему", "forum"),
             HelpEntry("/fpin · /funpin", "Закрепить / открепить тему", "forum"),
             HelpEntry("/иски", "Статистика исков [страницы 1–20 / дни 1–365]", "forum"),
+        ),
+    ),
+    HelpCategory(
+        "🏛 Конгресс",
+        (
+            HelpEntry("/regcongress", "Привязать беседу конгресса [алиас]", 3),
+            HelpEntry("/setspeaker", "Назначить спикера", 3),
+            HelpEntry("/setvice", "Назначить вице-спикера", 3),
+            HelpEntry("/congress", "Инфо: беседа, спикер, алиас", 1),
         ),
     ),
     HelpCategory(
@@ -116,7 +125,7 @@ def build_help_text() -> str:
     lines.extend(
         [
             "🌐 — всем  ·  1️⃣–9️⃣ — мин. уровень  ·  ⚖️ — судебный доступ",
-            "💡 Команды работают с / и !",
+            "💡 Команды: / и ! · алиасы: /snick, /setlvl, /pkick…",
         ]
     )
     return "\n".join(lines)

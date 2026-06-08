@@ -10,6 +10,7 @@ from vkbottle.bot import Bot, Message
 from database.models.user import AccessLevel
 from middlewares.access import requires_level, requires_public
 from middlewares.action_logger import ActionLogger
+from services.command_utils import dual
 from services.messaging import MessagingService
 from services.role_chat_leave import handle_role_chat_leave
 
@@ -19,7 +20,7 @@ logger = logging.getLogger(__name__)
 def register_chat(bot: Bot, api: API, action_logger: ActionLogger) -> None:
     messaging = MessagingService(api)
 
-    @bot.on.message(text=["/members", "!members", "/chatlist", "!chatlist"])
+    @bot.on.message(text=dual("members") + ["/chatlist", "!chatlist"])
     @requires_public
     async def list_members(
         message: Message,
@@ -30,8 +31,8 @@ def register_chat(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             await message.answer("❌ Команда доступна только в беседах.")
             return
 
-        text = await messaging.format_members_list(message.peer_id)
-        await message.answer(text, disable_mentions=0)
+        text = await messaging.format_members_list(message.peer_id, server_id)
+        await message.answer(text, disable_mentions=1)
 
     @bot.on.message(text=["/pin", "!pin"])
     @requires_level(AccessLevel.SUPERVISOR)
@@ -107,7 +108,7 @@ def register_chat(bot: Bot, api: API, action_logger: ActionLogger) -> None:
                     peer_id=peer_id,
                     message=notice,
                     random_id=messaging.random_id(),
-                    disable_mentions=0,
+                    disable_mentions=1,
                 )
                 await action_logger.log_user(
                     "remove_judge",
@@ -135,7 +136,7 @@ def register_chat(bot: Bot, api: API, action_logger: ActionLogger) -> None:
                 peer_id=message.peer_id,
                 message=notice,
                 random_id=messaging.random_id(),
-                disable_mentions=0,
+                disable_mentions=1,
             )
         except Exception as exc:
             logger.warning("invite notice failed peer=%s: %s", message.peer_id, exc)

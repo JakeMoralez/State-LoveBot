@@ -30,7 +30,7 @@ class AccessLevel:
         7: "Куратор",
         8: "ЗГА",
         9: "ГА",
-        10: "Разраб",
+        10: "Главный разработчик",
     }
 
     @classmethod
@@ -52,6 +52,8 @@ class User(Model):
     is_judge = fields.BooleanField(default=False)
     is_attorney = fields.BooleanField(default=False)
     is_leader = fields.BooleanField(default=False)
+    is_congress_speaker = fields.BooleanField(default=False)
+    is_congress_vice = fields.BooleanField(default=False)
 
     server_accesses: fields.ReverseRelation["UserServerAccess"]
 

@@ -133,8 +133,12 @@ class DisplayNameService:
             return self.nick_link(vk_id, full)
         return f"[id{vk_id}|id{vk_id}]"
 
-    async def profile_link_user(self, vk_id: int) -> str:
+    async def link_user(self, vk_id: int) -> str:
+        """Ссылка [id|ник] — отправлять с disable_mentions=1 (без уведомления)."""
         return await self.mention_user(vk_id)
+
+    async def profile_link_user(self, vk_id: int) -> str:
+        return await self.link_user(vk_id)
 
     @staticmethod
     def mention(vk_id: int, name: str) -> str:

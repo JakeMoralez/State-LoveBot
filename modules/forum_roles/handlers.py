@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 def _parse_target_and_note(args: str) -> tuple[str, str]:
     parts = args.strip().split(maxsplit=1)
-    target = parts[0] if parts else ""
+    target = VKResolver.extract_reference(parts[0]) if parts else ""
     note = parts[1] if len(parts) > 1 else ""
     return target, note
 
@@ -44,7 +44,7 @@ async def _format_judge_list(users: list, api: API) -> str:
     names = DisplayNameService(api)
     lines = [f"⚖️ Судьи ({len(users)}):"]
     for user in users:
-        link = await names.mention_user(user.vk_id)
+        link = await names.link_user(user.vk_id)
         lines.append(f"• {link} — Судья с {_judge_since(user)}")
     return "\n".join(lines)
 
@@ -88,10 +88,10 @@ def register_forum_roles(bot: Bot, api: API, action_logger: ActionLogger) -> Non
             is_judge=True,
         )
         names = DisplayNameService(api)
-        link = await names.mention_user(resolved.vk_id)
+        link = await names.link_user(resolved.vk_id)
         await message.answer(
             f"⚖️ {link} назначен судьёй.",
-            disable_mentions=0,
+            disable_mentions=1,
         )
         target_label = resolved.display_name or resolved.username or f"id{resolved.vk_id}"
         await action_logger.log_user(
@@ -102,27 +102,41 @@ def register_forum_roles(bot: Bot, api: API, action_logger: ActionLogger) -> Non
             source_peer_id=message.peer_id,
         )
 
-    @bot.on.message(text=dual_args("deluser", "<target>"))
+    @bot.on.message(text=dual_args("deluser"))
     @requires_developer
     async def del_user(
         message: Message,
-        target: str | None = None,
+        args: str | None = None,
         server_id: int = 0,
         access_level: int = 0,
     ) -> None:
+        if not args and not (
+            message.reply_message and message.reply_message.from_id > 0
+        ):
+            await message.answer(
+                "❌ /deluser (/du) [@user|vk.com|vk.ru]\n"
+                "Или ответом на сообщение."
+            )
+            return
+
         reply_id = (
             message.reply_message.from_id
             if message.reply_message and message.reply_message.from_id > 0
             else None
         )
-        resolved = await resolver.resolve_from_message(target or "", reply_from_id=reply_id)
+        target_raw = VKResolver.extract_reference(args or "")
+        resolved = await resolver.resolve_from_message(
+            target_raw, reply_from_id=reply_id
+        )
         if resolved:
             ok = await ForumRoleRepository.remove_user(resolved.vk_id)
         else:
-            ok = await ForumRoleRepository.remove_user_by_username((target or "").strip())
+            ok = await ForumRoleRepository.remove_user_by_username(
+                (args or "").strip()
+            )
         await message.answer("✅ Удалён." if ok else "❌ Не найден.")
         target_label = (
-            f"id{resolved.vk_id}" if resolved else (target or "").strip()
+            f"id{resolved.vk_id}" if resolved else (args or "").strip()
         )
         await action_logger.log_user(
             "deluser",
@@ -156,12 +170,12 @@ def register_forum_roles(bot: Bot, api: API, action_logger: ActionLogger) -> Non
         since = _judge_since(user)
         ok = await ForumRoleRepository.clear_judge_role(message.from_id)
         if ok:
-            link = await DisplayNameService(api).mention_user(message.from_id)
+            link = await DisplayNameService(api).link_user(message.from_id)
             await message.answer(
                 f"✅ С вас снят статус судьи.\n"
                 f"• {link} — Судья с {since}\n"
                 f"Доступ к судебным функциям отозван.",
-                disable_mentions=0,
+                disable_mentions=1,
             )
         else:
             await message.answer("❌ Не удалось снять доступ.")
@@ -204,5 +218,5 @@ def register_forum_roles(bot: Bot, api: API, action_logger: ActionLogger) -> Non
         users = await ForumRoleRepository.list_by_role(ForumRoleKey.JUDGE)
         await message.answer(
             await _format_judge_list(users, api),
-            disable_mentions=0,
+            disable_mentions=1,
         )

@@ -11,17 +11,32 @@ from vkbottle.bot import Bot, Message, MessageEvent
 from config.settings import VK_USER_TOKEN
 from database.models.user import AccessLevel
 from database.repository.chat_repo import ChatRepository
+from database.repository.congress_repo import CongressRepository
 from database.repository.forum_role_repo import ForumRoleRepository
 from database.repository.pool_repo import PoolRepository
 from database.repository.user_repo import UserRepository
 from middlewares.access import AccessChecker, requires_level
+from middlewares.congress_access import requires_msg
 from middlewares.action_logger import ActionLogger
+from services.command_utils import dual, dual_args, dual_with_args
 from services.messaging import MessagingService
 from services.msg_keyboard import create_msg_confirm_keyboard
 from services.msg_pending import pop as pop_pending_msg
 from services.msg_pending import create as create_pending_msg
 
 logger = logging.getLogger(__name__)
+
+
+async def _format_congress_msg_help(server_id: int, *, header: str) -> str:
+    alias = await CongressRepository.get_congress_alias(server_id)
+    if not alias:
+        return f"{header}\n\n❌ Беседа конгресса не зарегистрирована."
+    return (
+        f"{header}\n\n"
+        f"📋 Алиас конгресса: {alias}\n"
+        f"Пример: /msg {alias} на заседание заходим\n\n"
+        f"💡 Можно из беседы конгресса или из ЛС бота."
+    )
 
 
 async def _format_aliases_message(server_id: int, *, header: str) -> str:
@@ -68,16 +83,51 @@ def _format_msg_preview(
     )
 
 
-async def _can_use_msg(user_id: int, peer_id: int) -> tuple[bool, int]:
+async def _can_use_msg(user_id: int, peer_id: int) -> tuple[bool, int, str]:
     if not user_id or user_id <= 0:
-        return False, 0
-    if not await ForumRoleRepository.can_use_forum_bot(user_id):
-        return False, 0
+        return False, 0, ""
     server_id = await AccessChecker.resolve_server_id(peer_id)
+    if await CongressRepository.can_use_msg(peer_id, user_id):
+        return True, server_id, "congress"
+    if not await ForumRoleRepository.can_use_forum_bot(user_id):
+        return False, server_id, ""
     level = await AccessChecker.get_level(user_id, server_id)
     if level < AccessLevel.SUPERVISOR and not await UserRepository.is_developer(user_id):
-        return False, server_id
-    return True, server_id
+        return False, server_id, ""
+    return True, server_id, "supervisor"
+
+
+async def _resolve_msg_target(
+    server_id: int,
+    alias: str,
+    *,
+    msg_mode: str,
+) -> tuple[object | None, str | None]:
+    if msg_mode == "congress":
+        congress_alias = await CongressRepository.get_congress_alias(server_id)
+        if not congress_alias:
+            return None, "❌ Беседа конгресса не зарегистрирована."
+        ok, normalized = ChatRepository.validate_alias(alias)
+        if not ok or normalized != congress_alias:
+            return None, await _format_congress_msg_help(
+                server_id,
+                header=f"❌ Доступен только алиас «{congress_alias}».",
+            )
+        target = await ChatRepository.get_by_alias(server_id, congress_alias)
+        if not target:
+            return None, await _format_congress_msg_help(
+                server_id,
+                header=f"❌ Беседа с алиасом «{congress_alias}» не найдена.",
+            )
+        return target, None
+
+    target = await ChatRepository.get_by_alias(server_id, alias)
+    if not target:
+        return None, await _format_aliases_message(
+            server_id,
+            header=f"❌ Беседа с алиасом «{alias}» не найдена.",
+        )
+    return target, None
 
 
 def register_pools(bot: Bot, api: API, action_logger: ActionLogger) -> None:
@@ -132,7 +182,7 @@ def register_pools(bot: Bot, api: API, action_logger: ActionLogger) -> None:
                 source_peer_id=source_peer_id,
             )
 
-    @bot.on.message(text=["/pools", "!pools"])
+    @bot.on.message(text=dual("pools"))
     @requires_level(AccessLevel.PGS)
     async def list_pools(
         message: Message,
@@ -153,7 +203,7 @@ def register_pools(bot: Bot, api: API, action_logger: ActionLogger) -> None:
                 lines.append(f"    └ {alias}: {title}")
         await message.answer("\n".join(lines))
 
-    @bot.on.message(text=["/createpool", "!createpool"])
+    @bot.on.message(text=dual("createpool"))
     @requires_level(AccessLevel.ZGS_GOS)
     async def create_pool_usage(
         message: Message,
@@ -162,7 +212,7 @@ def register_pools(bot: Bot, api: API, action_logger: ActionLogger) -> None:
     ) -> None:
         await message.answer("❌ Использование: /createpool [название]")
 
-    @bot.on.message(text=["/createpool <name>", "!createpool <name>"])
+    @bot.on.message(text=dual_with_args("createpool", "<name>"))
     @requires_level(AccessLevel.ZGS_GOS)
     async def create_pool(
         message: Message,
@@ -192,7 +242,7 @@ def register_pools(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             source_peer_id=message.peer_id,
         )
 
-    @bot.on.message(text=["/regchat", "!regchat"])
+    @bot.on.message(text=dual("regchat"))
     @requires_level(AccessLevel.ZGS_GOS)
     async def regchat_usage(
         message: Message,
@@ -205,7 +255,7 @@ def register_pools(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             "Алиасы: court, lead_co, lead_gos и т.д."
         )
 
-    @bot.on.message(text=["/regchat <pool_ref> <alias>", "!regchat <pool_ref> <alias>"])
+    @bot.on.message(text=dual_with_args("regchat", "<pool_ref> <alias>"))
     @requires_level(AccessLevel.ZGS_GOS)
     async def regchat(
         message: Message,
@@ -262,39 +312,39 @@ def register_pools(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             source_peer_id=message.peer_id,
         )
 
-    @bot.on.message(text=["/msg <alias> <text>", "!msg <alias> <text>"])
-    @requires_level(AccessLevel.SUPERVISOR)
+    @bot.on.message(text=dual_with_args("msg", "<alias> <text>"))
+    @requires_msg
     async def pool_msg(
         message: Message,
         alias: str,
         text: str,
         server_id: int = 0,
         access_level: int = 0,
+        msg_mode: str = "supervisor",
     ) -> None:
         text = text.strip()
         if not text:
-            await message.answer(
-                await _format_aliases_message(
-                    server_id,
-                    header=f"❌ Укажите текст после алиаса «{alias}».",
-                )
+            header = f"❌ Укажите текст после алиаса «{alias}»."
+            reply = (
+                await _format_congress_msg_help(server_id, header=header)
+                if msg_mode == "congress"
+                else await _format_aliases_message(server_id, header=header)
             )
+            await message.answer(reply)
             return
 
-        target = await ChatRepository.get_by_alias(server_id, alias)
+        target, err = await _resolve_msg_target(server_id, alias, msg_mode=msg_mode)
+        if err:
+            await message.answer(err)
+            return
         if not target:
-            await message.answer(
-                await _format_aliases_message(
-                    server_id,
-                    header=f"❌ Беседа с алиасом «{alias}» не найдена.",
-                )
-            )
             return
 
         preview_body = await messaging.build_alert_message(
             peer_id=target.peer_id,
             text=text,
             sender_vk_id=message.from_id,
+            server_id=server_id,
         )
         token = create_pending_msg(
             user_id=message.from_id,
@@ -317,28 +367,39 @@ def register_pools(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             disable_mentions=0,
         )
 
-    @bot.on.message(text=["/msg <alias>", "!msg <alias>"])
-    @requires_level(AccessLevel.SUPERVISOR)
+    @bot.on.message(text=dual_with_args("msg", "<alias>"))
+    @requires_msg
     async def msg_missing_text(
         message: Message,
         alias: str,
         server_id: int = 0,
         access_level: int = 0,
+        msg_mode: str = "supervisor",
     ) -> None:
-        await message.answer(
-            await _format_aliases_message(
-                server_id,
-                header=f"❌ Укажите текст: /msg {alias} [текст]",
-            )
+        header = f"❌ Укажите текст: /msg {alias} [текст]"
+        reply = (
+            await _format_congress_msg_help(server_id, header=header)
+            if msg_mode == "congress"
+            else await _format_aliases_message(server_id, header=header)
         )
+        await message.answer(reply)
 
-    @bot.on.message(text=["/msg", "!msg"])
-    @requires_level(AccessLevel.SUPERVISOR)
+    @bot.on.message(text=dual("msg"))
+    @requires_msg
     async def msg_usage(
         message: Message,
         server_id: int = 0,
         access_level: int = 0,
+        msg_mode: str = "supervisor",
     ) -> None:
+        if msg_mode == "congress":
+            await message.answer(
+                await _format_congress_msg_help(
+                    server_id,
+                    header="❌ Использование: /msg [алиас] [текст]",
+                )
+            )
+            return
         await message.answer(
             await _format_aliases_message(
                 server_id,
@@ -361,7 +422,7 @@ def register_pools(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         if cmd not in ("msg_confirm", "msg_cancel"):
             return
 
-        allowed, _server_id = await _can_use_msg(event.user_id, event.peer_id)
+        allowed, _server_id, _mode = await _can_use_msg(event.user_id, event.peer_id)
         if not allowed:
             await event.show_snackbar("⛔ Недостаточно прав.")
             return
