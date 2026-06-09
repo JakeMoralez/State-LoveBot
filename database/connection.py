@@ -35,6 +35,17 @@ async def _ensure_congress_columns() -> None:
             pass
 
 
+async def _ensure_server_log_peer_column() -> None:
+    conn = Tortoise.get_connection("default")
+    try:
+        await conn.execute_query(
+            "ALTER TABLE servers ADD COLUMN log_peer_id BIGINT NULL"
+        )
+        logger.info("Добавлена колонка servers.log_peer_id")
+    except Exception:
+        pass
+
+
 async def _ensure_ca_access_columns() -> None:
     conn = Tortoise.get_connection("default")
     for ddl in (
@@ -54,6 +65,7 @@ async def init_db() -> None:
     await _ensure_chat_alias_column()
     await _ensure_congress_columns()
     await _ensure_ca_access_columns()
+    await _ensure_server_log_peer_column()
     await _bootstrap_defaults()
     logger.info("База данных инициализирована")
 

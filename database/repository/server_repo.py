@@ -28,3 +28,17 @@ class ServerRepository:
     @staticmethod
     async def list_active() -> list[Server]:
         return await Server.filter(is_active=True).order_by("id")
+
+    @staticmethod
+    async def set_log_peer(server_id: int, peer_id: int | None) -> Server:
+        server = await Server.get(id=server_id)
+        server.log_peer_id = peer_id
+        await server.save()
+        return server
+
+    @staticmethod
+    async def get_log_peer_id(server_id: int) -> int | None:
+        server = await Server.get_or_none(id=server_id)
+        if not server or not server.log_peer_id:
+            return None
+        return int(server.log_peer_id)

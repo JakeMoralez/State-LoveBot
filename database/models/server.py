@@ -11,6 +11,7 @@ class Server(Model):
     slug = fields.CharField(max_length=64, unique=True)
     name = fields.CharField(max_length=128)
     is_active = fields.BooleanField(default=True)
+    log_peer_id = fields.BigIntField(null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
 
     class Meta:

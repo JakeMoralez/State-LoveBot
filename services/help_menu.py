@@ -125,6 +125,17 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
             HelpEntry("/addcourt", "Назначить судью", 2, ca=True),
             HelpEntry("/removecourt", "Снять судью [@user]", 2, ca=True),
             HelpEntry("/court", "Список судей", 0),
+        ),
+    ),
+)
+
+DEV_HELP_CATEGORIES: tuple[HelpCategory, ...] = (
+    HelpCategory(
+        "🔟 Разработчик",
+        (
+            HelpEntry("/devhelp", "Справка для ур. 10"),
+            HelpEntry("/regchat logs", "Беседа для логов бота", 10),
+            HelpEntry("/regchat logs off", "Отвязать беседу логов", 10),
             HelpEntry("/deluser", "Удалить пользователя из БД", 10),
         ),
     ),
@@ -140,20 +151,28 @@ def _level_marker(entry: HelpEntry) -> str:
     return base
 
 
-def build_help_text() -> str:
-    lines = ["📗 Команды State-LoveBot", ""]
+def _format_categories(categories: tuple[HelpCategory, ...], *, header: str) -> str:
+    lines = [header, ""]
 
-    for category in HELP_CATEGORIES:
+    for category in categories:
         lines.append(category.title)
         for entry in category.entries:
             marker = _level_marker(entry)
             lines.append(f"{marker} {entry.cmd} — {entry.desc}")
         lines.append("")
 
-    lines.extend(
-        [
-            "🌐 — всем  ·  1️⃣–9️⃣ — мин. уровень  ·  🏛 — доступ ЦА (ур. 1–4)",
-            "⚖️ — судебный доступ к форуму  ·  / и !",
-        ]
-    )
     return "\n".join(lines)
+
+
+def build_help_text() -> str:
+    body = _format_categories(HELP_CATEGORIES, header="📗 Команды State-LoveBot")
+    return (
+        f"{body}"
+        "🌐 — всем  ·  1️⃣–9️⃣ — мин. уровень  ·  🏛 — доступ ЦА (ур. 1–4)\n"
+        "⚖️ — судебный доступ к форуму  ·  / и !"
+    )
+
+
+def build_dev_help_text() -> str:
+    body = _format_categories(DEV_HELP_CATEGORIES, header="🛠 Dev-команды (ур. 10)")
+    return f"{body}🔟 — только разработчик  ·  / и !"

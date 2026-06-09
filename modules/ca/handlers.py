@@ -214,7 +214,7 @@ def register_ca(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         )
         if not await UserRepository.is_developer(actor_id):
             if await UserRepository.is_developer(target_id):
-                await message.answer("❌ Нельзя снять роли с главного разработчика.")
+                await message.answer("❌ Нельзя снять роли с разработчика.")
                 return
             target_level = await UserRepository.get_access_level(target_id, server_id)
             if target_level >= actor_level:

@@ -11,11 +11,12 @@ from vkbottle.bot import Bot, Message, MessageEvent
 from config.settings import VK_USER_TOKEN
 from database.models.user import AccessLevel
 from database.repository.chat_repo import ChatRepository
+from database.repository.server_repo import ServerRepository
 from database.repository.congress_repo import CongressRepository
 from database.repository.forum_role_repo import ForumRoleRepository
 from database.repository.pool_repo import PoolRepository
 from database.repository.user_repo import UserRepository
-from middlewares.access import AccessChecker, requires_level
+from middlewares.access import AccessChecker, requires_developer, requires_level
 from middlewares.congress_access import requires_msg
 from middlewares.action_logger import ActionLogger
 from services.command_utils import dual, dual_args, dual_with_args
@@ -252,7 +253,77 @@ def register_pools(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         await message.answer(
             "❌ Использование: /regchat [ID/название пула] [алиас]\n"
             "Пример: /regchat 1 court\n"
-            "Алиасы: court, lead_co, lead_gos и т.д."
+            "Алиасы: court, lead_co, lead_gos и т.д.\n"
+            "Ур. 10: /devhelp — /regchat logs"
+        )
+
+    @bot.on.message(text=dual_with_args("regchat", "logs off"))
+    @requires_developer
+    async def regchat_logs_off(
+        message: Message,
+        server_id: int = 0,
+        access_level: int = 0,
+    ) -> None:
+        if message.peer_id < 2_000_000_000:
+            await message.answer("❌ Команда доступна только в беседах.")
+            return
+
+        current = await ServerRepository.get_log_peer_id(server_id)
+        if current != message.peer_id:
+            await message.answer("❌ Эта беседа не зарегистрирована как logs.")
+            return
+
+        await ServerRepository.set_log_peer(server_id, None)
+        await message.answer(
+            "✅ Беседа логов отвязана.\n"
+            "Логи снова уходят в ЛС (MAIN_ADMIN_ID / LOG_CHAT_ID)."
+        )
+        await action_logger.log_user(
+            "regchat_logs",
+            message.from_id,
+            f"peer {message.peer_id}",
+            "Отвязана",
+            source_peer_id=message.peer_id,
+        )
+
+    @bot.on.message(text=dual_with_args("regchat", "logs"))
+    @requires_developer
+    async def regchat_logs(
+        message: Message,
+        server_id: int = 0,
+        access_level: int = 0,
+    ) -> None:
+        if message.peer_id < 2_000_000_000:
+            await message.answer("❌ Команда доступна только в беседах.")
+            return
+
+        title = None
+        try:
+            conv = await api.messages.get_conversations_by_id(peer_ids=[message.peer_id])
+            if conv.items:
+                title = conv.items[0].chat_settings.title
+        except Exception as exc:
+            logger.warning("Не удалось получить название беседы логов: %s", exc)
+
+        await ChatRepository.register_chat(
+            peer_id=message.peer_id,
+            server_id=server_id,
+            pool_id=None,
+            alias=None,
+            title=title,
+            registered_by=message.from_id,
+        )
+        await ServerRepository.set_log_peer(server_id, message.peer_id)
+        await message.answer(
+            f"✅ Беседа «{title or message.peer_id}» — канал логов.\n"
+            "Все действия бота пишутся сюда."
+        )
+        await action_logger.log_user(
+            "regchat_logs",
+            message.from_id,
+            f"peer {message.peer_id}",
+            "Зарегистрирована",
+            source_peer_id=message.peer_id,
         )
 
     @bot.on.message(text=dual_with_args("regchat", "<pool_ref> <alias>"))

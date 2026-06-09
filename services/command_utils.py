@@ -13,6 +13,7 @@ COMMAND_ALIASES: dict[str, tuple[str, ...]] = {
     "deluser": ("du",),
     "members": ("mems", "member", "nlist", "nicklist"),
     "regchat": ("rchat",),
+    "devhelp": ("dhelp",),
     "createpool": ("cpool",),
     "staff": ("access", "accesses"),
     "court": ("judges",),

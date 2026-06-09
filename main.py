@@ -17,10 +17,11 @@ from vkbottle.polling import BotPolling
 from config import VK_GROUP_ID, VK_GROUP_TOKEN
 from config.logging_setup import setup_logging
 from database import close_db, init_db
+from middlewares.access import requires_developer
 from middlewares.action_logger import ActionLogger
 from modules import register_all_modules
 from services.forum_api import ForumService, _ARIZONA_IMPORT_ERROR, _HAS_ARIZONA
-from services.help_menu import build_help_text
+from services.help_menu import build_dev_help_text, build_help_text
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +44,15 @@ def create_bot(token: str, group_id: int) -> tuple[Bot, API, ActionLogger]:
     @bot.on.message(text=["/help", "/start", "!help", "!start"])
     async def help_handler(message: Message) -> None:
         await message.answer(build_help_text())
+
+    @bot.on.message(text=["/devhelp", "!devhelp"])
+    @requires_developer
+    async def devhelp_handler(
+        message: Message,
+        server_id: int = 0,
+        access_level: int = 0,
+    ) -> None:
+        await message.answer(build_dev_help_text())
 
     @bot.on.message(text=["/ping", "!ping"])
     async def ping_handler(message: Message) -> None:
