@@ -49,6 +49,16 @@ _SETNICK_FORMAT_ERR = (
     "Или ответом на сообщение."
 )
 
+_NICK_TARGET_ERR = (
+    "❌ Неверный формат.\n"
+    "Укажите @user, [id|имя], vk.ru/… или ответьте на сообщение."
+)
+
+_VK_REF_ONLY = re.compile(
+    rf"^(?:\[id(\d+)\|[^\]]+\]|@(\S+)|({_VK_REF}))$",
+    re.IGNORECASE,
+)
+
 
 async def _parse_setnick(message: Message, api: API) -> tuple[int | None, str | None, str | None]:
     """(target_id, nickname, error_message)."""
@@ -95,6 +105,38 @@ async def _parse_setnick(message: Message, api: API) -> tuple[int | None, str | 
     return None, None, _SETNICK_FORMAT_ERR
 
 
+async def _parse_nick_target(message: Message, api: API) -> tuple[int | None, str | None]:
+    """(target_id, error_message) — для /rnick."""
+    args = strip_cmd(message.text or "", "rnick")
+    resolver = VKResolver(api)
+
+    if message.reply_message and message.reply_message.from_id > 0:
+        return message.reply_message.from_id, None
+
+    if not args:
+        return None, _NICK_TARGET_ERR
+
+    lead = _VK_REF_ONLY.match(args.strip())
+    if not lead:
+        return None, _NICK_TARGET_ERR
+
+    vk_id_raw, screen, url_ref = lead.group(1), lead.group(2), lead.group(3)
+    if vk_id_raw:
+        return int(vk_id_raw), None
+    if screen:
+        resolved = await resolver.resolve(f"@{screen}")
+        if resolved:
+            return resolved.vk_id, None
+        return None, _NICK_TARGET_ERR
+    if url_ref:
+        resolved = await resolver.resolve(url_ref)
+        if resolved:
+            return resolved.vk_id, None
+        return None, _NICK_TARGET_ERR
+
+    return None, _NICK_TARGET_ERR
+
+
 async def format_who_card(vk_id: int, api: API) -> str:
     emoji = random.choice(_WHO_EMOJIS)
     link = await DisplayNameService(api).link_user(vk_id)
@@ -102,6 +144,8 @@ async def format_who_card(vk_id: int, api: API) -> str:
 
 
 def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
+    names = DisplayNameService(api)
+
     @bot.on.message(FuncRule(lambda m: matches_cmd(m.text or "", "setnick")))
     @requires_setnick
     async def setnick(
@@ -113,13 +157,17 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         if err:
             await message.answer(err)
             return
-        if not nickname:
+        if not nickname or target_id is None:
             await message.answer("❌ Укажите никнейм.")
             return
 
         ok, val_err = NicknameValidator.validate(nickname)
         if not ok:
             await message.answer(f"❌ {val_err}")
+            return
+
+        if await UserRepository.has_nickname(target_id):
+            await message.answer("❌ Никнейм уже установлен. Сначала /rnick.")
             return
 
         if target_id != message.from_id:
@@ -132,13 +180,57 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             )
 
         await UserRepository.set_nickname(target_id, nickname)
-        link = DisplayNameService.nick_link(target_id, nickname)
-        await message.answer(f"✅ Никнейм установлен: {link}", disable_mentions=1)
+        actor = await names.format_setnick_actor(message.from_id or 0)
+        target_link = DisplayNameService.nick_link(target_id, nickname)
+        await message.answer(
+            f"{actor} поставил никнейм '{nickname}' {target_link}.",
+            disable_mentions=1,
+        )
         await action_logger.log_user(
             "setnick",
             message.from_id,
             f"id{target_id} → {nickname}",
             "Установлен",
+            source_peer_id=message.peer_id,
+        )
+
+    @bot.on.message(FuncRule(lambda m: matches_cmd(m.text or "", "rnick")))
+    @requires_setnick
+    async def rnick(
+        message: Message,
+        server_id: int = 0,
+        access_level: int = 0,
+    ) -> None:
+        target_id, err = await _parse_nick_target(message, api)
+        if err:
+            await message.answer(err)
+            return
+        if target_id is None:
+            await message.answer(_NICK_TARGET_ERR)
+            return
+
+        if not await UserRepository.has_nickname(target_id):
+            link = await names.link_user(target_id)
+            await message.answer(
+                f"❌ У {link} нет никнейма.",
+                disable_mentions=1,
+            )
+            return
+
+        user = await UserRepository.get_by_vk_id(target_id)
+        old_nick = user.nickname if user else ""
+        await UserRepository.clear_nickname(target_id)
+        actor = await names.format_setnick_actor(message.from_id or 0)
+        target_link = await names.link_user(target_id)
+        await message.answer(
+            f"{actor} снял никнейм '{old_nick}' у {target_link}.",
+            disable_mentions=1,
+        )
+        await action_logger.log_user(
+            "rnick",
+            message.from_id,
+            f"id{target_id} ← {old_nick}",
+            "Снят",
             source_peer_id=message.peer_id,
         )
 

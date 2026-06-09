@@ -175,6 +175,7 @@ def register_ca(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         *,
         target_args: str | None,
         server_id: int,
+        access_level: int = 0,
     ) -> None:
         actor_id = message.from_id or 0
         if actor_id <= 0:
@@ -189,7 +190,7 @@ def register_ca(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             await message.answer(
                 "❌ /raccess [@user|ник] — снять роли с пользователя.\n"
                 "Или ответом на его сообщение.\n"
-                "С себя снять нельзя — только ЗГС+ с другого."
+                "Не с себя; нельзя снимать с уровня своего и выше."
             )
             return
 
@@ -207,6 +208,24 @@ def register_ca(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         if target_id == actor_id:
             await message.answer("❌ /raccess — только с другого пользователя, не с себя.")
             return
+
+        actor_level = access_level or await UserRepository.get_access_level(
+            actor_id, server_id
+        )
+        if not await UserRepository.is_developer(actor_id):
+            if await UserRepository.is_developer(target_id):
+                await message.answer("❌ Нельзя снять роли с главного разработчика.")
+                return
+            target_level = await UserRepository.get_access_level(target_id, server_id)
+            if target_level >= actor_level:
+                from middlewares.access import AccessChecker
+
+                await message.answer(
+                    "❌ Нельзя снять роли с пользователя своего уровня или выше.\n"
+                    f"Ваш: {AccessChecker.level_name(actor_level)} ({actor_level}), "
+                    f"у цели: {AccessChecker.level_name(target_level)} ({target_level})."
+                )
+                return
 
         removed = await revoke_accesses(target_id, server_id)
         if not removed:
@@ -232,17 +251,19 @@ def register_ca(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         )
 
     @bot.on.message(text=dual("raccess"))
-    @requires_level(AccessLevel.ZGS)
+    @requires_level(AccessLevel.SUPERVISOR)
     @requires_ca_scope
     async def raccess_usage(
         message: Message,
         server_id: int = 0,
         access_level: int = 0,
     ) -> None:
-        await _run_raccess(message, target_args=None, server_id=server_id)
+        await _run_raccess(
+            message, target_args=None, server_id=server_id, access_level=access_level
+        )
 
     @bot.on.message(text=dual_args("raccess"))
-    @requires_level(AccessLevel.ZGS)
+    @requires_level(AccessLevel.SUPERVISOR)
     @requires_ca_scope
     async def raccess_target(
         message: Message,
@@ -250,7 +271,9 @@ def register_ca(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         server_id: int = 0,
         access_level: int = 0,
     ) -> None:
-        await _run_raccess(message, target_args=args, server_id=server_id)
+        await _run_raccess(
+            message, target_args=args, server_id=server_id, access_level=access_level
+        )
 
     @bot.on.message(text=dual("regrole"))
     @requires_level(AccessLevel.ZGS)

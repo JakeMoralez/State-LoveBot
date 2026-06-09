@@ -8,6 +8,7 @@ import logging
 from vkbottle import API, GroupEventType
 from vkbottle.bot import Bot, Message, MessageEvent
 
+from database.models.chat_settings import GuardMode
 from database.models.user import AccessLevel
 from database.repository.chat_settings_repo import ChatSettingsRepository
 from middlewares.access import AccessChecker, requires_level, requires_public
@@ -20,6 +21,7 @@ from services.invite_guard import (
     handle_member_joined,
     handle_voluntary_leave,
 )
+from services.display_name import DisplayNameService
 from services.messaging import MessagingService
 from services.moderation import ModerationService
 from services.ca_access import handle_sled_ca_join, handle_sled_ca_leave
@@ -160,15 +162,38 @@ def register_chat(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             logger.error("unpin failed peer=%s: %s", message.peer_id, exc)
             await message.answer(f"❌ Не удалось открепить: {exc}")
 
+    async def _send_text(peer_id: int, text: str) -> None:
+        await api.messages.send(
+            peer_id=peer_id,
+            message=text,
+            random_id=messaging.random_id(),
+            disable_mentions=1,
+        )
+
     async def _notify_member_left(
         peer_id: int,
         user_id: int,
         *,
         voluntary: bool,
+        actor_id: int | None = None,
     ) -> None:
         try:
             notices: list[str] = []
             role_notice: str | None = None
+
+            settings = await ChatSettingsRepository.get(peer_id)
+            names = DisplayNameService(api)
+            target_link = await names.link_user(user_id)
+
+            if voluntary:
+                if settings.rejoin_kick == GuardMode.OFF:
+                    notices.append(f"➖ {target_link} покинул(а) беседу.")
+            elif actor_id and actor_id > 0 and actor_id != user_id:
+                actor_link = await names.link_user(actor_id)
+                notices.append(f"🚫 {actor_link} исключил(а) {target_link}.")
+            else:
+                notices.append(f"🚫 {target_link} исключён(а) из беседы.")
+
             role_notice = await handle_role_chat_leave(peer_id, user_id, api)
             if role_notice:
                 notices.append(role_notice)
@@ -182,12 +207,7 @@ def register_chat(bot: Bot, api: API, action_logger: ActionLogger) -> None:
                     await _send_notice(peer_id, rejoink_notice)
 
             for notice in notices:
-                await api.messages.send(
-                    peer_id=peer_id,
-                    message=notice,
-                    random_id=messaging.random_id(),
-                    disable_mentions=1,
-                )
+                await _send_text(peer_id, notice)
             if role_notice:
                 await action_logger.log_user(
                     "role_leave",
@@ -199,7 +219,18 @@ def register_chat(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         except Exception as exc:
             logger.warning("role leave notice failed peer=%s user=%s: %s", peer_id, user_id, exc)
 
-    async def _welcome_member(peer_id: int, member_id: int) -> None:
+    async def _welcome_member(
+        peer_id: int,
+        member_id: int,
+        *,
+        actor_id: int | None = None,
+    ) -> None:
+        invited_by = (
+            actor_id
+            if actor_id and actor_id > 0 and actor_id != member_id
+            else None
+        )
+
         try:
             guard_notices = await handle_member_joined(
                 api=api,
@@ -216,27 +247,20 @@ def register_chat(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         try:
             sled_notice = await handle_sled_ca_join(peer_id, member_id, api)
             if sled_notice:
-                await api.messages.send(
-                    peer_id=peer_id,
-                    message=sled_notice,
-                    random_id=messaging.random_id(),
-                    disable_mentions=1,
-                )
+                await _send_text(peer_id, sled_notice)
         except Exception as exc:
             logger.warning("sled_ca join failed peer=%s member=%s: %s", peer_id, member_id, exc)
 
         try:
-            welcome = await messaging.format_invite_notice(member_id)
-            await api.messages.send(
-                peer_id=peer_id,
-                message=welcome,
-                random_id=messaging.random_id(),
-                disable_mentions=1,
+            welcome = await messaging.format_welcome_notice(
+                member_id,
+                invited_by=invited_by,
             )
+            await _send_text(peer_id, welcome)
         except Exception as exc:
             logger.warning("welcome failed peer=%s member=%s: %s", peer_id, member_id, exc)
 
-    @bot.on.raw_event(GroupEventType.MESSAGE_NEW)
+    @bot.on.raw_event(GroupEventType.MESSAGE_NEW, blocking=False)
     async def on_random_reaction(event: dict) -> None:
         await maybe_add_reaction(api, event)
 
@@ -249,22 +273,28 @@ def register_chat(bot: Bot, api: API, action_logger: ActionLogger) -> None:
 
         peer_id = parsed["peer_id"]
         member_id = parsed["member_id"]
+        actor_id = parsed.get("actor_id")
         kind = parsed["kind"]
 
         logger.info(
-            "chat event peer=%s user=%s kind=%s action=%s",
+            "chat event peer=%s user=%s actor=%s kind=%s action=%s",
             peer_id,
             member_id,
+            actor_id,
             kind,
             parsed["action_type"],
         )
 
         if kind == "join":
-            await _welcome_member(peer_id, member_id)
+            await _welcome_member(peer_id, member_id, actor_id=actor_id)
         elif kind == "leave_voluntary":
-            await _notify_member_left(peer_id, member_id, voluntary=True)
+            await _notify_member_left(
+                peer_id, member_id, voluntary=True, actor_id=actor_id
+            )
         elif kind == "leave_kicked":
-            await _notify_member_left(peer_id, member_id, voluntary=False)
+            await _notify_member_left(
+                peer_id, member_id, voluntary=False, actor_id=actor_id
+            )
 
     @bot.on.raw_event(GroupEventType.MESSAGE_EVENT, MessageEvent)
     async def rejoinkick_kick_callback(event: MessageEvent) -> None:

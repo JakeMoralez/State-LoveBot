@@ -81,9 +81,12 @@ def parse_chat_member_event(event: dict[str, Any]) -> dict[str, Any] | None:
     if not kind:
         return None
 
+    actor_id = from_id if from_id and from_id > 0 else None
+
     return {
         "peer_id": int(peer_id),
         "action_type": action_type,
         "member_id": resolved_member,
+        "actor_id": actor_id,
         "kind": kind,
     }

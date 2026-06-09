@@ -33,6 +33,7 @@ _USER_TARGET_ACTIONS = frozenset({
     "poolkick",
     "setlevel",
     "setnick",
+    "rnick",
 })
 
 _ACTION_EMOJI: dict[str, str] = {
@@ -53,6 +54,7 @@ _ACTION_EMOJI: dict[str, str] = {
     "poolkick": "🚫",
     "setlevel": "🔐",
     "setnick": "✏️",
+    "rnick": "✏️",
     "create_pool": "📂",
     "regchat": "💬",
     "pool_msg": "📢",

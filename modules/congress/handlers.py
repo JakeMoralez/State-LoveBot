@@ -9,7 +9,7 @@ from vkbottle.bot import Bot, Message
 
 from database.models.user import AccessLevel
 from database.repository.congress_repo import CONGRESS_DEFAULT_ALIAS, CongressRepository
-from middlewares.access import requires_level
+from middlewares.access import requires_level, requires_public
 from middlewares.ca_access import requires_ca_scope
 from middlewares.action_logger import ActionLogger
 from services.command_utils import dual, dual_args
@@ -58,8 +58,7 @@ def register_congress(bot: Bot, api: API, action_logger: ActionLogger) -> None:
     names = DisplayNameService(api)
 
     @bot.on.message(text=dual("congress"))
-    @requires_level(AccessLevel.PGS, require_registered=True)
-    @requires_ca_scope
+    @requires_public
     async def congress_info(
         message: Message,
         server_id: int = 0,
@@ -71,7 +70,7 @@ def register_congress(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         )
 
     @bot.on.message(text=dual_args("setspeaker"))
-    @requires_level(AccessLevel.ZGS)
+    @requires_level(AccessLevel.SUPERVISOR)
     @requires_ca_scope
     async def set_speaker(
         message: Message,
@@ -124,7 +123,7 @@ def register_congress(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         )
 
     @bot.on.message(text=dual_args("setvice"))
-    @requires_level(AccessLevel.ZGS)
+    @requires_level(AccessLevel.SUPERVISOR)
     @requires_ca_scope
     async def set_vice(
         message: Message,
@@ -177,7 +176,7 @@ def register_congress(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         )
 
     @bot.on.message(text=dual("removespeaker"))
-    @requires_level(AccessLevel.ZGS)
+    @requires_level(AccessLevel.SUPERVISOR)
     @requires_ca_scope
     async def remove_speaker(
         message: Message,
@@ -188,7 +187,7 @@ def register_congress(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         await message.answer("✅ Спикер снят." if ok else "❌ Спикер не был назначен.")
 
     @bot.on.message(text=dual("removevice"))
-    @requires_level(AccessLevel.ZGS)
+    @requires_level(AccessLevel.SUPERVISOR)
     @requires_ca_scope
     async def remove_vice(
         message: Message,

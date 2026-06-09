@@ -6,6 +6,7 @@ from __future__ import annotations
 COMMAND_ALIASES: dict[str, tuple[str, ...]] = {
     "setlevel": ("setlvl", "lvl"),
     "setnick": ("snick", "nick"),
+    "rnick": ("removenick", "clearnick"),
     "kick": ("k",),
     "poolkick": ("pkick", "pullkick"),
     "addcourt": ("acourt",),
@@ -20,7 +21,8 @@ COMMAND_ALIASES: dict[str, tuple[str, ...]] = {
     "regcongress": ("regcong",),
     "regrole": ("regcourt", "regsledco", "regsledca"),
     "setca": ("adostupca", "dostupca", "caaccess"),
-    "raccess": ("rcourt", "removecourt", "rrole"),
+    "raccess": ("rrole",),
+    "removecourt": ("rcourt",),
     "unregchat": ("unlinkchat", "delchat", "unpool"),
     "setspeaker": ("speaker",),
     "setvice": ("vice",),

@@ -147,6 +147,10 @@ class DisplayNameService:
         label = self.sanitize_vk_label(f"［{title}］ {nick}", vk_id=vk_id)
         return f"[id{vk_id}|{label}]"
 
+    async def format_setnick_actor(self, vk_id: int) -> str:
+        """Инициатор /snick, /rnick — только ник."""
+        return await self.link_user(vk_id)
+
     async def format_kick_announce(
         self,
         *,

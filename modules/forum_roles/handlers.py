@@ -12,10 +12,9 @@ from database.models.role_chat import ForumRoleKey
 from database.models.user import AccessLevel
 from database.repository.forum_role_repo import ForumRoleRepository
 from database.repository.user_repo import UserRepository
-from middlewares.access import requires_developer, requires_level
+from middlewares.access import requires_developer, requires_level, requires_public
 from middlewares.ca_access import requires_ca_scope
 from middlewares.action_logger import ActionLogger
-from middlewares.forum_access import requires_court_manager
 from services.command_utils import dual, dual_args
 from services.display_name import DisplayNameService
 from services.vk_resolver import VKResolver
@@ -154,10 +153,67 @@ def register_forum_roles(bot: Bot, api: API, action_logger: ActionLogger) -> Non
         )
 
     @bot.on.message(text=dual("court"))
-    @requires_court_manager
+    @requires_public
     async def list_court(message: Message, server_id: int = 0) -> None:
         users = await ForumRoleRepository.list_by_role(ForumRoleKey.JUDGE)
         await message.answer(
             await _format_judge_list(users, api),
             disable_mentions=1,
+        )
+
+    @bot.on.message(text=dual_args("removecourt"))
+    @requires_level(AccessLevel.SUPERVISOR)
+    @requires_ca_scope
+    async def remove_court(
+        message: Message,
+        args: str | None = None,
+        server_id: int = 0,
+        access_level: int = 0,
+    ) -> None:
+        if not args and not (
+            message.reply_message and message.reply_message.from_id > 0
+        ):
+            await message.answer(
+                "❌ /removecourt [@user|ник|vk.ru]\n"
+                "Или ответом на сообщение судьи."
+            )
+            return
+
+        reply_id = (
+            message.reply_message.from_id
+            if message.reply_message and message.reply_message.from_id > 0
+            else None
+        )
+        target_raw = VKResolver.extract_reference(args or "")
+        resolved, hint = await resolver.resolve_from_message_with_hint(
+            target_raw, reply_from_id=reply_id
+        )
+        if hint:
+            await message.answer(hint, disable_mentions=1)
+            return
+        if not resolved:
+            await message.answer("❌ Пользователь не найден.")
+            return
+
+        if not await ForumRoleRepository.is_judge(resolved.vk_id):
+            link = await DisplayNameService(api).link_user(resolved.vk_id)
+            await message.answer(
+                f"❌ {link} не является судьёй.",
+                disable_mentions=1,
+            )
+            return
+
+        await ForumRoleRepository.clear_judge_role(resolved.vk_id)
+        names = DisplayNameService(api)
+        link = await names.link_user(resolved.vk_id)
+        await message.answer(
+            f"⚖️ {link} — роль судьи снята.",
+            disable_mentions=1,
+        )
+        await action_logger.log_user(
+            "remove_judge",
+            message.from_id,
+            f"id{resolved.vk_id}",
+            "Снят с судей",
+            source_peer_id=message.peer_id,
         )

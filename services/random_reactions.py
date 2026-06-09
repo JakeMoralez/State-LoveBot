@@ -25,6 +25,9 @@ async def maybe_add_reaction(
         return
 
     message = (event.get("object") or {}).get("message") or {}
+    if message.get("action"):
+        return
+
     peer_id = message.get("peer_id")
     cmid = message.get("conversation_message_id")
     if not peer_id or int(peer_id) < 2_000_000_000 or not cmid:

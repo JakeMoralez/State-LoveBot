@@ -270,6 +270,20 @@ class UserRepository:
         return user
 
     @staticmethod
+    async def clear_nickname(vk_id: int) -> bool:
+        user = await User.get_or_none(vk_id=vk_id)
+        if not user or not (user.nickname and user.nickname.strip()):
+            return False
+        user.nickname = None
+        await user.save()
+        return True
+
+    @staticmethod
+    async def has_nickname(vk_id: int) -> bool:
+        user = await User.get_or_none(vk_id=vk_id)
+        return bool(user and user.nickname and user.nickname.strip())
+
+    @staticmethod
     async def ensure_user(
         vk_id: int,
         username: str | None = None,

@@ -55,6 +55,7 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
         "👤 Профиль",
         (
             HelpEntry("/setnick", "Установить ник [@user] [ник]", 1),
+            HelpEntry("/rnick", "Снять ник [@user]", 1),
             HelpEntry("/who", "Карточка пользователя", 0),
             HelpEntry("/members", "Участники беседы", 0),
             HelpEntry("/staff", "Список доступов и ролей", 1),
@@ -99,7 +100,7 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
         "🏛 ЦА",
         (
             HelpEntry("/setca", "Выдать или снять доступ ЦА [@user] [off]", 3, ca=True),
-            HelpEntry("/raccess", "Снять роли с пользователя [@user]", 3, ca=True),
+            HelpEntry("/raccess", "Снять роли с пользователя [@user]", 2, ca=True),
             HelpEntry(
                 "/regrole",
                 "Привязать беседу: court, congress, sledca",
@@ -111,18 +112,19 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
     HelpCategory(
         "🏛 Конгресс",
         (
-            HelpEntry("/setspeaker", "Назначить спикера", 3, ca=True),
-            HelpEntry("/setvice", "Назначить вице-спикера", 3, ca=True),
-            HelpEntry("/congress", "Инфо о конгрессе", 1, ca=True),
-            HelpEntry("/removespeaker", "Снять спикера", 3, ca=True),
-            HelpEntry("/removevice", "Снять вице-спикера", 3, ca=True),
+            HelpEntry("/setspeaker", "Назначить спикера", 2, ca=True),
+            HelpEntry("/setvice", "Назначить вице-спикера", 2, ca=True),
+            HelpEntry("/congress", "Инфо о конгрессе", 0),
+            HelpEntry("/removespeaker", "Снять спикера", 2, ca=True),
+            HelpEntry("/removevice", "Снять вице-спикера", 2, ca=True),
         ),
     ),
     HelpCategory(
         "⚖️ Судьи",
         (
             HelpEntry("/addcourt", "Назначить судью", 2, ca=True),
-            HelpEntry("/court", "Список судей", 3, ca=True),
+            HelpEntry("/removecourt", "Снять судью [@user]", 2, ca=True),
+            HelpEntry("/court", "Список судей", 0),
             HelpEntry("/deluser", "Удалить пользователя из БД", 10),
         ),
     ),
