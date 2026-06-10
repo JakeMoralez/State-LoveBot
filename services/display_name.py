@@ -138,16 +138,6 @@ class DisplayNameService:
     ) -> str | None:
         return await self.get_ping_nickname(vk_id, server_id)
 
-    async def get_invite_label(
-        self,
-        vk_id: int,
-        server_id: int | None = None,
-    ) -> str:
-        nick = await self.get_ping_nickname(vk_id, server_id)
-        if nick:
-            return nick
-        return await self.get_vk_full_name(vk_id)
-
     async def mention_user(
         self,
         vk_id: int,

@@ -18,7 +18,9 @@ class PendingMsg:
     target_peer_id: int
     target_title: str | None
     text: str
+    send_body: str
     preview_body: str
+    attachments: str | None
     created_at: float
 
 
@@ -37,7 +39,9 @@ def create(
     target_peer_id: int,
     target_title: str | None,
     text: str,
+    send_body: str,
     preview_body: str,
+    attachments: str | None = None,
 ) -> str:
     _cleanup()
     token = secrets.token_hex(8)
@@ -48,7 +52,9 @@ def create(
         target_peer_id=target_peer_id,
         target_title=target_title,
         text=text,
+        send_body=send_body,
         preview_body=preview_body,
+        attachments=attachments,
         created_at=time.time(),
     )
     return token

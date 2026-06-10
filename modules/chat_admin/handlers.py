@@ -13,7 +13,7 @@ from database.repository.chat_settings_repo import ChatSettingsRepository
 from middlewares.access import AccessChecker, requires_level, requires_public
 from middlewares.action_logger import ActionLogger
 from services.chat_admin import ChatAdminService
-from services.command_utils import dual, dual_args, dual_with_args
+from services.command_utils import dual, dual_with_args
 from services.display_name import DisplayNameService
 from services.vk_resolver import VKResolver
 
@@ -35,9 +35,8 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
             if message.reply_message and message.reply_message.from_id > 0
             else None
         )
-        target_raw = VKResolver.extract_reference(args or "")
         resolved = await VKResolver(api, server_id).resolve_from_message(
-            target_raw,
+            args or "",
             reply_from_id=reply_id,
             server_id=server_id,
         )

@@ -19,7 +19,7 @@ from database.repository.user_repo import UserRepository
 from middlewares.access import AccessChecker, requires_developer, requires_level
 from middlewares.congress_access import requires_msg
 from middlewares.action_logger import ActionLogger
-from services.command_utils import dual, dual_args, dual_with_args
+from services.command_utils import dual, dual_args, dual_with_args, strip_cmd
 from services.messaging import MessagingService
 from services.msg_keyboard import create_msg_confirm_keyboard
 from services.msg_pending import pop as pop_pending_msg
@@ -70,18 +70,29 @@ def _format_msg_preview(
     target_title: str | None,
     text: str,
     preview_body: str,
+    attachments: str | None = None,
 ) -> str:
     chat_label = f"«{alias}» ({target_title or 'беседа'})"
-    return (
-        f"📋 Предпросмотр оповещения\n"
-        f"━━━━━━━━━━━━━━━━\n"
-        f"📂 Беседа: {chat_label}\n"
-        f"📝 Текст: {text}\n\n"
-        f"Так увидят участники:\n"
-        f"━━━━━━━━━━━━━━━━\n"
-        f"{preview_body}\n\n"
-        f"👇 Подтвердите отправку:"
+    lines = [
+        "📋 Предпросмотр оповещения",
+        "━━━━━━━━━━━━━━━━",
+        f"📂 Беседа: {chat_label}",
+        f"📝 Текст: {text}",
+    ]
+    attach_label = MessagingService.attachment_preview_label(attachments)
+    if attach_label:
+        lines.append(attach_label)
+    lines.extend(
+        [
+            "",
+            "Так увидят участники:",
+            "━━━━━━━━━━━━━━━━",
+            preview_body,
+            "",
+            "👇 Подтвердите отправку:",
+        ]
     )
+    return "\n".join(lines)
 
 
 async def _can_use_msg(user_id: int, peer_id: int) -> tuple[bool, int, str]:
@@ -144,15 +155,19 @@ def register_pools(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         target_peer_id: int,
         target_title: str | None,
         text: str,
-        preview_body: str,
+        send_body: str,
+        attachments: str | None = None,
     ) -> None:
         try:
-            await api.messages.send(
-                peer_id=target_peer_id,
-                message=preview_body,
-                random_id=messaging.random_id(),
-                disable_mentions=0,
-            )
+            params: dict = {
+                "peer_id": target_peer_id,
+                "message": send_body,
+                "random_id": messaging.random_id(),
+                "disable_mentions": 0,
+            }
+            if attachments:
+                params["attachment"] = attachments
+            await api.messages.send(**params)
             await api.messages.send(
                 peer_id=source_peer_id,
                 message=(
@@ -411,19 +426,41 @@ def register_pools(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             source_peer_id=message.peer_id,
         )
 
-    @bot.on.message(text=dual_with_args("msg", "<alias> <text>"))
+    @bot.on.message(text=dual_args("msg"))
     @requires_msg
     async def pool_msg(
         message: Message,
-        alias: str,
-        text: str,
+        args: str | None = None,
         server_id: int = 0,
         access_level: int = 0,
         msg_mode: str = "supervisor",
     ) -> None:
-        text = text.strip()
-        if not text:
-            header = f"❌ Укажите текст после алиаса «{alias}»."
+        raw = strip_cmd(message.text or "", "msg").strip()
+        attachments = MessagingService.extract_photo_attachments(message)
+
+        if not raw:
+            if msg_mode == "congress":
+                await message.answer(
+                    await _format_congress_msg_help(
+                        server_id,
+                        header="❌ Использование: /msg [алиас] [текст]",
+                    )
+                )
+            else:
+                await message.answer(
+                    await _format_aliases_message(
+                        server_id,
+                        header="❌ Использование: /msg [алиас] [текст]",
+                    )
+                )
+            return
+
+        parts = raw.split(maxsplit=1)
+        alias = parts[0]
+        msg_text = parts[1].strip() if len(parts) > 1 else ""
+
+        if not msg_text and not attachments:
+            header = f"❌ Укажите текст: /msg {alias} [текст]"
             reply = (
                 await _format_congress_msg_help(server_id, header=header)
                 if msg_mode == "congress"
@@ -439,9 +476,15 @@ def register_pools(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         if not target:
             return
 
-        preview_body = await messaging.build_alert_message(
+        send_body = await messaging.build_alert_message(
             peer_id=target.peer_id,
-            text=text,
+            text=msg_text,
+            sender_vk_id=message.from_id,
+            server_id=server_id,
+        )
+        preview_body = await messaging.build_alert_preview(
+            peer_id=target.peer_id,
+            text=msg_text,
             sender_vk_id=message.from_id,
             server_id=server_id,
         )
@@ -451,62 +494,25 @@ def register_pools(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             alias=target.alias or alias,
             target_peer_id=target.peer_id,
             target_title=target.title,
-            text=text,
+            text=msg_text,
+            send_body=send_body,
             preview_body=preview_body,
+            attachments=attachments,
         )
         preview_text = _format_msg_preview(
             alias=target.alias or alias,
             target_title=target.title,
-            text=text,
+            text=msg_text or "📷",
             preview_body=preview_body,
+            attachments=attachments,
         )
         await message.answer(
             preview_text,
             keyboard=create_msg_confirm_keyboard(token),
-            disable_mentions=0,
+            disable_mentions=1,
         )
 
-    @bot.on.message(text=dual_with_args("msg", "<alias>"))
-    @requires_msg
-    async def msg_missing_text(
-        message: Message,
-        alias: str,
-        server_id: int = 0,
-        access_level: int = 0,
-        msg_mode: str = "supervisor",
-    ) -> None:
-        header = f"❌ Укажите текст: /msg {alias} [текст]"
-        reply = (
-            await _format_congress_msg_help(server_id, header=header)
-            if msg_mode == "congress"
-            else await _format_aliases_message(server_id, header=header)
-        )
-        await message.answer(reply)
-
-    @bot.on.message(text=dual("msg"))
-    @requires_msg
-    async def msg_usage(
-        message: Message,
-        server_id: int = 0,
-        access_level: int = 0,
-        msg_mode: str = "supervisor",
-    ) -> None:
-        if msg_mode == "congress":
-            await message.answer(
-                await _format_congress_msg_help(
-                    server_id,
-                    header="❌ Использование: /msg [алиас] [текст]",
-                )
-            )
-            return
-        await message.answer(
-            await _format_aliases_message(
-                server_id,
-                header="❌ Использование: /msg [алиас] [текст]",
-            )
-        )
-
-    @bot.on.raw_event(GroupEventType.MESSAGE_EVENT, MessageEvent)
+    @bot.on.raw_event(GroupEventType.MESSAGE_EVENT, MessageEvent, blocking=False)
     async def msg_confirm_callback(event: MessageEvent) -> None:
         payload = event.payload
         if isinstance(payload, str):
@@ -552,5 +558,6 @@ def register_pools(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             target_peer_id=pending.target_peer_id,
             target_title=pending.target_title,
             text=pending.text,
-            preview_body=pending.preview_body,
+            send_body=pending.send_body,
+            attachments=pending.attachments,
         )

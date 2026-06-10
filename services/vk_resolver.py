@@ -82,6 +82,16 @@ class VKResolver:
         low = ref.lower()
         return "vk.com" in low or "vk.ru" in low
 
+    @staticmethod
+    def _prefers_vk_profile(raw: str, ref: str) -> bool:
+        """@user и vk-ссылки — сначала профиль VK, не ник бота."""
+        raw = (raw or "").strip()
+        ref = (ref or "").strip()
+        if raw.startswith("@") or ref.startswith("@"):
+            return True
+        low = raw.lower()
+        return "vk.com" in low or "vk.ru" in low
+
     async def _resolve_vk_id(self, vk_id: int) -> ResolvedUser:
         users = await self.api.users.get(user_ids=[vk_id])
         if users:
@@ -164,11 +174,22 @@ class VKResolver:
         raw: str,
         server_id: int | None = None,
     ) -> tuple[ResolvedUser | None, str | None]:
+        raw = (raw or "").strip()
         ref = self.extract_reference(raw)
         vk_id, screen_name = self.parse_reference(ref)
 
         if vk_id is not None and self._is_explicit_vk_id(ref):
             return await self._resolve_vk_id(vk_id), None
+
+        # @rp123 / vk.com/rp123 — сначала VK, не ник из БД бота
+        if screen_name and self._prefers_vk_profile(raw, ref):
+            vk_resolved = await self._resolve_vk_screen(screen_name)
+            if vk_resolved:
+                return vk_resolved, None
+            if self._prefers_vk_profile(raw, ref) and (
+                "vk.com" in raw.lower() or "vk.ru" in raw.lower()
+            ):
+                return None, f"❌ Профиль VK «{screen_name}» не найден."
 
         lookup = (screen_name or ref).strip().lstrip("@")
         if lookup:
@@ -193,9 +214,12 @@ class VKResolver:
         args: str,
         *,
         reply_from_id: int | None = None,
+        server_id: int | None = None,
     ) -> ResolvedUser | None:
         resolved, _err = await self.resolve_from_message_with_hint(
-            args, reply_from_id=reply_from_id
+            args,
+            reply_from_id=reply_from_id,
+            server_id=server_id,
         )
         return resolved
 

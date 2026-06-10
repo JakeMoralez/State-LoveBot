@@ -299,7 +299,7 @@ def register_chat(bot: Bot, api: API, action_logger: ActionLogger) -> None:
                 peer_id, member_id, voluntary=False, actor_id=actor_id
             )
 
-    @bot.on.raw_event(GroupEventType.MESSAGE_EVENT, MessageEvent)
+    @bot.on.raw_event(GroupEventType.MESSAGE_EVENT, MessageEvent, blocking=False)
     async def rejoinkick_kick_callback(event: MessageEvent) -> None:
         payload = event.payload
         if isinstance(payload, str):

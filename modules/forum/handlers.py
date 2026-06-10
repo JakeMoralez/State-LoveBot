@@ -312,7 +312,7 @@ def register_forum(
             )
         await message.answer(report)
 
-    @bot.on.raw_event(GroupEventType.MESSAGE_EVENT, MessageEvent)
+    @bot.on.raw_event(GroupEventType.MESSAGE_EVENT, MessageEvent, blocking=False)
     async def forum_thread_callback(event: MessageEvent) -> None:
         payload = event.payload
         if isinstance(payload, str):

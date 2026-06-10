@@ -244,6 +244,20 @@ class ForumService:
         lowered = prefix.lower()
         return "рассмотр" in lowered or "ожидан" in lowered
 
+    @staticmethod
+    def _is_important_prefix(prefix: str | None) -> bool:
+        if not prefix:
+            return False
+        return prefix.strip().lower().startswith("важно")
+
+    @staticmethod
+    def _filter_court_threads(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [
+            row
+            for row in rows
+            if not ForumService._is_important_prefix(row.get("prefix"))
+        ]
+
     async def _fetch_category_page(
         self,
         category: Any,
@@ -370,6 +384,7 @@ class ForumService:
             period_label = ""
             empty_hint = "📭 На просканированных страницах нет тем"
 
+        threads = self._filter_court_threads(threads)
         total_threads = len(threads)
         if total_threads == 0:
             return empty_hint

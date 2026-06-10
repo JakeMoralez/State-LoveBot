@@ -6,6 +6,7 @@ import logging
 import random
 
 from vkbottle import API
+from vkbottle.bot import Message
 
 from config.settings import VK_GROUP_ID, VK_USER_TOKEN
 from database.repository.user_repo import UserRepository
@@ -154,6 +155,69 @@ class MessagingService:
             lines.append(f"• {await names.link_user(mid)}")
         return "\n".join(lines)
 
+    @staticmethod
+    def extract_photo_attachments(message: Message) -> str | None:
+        try:
+            strings = message.get_attachment_strings()
+        except Exception:
+            return None
+        if not strings:
+            return None
+        photos = [item for item in strings if item.startswith("photo")]
+        return ",".join(photos) if photos else None
+
+    @staticmethod
+    def attachment_preview_label(attachments: str | None) -> str | None:
+        if not attachments:
+            return None
+        count = len(attachments.split(","))
+        word = "фото" if count == 1 else "фото"
+        return f"📎 Вложение: {count} {word}"
+
+    async def _alert_member_ids(
+        self,
+        peer_id: int,
+        server_id: int,
+        *,
+        sender_vk_id: int,
+    ) -> list[int]:
+        return await self._pingable_members(
+            await self.get_member_ids(peer_id),
+            server_id,
+            exclude_id=sender_vk_id,
+        )
+
+    @staticmethod
+    def _format_alert_body(*, sender_label: str, member_line: str, text: str) -> str:
+        lines = [f"❗ Оповещение от {sender_label} ❗", ""]
+        if member_line:
+            lines.append(member_line)
+            lines.append("")
+        lines.append(f"📍 {text}")
+        return "\n".join(lines)
+
+    async def _build_alert_content(
+        self,
+        *,
+        peer_id: int,
+        text: str,
+        sender_vk_id: int,
+        server_id: int,
+    ) -> str:
+        member_ids = await self._alert_member_ids(
+            peer_id, server_id, sender_vk_id=sender_vk_id
+        )
+        pings = "".join(
+            DisplayNameService.nick_link(mid, "👤") for mid in member_ids
+        )
+        names = DisplayNameService(self.api, server_id)
+        sender = await names.mention_user(sender_vk_id, server_id)
+        return self._format_alert_body(
+            sender_label=sender,
+            member_line=pings,
+            text=text,
+        )
+
     async def build_alert_message(
         self,
         *,
@@ -162,24 +226,27 @@ class MessagingService:
         sender_vk_id: int,
         server_id: int,
     ) -> str:
-        member_ids = await self._pingable_members(
-            await self.get_member_ids(peer_id),
-            server_id,
-            exclude_id=sender_vk_id,
+        return await self._build_alert_content(
+            peer_id=peer_id,
+            text=text,
+            sender_vk_id=sender_vk_id,
+            server_id=server_id,
         )
 
-        pings = "".join(
-            DisplayNameService.nick_link(mid, "👤") for mid in member_ids
+    async def build_alert_preview(
+        self,
+        *,
+        peer_id: int,
+        text: str,
+        sender_vk_id: int,
+        server_id: int,
+    ) -> str:
+        return await self._build_alert_content(
+            peer_id=peer_id,
+            text=text,
+            sender_vk_id=sender_vk_id,
+            server_id=server_id,
         )
-
-        names = DisplayNameService(self.api, server_id)
-        sender = await names.link_user(sender_vk_id)
-
-        lines = ["❗ Оповещение❗", ""]
-        if pings:
-            lines.append(pings)
-        lines.extend(["", f"📍 {text}", "", f"🗣 {sender}"])
-        return "\n".join(lines)
 
     async def format_welcome_notice(
         self,
