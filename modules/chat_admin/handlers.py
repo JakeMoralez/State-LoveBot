@@ -29,15 +29,17 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
     resolver = VKResolver(api)
     names = DisplayNameService(api)
 
-    async def _resolve_target(message: Message, args: str) -> int | None:
+    async def _resolve_target(message: Message, args: str, server_id: int) -> int | None:
         reply_id = (
             message.reply_message.from_id
             if message.reply_message and message.reply_message.from_id > 0
             else None
         )
         target_raw = VKResolver.extract_reference(args or "")
-        resolved = await resolver.resolve_from_message(
-            target_raw, reply_from_id=reply_id
+        resolved = await VKResolver(api, server_id).resolve_from_message(
+            target_raw,
+            reply_from_id=reply_id,
+            server_id=server_id,
         )
         return resolved.vk_id if resolved else None
 
@@ -57,7 +59,7 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
         server_id: int = 0,
         access_level: int = 0,
     ) -> None:
-        text = await admin.format_find_results(query)
+        text = await admin.format_find_results(query, server_id)
         await message.answer(text, disable_mentions=1)
 
     @bot.on.message(text=dual("online"))
@@ -97,7 +99,7 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
         server_id: int = 0,
         access_level: int = 0,
     ) -> None:
-        target_id = await _resolve_target(message, target)
+        target_id = await _resolve_target(message, target, server_id)
         if not target_id:
             await message.answer("❌ Пользователь не найден.")
             return
@@ -146,7 +148,7 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
             if not target_raw or not seconds:
                 await message.answer("❌ /mute [@user] [время] [причина]")
                 return
-            target_id = await _resolve_target(message, target_raw)
+            target_id = await _resolve_target(message, target_raw, server_id)
             if not target_id:
                 await message.answer("❌ Пользователь не найден.")
                 return
@@ -159,7 +161,7 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
             message.peer_id, target_id, seconds=seconds
         )
         if ok:
-            link = await names.link_user(target_id)
+            link = await names.link_user(target_id, server_id)
             lines = [
                 f"🔇 {link} — мут на {admin.format_duration(seconds)}.",
             ]
@@ -197,14 +199,14 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
         if not _require_chat(message):
             await message.answer("❌ Команда только в беседах.")
             return
-        target_id = await _resolve_target(message, target)
+        target_id = await _resolve_target(message, target, server_id)
         if not target_id:
             await message.answer("❌ Пользователь не найден.")
             return
 
         ok, err = await admin.unmute_member(message.peer_id, target_id)
         if ok:
-            link = await names.link_user(target_id)
+            link = await names.link_user(target_id, server_id)
             await message.answer(f"🔊 С {link} снят мут.", disable_mentions=1)
             await action_logger.log_user(
                 "unmute",

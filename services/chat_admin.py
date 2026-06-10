@@ -196,7 +196,13 @@ class ChatAdminService:
         lines.append(f"\n⚫ Оффлайн: {offline}")
         return "\n".join(lines)
 
-    async def find_users(self, query: str, *, limit: int = 10) -> list[FoundUser]:
+    async def find_users(
+        self,
+        query: str,
+        server_id: int,
+        *,
+        limit: int = 10,
+    ) -> list[FoundUser]:
         query = (query or "").strip()
         if not query:
             return []
@@ -204,16 +210,17 @@ class ChatAdminService:
         found: list[FoundUser] = []
         seen: set[int] = set()
 
-        db_rows = await UserRepository.search_users(query, limit=limit)
+        db_rows = await UserRepository.search_users(query, server_id, limit=limit)
         for user in db_rows:
             if user.vk_id in seen:
                 continue
             seen.add(user.vk_id)
-            label = user.nickname or user.username or f"id{user.vk_id}"
+            nick = await UserRepository.get_nickname(user.vk_id, server_id)
+            label = nick or user.username or f"id{user.vk_id}"
             found.append(FoundUser(user.vk_id, label, "база"))
 
         if len(found) < limit and not query.startswith("id"):
-            resolved = await self.resolver.resolve(query)
+            resolved, _ = await self.resolver.resolve_with_hint(query, server_id)
             if resolved and resolved.vk_id not in seen:
                 seen.add(resolved.vk_id)
                 label = resolved.display_name or resolved.username or f"id{resolved.vk_id}"
@@ -242,14 +249,15 @@ class ChatAdminService:
 
         return found[:limit]
 
-    async def format_find_results(self, query: str) -> str:
-        rows = await self.find_users(query)
+    async def format_find_results(self, query: str, server_id: int) -> str:
+        rows = await self.find_users(query, server_id)
         if not rows:
             return f"❌ По запросу «{query}» никого не найдено."
 
+        names = DisplayNameService(self.api, server_id)
         lines = [f"🔍 Найдено по «{query}» ({len(rows)}):"]
         for row in rows:
-            link = await self.names.link_user(row.vk_id)
+            link = await names.link_user(row.vk_id)
             lines.append(f"• {link}")
         return "\n".join(lines)
 

@@ -20,12 +20,12 @@ logger = logging.getLogger(__name__)
 
 
 async def _format_congress_info(api: API, server_id: int) -> str:
-    peer_id = await CongressRepository.get_congress_peer_id()
+    peer_id = await CongressRepository.get_congress_peer_id(server_id)
     if not peer_id:
         return "📭 Беседа конгресса не зарегистрирована.\nИспользуйте /regrole congress в конференции."
 
     alias = await CongressRepository.get_congress_alias(server_id)
-    names = DisplayNameService(api)
+    names = DisplayNameService(api, server_id)
     lines = [
         "🏛 Конгресс",
         f"📌 Беседа: peer {peer_id} (chat {peer_id - 2_000_000_000})",
@@ -33,16 +33,16 @@ async def _format_congress_info(api: API, server_id: int) -> str:
         "",
     ]
 
-    speaker = await CongressRepository.get_speaker()
+    speaker = await CongressRepository.get_speaker(server_id)
     if speaker:
-        link = await names.link_user(speaker.vk_id)
+        link = await names.link_user(speaker.vk_id, server_id)
         lines.append(f"🎙 Спикер: {link}")
     else:
         lines.append("🎙 Спикер: не назначен")
 
-    vice = await CongressRepository.get_vice()
+    vice = await CongressRepository.get_vice(server_id)
     if vice:
-        link = await names.link_user(vice.vk_id)
+        link = await names.link_user(vice.vk_id, server_id)
         lines.append(f"🎖 Вице-спикер: {link}")
     else:
         lines.append("🎖 Вице-спикер: не назначен")
@@ -94,7 +94,9 @@ def register_congress(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         )
         target_raw = VKResolver.extract_reference(args or "")
         resolved, hint = await resolver.resolve_from_message_with_hint(
-            target_raw, reply_from_id=reply_id
+            target_raw,
+            reply_from_id=reply_id,
+            server_id=server_id,
         )
         if hint:
             await message.answer(hint, disable_mentions=1)
@@ -105,10 +107,11 @@ def register_congress(bot: Bot, api: API, action_logger: ActionLogger) -> None:
 
         await CongressRepository.set_speaker(
             resolved.vk_id,
+            server_id,
             username=resolved.username,
             assigned_by=message.from_id or 0,
         )
-        link = await names.link_user(resolved.vk_id)
+        link = await names.link_user(resolved.vk_id, server_id)
         await message.answer(
             f"🎙 Спикер конгресса: {link}\n"
             f"В конфе: /setnick, /kick. /msg — конфа или ЛС бота.",
@@ -147,7 +150,9 @@ def register_congress(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         )
         target_raw = VKResolver.extract_reference(args or "")
         resolved, hint = await resolver.resolve_from_message_with_hint(
-            target_raw, reply_from_id=reply_id
+            target_raw,
+            reply_from_id=reply_id,
+            server_id=server_id,
         )
         if hint:
             await message.answer(hint, disable_mentions=1)
@@ -158,10 +163,11 @@ def register_congress(bot: Bot, api: API, action_logger: ActionLogger) -> None:
 
         await CongressRepository.set_vice(
             resolved.vk_id,
+            server_id,
             username=resolved.username,
             assigned_by=message.from_id or 0,
         )
-        link = await names.link_user(resolved.vk_id)
+        link = await names.link_user(resolved.vk_id, server_id)
         await message.answer(
             f"🎖 Вице-спикер конгресса: {link}\n"
             f"В конфе: /setnick, /kick. /msg — конфа или ЛС бота.",
@@ -183,7 +189,7 @@ def register_congress(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         server_id: int = 0,
         access_level: int = 0,
     ) -> None:
-        ok = await CongressRepository.clear_speaker()
+        ok = await CongressRepository.clear_speaker(server_id)
         await message.answer("✅ Спикер снят." if ok else "❌ Спикер не был назначен.")
 
     @bot.on.message(text=dual("removevice"))
@@ -194,5 +200,5 @@ def register_congress(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         server_id: int = 0,
         access_level: int = 0,
     ) -> None:
-        ok = await CongressRepository.clear_vice()
+        ok = await CongressRepository.clear_vice(server_id)
         await message.answer("✅ Вице-спикер снят." if ok else "❌ Вице не был назначен.")

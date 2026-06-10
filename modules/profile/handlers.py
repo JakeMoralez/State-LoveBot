@@ -166,8 +166,16 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             await message.answer(f"❌ {val_err}")
             return
 
-        if await UserRepository.has_nickname(target_id):
+        if await UserRepository.has_nickname(target_id, server_id):
             await message.answer("❌ Никнейм уже установлен. Сначала /rnick.")
+            return
+
+        if await UserRepository.is_nickname_taken(
+            server_id,
+            nickname,
+            exclude_vk_id=target_id,
+        ):
+            await message.answer("❌ Такой ник уже занят на этом сервере.")
             return
 
         if target_id != message.from_id:
@@ -179,8 +187,8 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
                 added_by=message.from_id,
             )
 
-        await UserRepository.set_nickname(target_id, nickname)
-        actor = await names.format_setnick_actor(message.from_id or 0)
+        await UserRepository.set_nickname(target_id, server_id, nickname)
+        actor = await names.format_setnick_actor(message.from_id or 0, server_id)
         target_link = DisplayNameService.nick_link(target_id, nickname)
         await message.answer(
             f"{actor} поставил никнейм '{nickname}' {target_link}.",
@@ -209,19 +217,18 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             await message.answer(_NICK_TARGET_ERR)
             return
 
-        if not await UserRepository.has_nickname(target_id):
-            link = await names.link_user(target_id)
+        if not await UserRepository.has_nickname(target_id, server_id):
+            link = await names.link_user(target_id, server_id)
             await message.answer(
-                f"❌ У {link} нет никнейма.",
+                f"❌ У {link} нет никнейма на этом сервере.",
                 disable_mentions=1,
             )
             return
 
-        user = await UserRepository.get_by_vk_id(target_id)
-        old_nick = user.nickname if user else ""
-        await UserRepository.clear_nickname(target_id)
-        actor = await names.format_setnick_actor(message.from_id or 0)
-        target_link = await names.link_user(target_id)
+        old_nick = await UserRepository.get_nickname(target_id, server_id) or ""
+        await UserRepository.clear_nickname(target_id, server_id)
+        actor = await names.format_setnick_actor(message.from_id or 0, server_id)
+        target_link = await names.link_user(target_id, server_id)
         await message.answer(
             f"{actor} снял никнейм '{old_nick}' у {target_link}.",
             disable_mentions=1,
@@ -304,8 +311,8 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             await message.answer("❌ Нельзя выдать уровень выше своего.")
             return
 
-        resolver = VKResolver(api)
-        resolved, hint = await resolver.resolve_with_hint(target.strip())
+        resolver = VKResolver(api, server_id)
+        resolved, hint = await resolver.resolve_with_hint(target.strip(), server_id)
         if hint:
             await message.answer(hint, disable_mentions=1)
             return

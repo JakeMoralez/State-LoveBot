@@ -7,19 +7,20 @@ from database.repository.user_repo import UserRepository
 from middlewares.access import AccessChecker
 from services.display_name import DisplayNameService
 
+
 def format_access_badges(user: User, access: UserServerAccess | None) -> str:
     badges: list[str] = []
     if access and access.has_ca_access:
         badges.append("ЦА")
-    if user.is_judge:
+    if access and access.is_judge:
         badges.append("⚖")
-    if user.is_congress_speaker:
+    if access and access.is_congress_speaker:
         badges.append("🎙")
-    if user.is_congress_vice:
+    if access and access.is_congress_vice:
         badges.append("🎖")
-    if user.is_attorney:
+    if access and access.is_attorney:
         badges.append("📘")
-    if user.is_leader:
+    if access and access.is_leader:
         badges.append("🛡")
     if user.is_admin:
         badges.append("👑")
@@ -52,12 +53,12 @@ async def format_staff_list(server_id: int, api) -> str:
     if not rows:
         return "📭 Пользователей с доступом нет."
 
-    names = DisplayNameService(api)
+    names = DisplayNameService(api, server_id)
     lines = [f"🔐 Доступы ({len(rows)}):"]
     for user, level, access in rows:
         if await UserRepository.is_developer(user.vk_id):
             level = max(level, 10)
-        link = await names.link_user(user.vk_id)
+        link = await names.link_user(user.vk_id, server_id)
         badges = format_access_badges(user, access)
         line = _format_staff_line(link, level, badges)
         if line:

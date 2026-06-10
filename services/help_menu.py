@@ -48,7 +48,7 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
             HelpEntry("/reg", "Дата регистрации VK", 0),
             HelpEntry("/online", "Кто онлайн в беседе", 0),
             HelpEntry("/help", "Список команд"),
-            HelpEntry("/ping", "Проверка бота"),
+            HelpEntry("/ping", "Проверка бота и время работы"),
         ),
     ),
     HelpCategory(
@@ -88,7 +88,7 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
         ),
     ),
     HelpCategory(
-        "📄 Форум — раздел 3423",
+        "📄 Форум — раздел судебных исков сервера",
         (
             HelpEntry("/info · /edit", "Инфо о теме и кнопки действий", "forum"),
             HelpEntry("/fclose · /fopen", "Закрыть / открыть тему", "forum"),
@@ -134,6 +134,8 @@ DEV_HELP_CATEGORIES: tuple[HelpCategory, ...] = (
         "🔟 Разработчик",
         (
             HelpEntry("/devhelp", "Справка для ур. 10"),
+            HelpEntry("/meserver", "Переключить активный server_id", 10),
+            HelpEntry("/setserver", "Тег, раздел исков, имя сервера", 10),
             HelpEntry("/regchat logs", "Беседа для логов бота", 10),
             HelpEntry("/regchat logs off", "Отвязать беседу логов", 10),
             HelpEntry("/deluser", "Удалить пользователя из БД", 10),

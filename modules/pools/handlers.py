@@ -87,8 +87,8 @@ def _format_msg_preview(
 async def _can_use_msg(user_id: int, peer_id: int) -> tuple[bool, int, str]:
     if not user_id or user_id <= 0:
         return False, 0, ""
-    server_id = await AccessChecker.resolve_server_id(peer_id)
-    if await CongressRepository.can_use_msg(peer_id, user_id):
+    server_id = await AccessChecker.resolve_server_id(peer_id, user_id)
+    if await CongressRepository.can_use_msg(peer_id, user_id, server_id):
         return True, server_id, "congress"
     if not await ForumRoleRepository.can_use_forum_bot(user_id):
         return False, server_id, ""

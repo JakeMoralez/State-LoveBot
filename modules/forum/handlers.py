@@ -11,8 +11,8 @@ from vkbottle import API, GroupEventType
 from vkbottle.bot import Bot, Message, MessageEvent
 from vkbottle.dispatch.rules.base import FuncRule
 
-from config.settings import JUDGE_FORUM_ID
 from database.repository.forum_role_repo import ForumRoleRepository
+from database.repository.server_repo import ServerRepository
 from middlewares.access import AccessChecker
 from middlewares.action_logger import ActionLogger
 from middlewares.forum_access import ForumAccessChecker, requires_forum_user
@@ -20,6 +20,7 @@ from services.command_utils import matches_cmd, parse_forum_thread, strip_cmd
 from services.forum_api import ForumService
 from services.forum_format import format_thread_card
 from services.forum_keyboard import create_thread_action_keyboard
+from services.server_display import format_judge_forum_hint
 
 logger = logging.getLogger(__name__)
 
@@ -141,6 +142,23 @@ def register_forum(
             return False
         return True
 
+    async def _check_judge_forum(
+        category_id: int,
+        server_id: int,
+        reply,
+    ) -> bool:
+        judge_forum_id = await ServerRepository.get_judge_forum_id(server_id)
+        if not judge_forum_id:
+            await reply("⛔ Раздел судебных исков не настроен для этого сервера.")
+            return False
+        if category_id != judge_forum_id:
+            await reply(
+                "⛔ Команда только для раздела судебных исков "
+                f"({format_judge_forum_hint(judge_forum_id)})."
+            )
+            return False
+        return True
+
     @bot.on.message(FuncRule(lambda m: matches_cmd(m.text or "", "info") or matches_cmd(m.text or "", "edit")))
     @requires_forum_user
     async def thread_info_or_edit(message: Message, server_id: int = 0) -> None:
@@ -163,11 +181,9 @@ def register_forum(
             return
 
         category_id = int(info.get("category_id") or info.get("node_id") or 0)
-        if category_id != JUDGE_FORUM_ID:
-            await message.answer(
-                f"⛔ Команда только для раздела судебных исков "
-                f"(forums/{JUDGE_FORUM_ID}/)."
-            )
+        if not await _check_judge_forum(
+            category_id, server_id, message.answer
+        ):
             return
 
         if not await _check_access(
@@ -211,11 +227,9 @@ def register_forum(
             return
 
         category_id = int(info.get("category_id") or info.get("node_id") or 0)
-        if category_id != JUDGE_FORUM_ID:
-            await message.answer(
-                f"⛔ Команда только для раздела судебных исков "
-                f"(forums/{JUDGE_FORUM_ID}/)."
-            )
+        if not await _check_judge_forum(
+            category_id, server_id, message.answer
+        ):
             return
 
         if not await _check_access(
@@ -280,10 +294,22 @@ def register_forum(
 
         mode, value = parsed
         await message.answer("⚙️ Загрузка статистики исков...")
+        judge_forum_id = await ServerRepository.get_judge_forum_id(server_id)
+        if not judge_forum_id:
+            await message.answer("⛔ Раздел судебных исков не настроен для этого сервера.")
+            return
         if mode == "days":
-            report = await forum.get_court_stats(days=value)
+            report = await forum.get_court_stats(
+                server_id=server_id,
+                judge_forum_id=judge_forum_id,
+                days=value,
+            )
         else:
-            report = await forum.get_court_stats(pages=value)
+            report = await forum.get_court_stats(
+                server_id=server_id,
+                judge_forum_id=judge_forum_id,
+                pages=value,
+            )
         await message.answer(report)
 
     @bot.on.raw_event(GroupEventType.MESSAGE_EVENT, MessageEvent)
@@ -325,7 +351,7 @@ def register_forum(
             await event.show_snackbar("⛔ Кнопки доступны только автору команды.")
             return
 
-        server_id = await AccessChecker.resolve_server_id(event.peer_id)
+        server_id = await AccessChecker.resolve_server_id(event.peer_id, event.user_id)
 
         info = await forum.get_thread_info(int(thread_id))
         if not info:
@@ -333,8 +359,14 @@ def register_forum(
             return
 
         category_id = int(info.get("category_id") or info.get("node_id") or 0)
-        if category_id != JUDGE_FORUM_ID:
-            await event.show_snackbar(f"⛔ Только раздел forums/{JUDGE_FORUM_ID}/")
+        judge_forum_id = await ServerRepository.get_judge_forum_id(server_id)
+        if not judge_forum_id:
+            await event.show_snackbar("⛔ Раздел исков не настроен для сервера")
+            return
+        if category_id != judge_forum_id:
+            await event.show_snackbar(
+                f"⛔ Только раздел {format_judge_forum_hint(judge_forum_id)}"
+            )
             return
         if not await ForumAccessChecker.is_thread_allowed(
             event.user_id, category_id, server_id

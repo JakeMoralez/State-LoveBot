@@ -1,9 +1,10 @@
-"""Конгресс: беседа + спикер / вице-спикер (setnick только в конференции)."""
+"""Конгресс: беседа + спикер / вице-спикер (на каждый server_id)."""
 
 from __future__ import annotations
 
 from database.models.role_chat import ForumRoleKey
-from database.models.user import User
+from database.models.server import Server
+from database.models.user import User, UserServerAccess
 from database.repository.chat_repo import ChatRepository
 from database.repository.forum_role_repo import ForumRoleRepository
 from database.repository.user_repo import UserRepository
@@ -13,50 +14,73 @@ CONGRESS_DEFAULT_ALIAS = "congress"
 
 class CongressRepository:
     @staticmethod
-    async def get_congress_peer_id() -> int | None:
-        return await ForumRoleRepository.get_role_chat(ForumRoleKey.CONGRESS)
+    async def get_congress_peer_id(server_id: int) -> int | None:
+        return await ForumRoleRepository.get_role_chat(
+            ForumRoleKey.CONGRESS,
+            server_id,
+        )
 
     @staticmethod
-    async def is_congress_chat(peer_id: int) -> bool:
-        congress_peer = await CongressRepository.get_congress_peer_id()
+    async def is_congress_chat(peer_id: int, server_id: int) -> bool:
+        congress_peer = await CongressRepository.get_congress_peer_id(server_id)
         return congress_peer is not None and peer_id == congress_peer
 
     @staticmethod
-    async def is_officer(vk_id: int) -> bool:
-        user = await User.get_or_none(vk_id=vk_id)
-        if not user:
-            return False
-        return user.is_congress_speaker or user.is_congress_vice
+    async def _ensure_access(
+        vk_id: int,
+        server_id: int,
+        *,
+        username: str | None = None,
+        added_by: int | None = None,
+    ) -> UserServerAccess:
+        user = await UserRepository.ensure_user(vk_id, username, added_by)
+        server = await Server.get(id=server_id)
+        access, _ = await UserServerAccess.get_or_create(
+            user=user,
+            server=server,
+            defaults={"access_level": 0},
+        )
+        return access
 
     @staticmethod
-    async def _officer_in_congress(peer_id: int, vk_id: int) -> bool:
-        if not await CongressRepository.is_congress_chat(peer_id):
+    async def is_officer(vk_id: int, server_id: int) -> bool:
+        access = await UserServerAccess.get_or_none(
+            user_id=vk_id,
+            server_id=server_id,
+        )
+        if not access:
+            return False
+        return access.is_congress_speaker or access.is_congress_vice
+
+    @staticmethod
+    async def _officer_in_congress(peer_id: int, vk_id: int, server_id: int) -> bool:
+        if not await CongressRepository.is_congress_chat(peer_id, server_id):
             return False
         if await UserRepository.is_developer(vk_id):
             return True
-        return await CongressRepository.is_officer(vk_id)
+        return await CongressRepository.is_officer(vk_id, server_id)
 
     @staticmethod
-    async def can_setnick_in_chat(peer_id: int, vk_id: int) -> bool:
-        return await CongressRepository._officer_in_congress(peer_id, vk_id)
+    async def can_setnick_in_chat(peer_id: int, vk_id: int, server_id: int) -> bool:
+        return await CongressRepository._officer_in_congress(peer_id, vk_id, server_id)
 
     @staticmethod
-    async def can_kick_in_chat(peer_id: int, vk_id: int) -> bool:
-        return await CongressRepository._officer_in_congress(peer_id, vk_id)
+    async def can_kick_in_chat(peer_id: int, vk_id: int, server_id: int) -> bool:
+        return await CongressRepository._officer_in_congress(peer_id, vk_id, server_id)
 
     @staticmethod
-    async def can_use_msg(peer_id: int, vk_id: int) -> bool:
-        if not await CongressRepository.is_officer(vk_id):
+    async def can_use_msg(peer_id: int, vk_id: int, server_id: int) -> bool:
+        if not await CongressRepository.is_officer(vk_id, server_id):
             if await UserRepository.is_developer(vk_id):
-                return await CongressRepository.is_congress_chat(peer_id)
+                return await CongressRepository.is_congress_chat(peer_id, server_id)
             return False
         if peer_id < 2_000_000_000:
             return True
-        return await CongressRepository.is_congress_chat(peer_id)
+        return await CongressRepository.is_congress_chat(peer_id, server_id)
 
     @staticmethod
     async def get_congress_alias(server_id: int) -> str | None:
-        peer_id = await CongressRepository.get_congress_peer_id()
+        peer_id = await CongressRepository.get_congress_peer_id(server_id)
         if not peer_id:
             return None
         chat = await ChatRepository.get_by_peer_id(peer_id)
@@ -104,89 +128,134 @@ class CongressRepository:
         return normalized
 
     @staticmethod
-    async def _clear_role(role_field: str) -> None:
-        await User.filter(**{role_field: True}).update(**{role_field: False})
+    async def _clear_role(server_id: int, role_field: str) -> None:
+        await UserServerAccess.filter(
+            server_id=server_id,
+            **{role_field: True},
+        ).update(**{role_field: False})
 
     @staticmethod
     async def set_speaker(
         vk_id: int,
+        server_id: int,
         *,
         username: str | None,
         assigned_by: int,
     ) -> User:
-        await CongressRepository._clear_role("is_congress_speaker")
-        user = await UserRepository.ensure_user(vk_id, username, assigned_by)
-        user.is_congress_speaker = True
-        await user.save()
-        return user
+        await CongressRepository._clear_role(server_id, "is_congress_speaker")
+        access = await CongressRepository._ensure_access(
+            vk_id,
+            server_id,
+            username=username,
+            added_by=assigned_by,
+        )
+        access.is_congress_speaker = True
+        await access.save()
+        return access.user
 
     @staticmethod
     async def set_vice(
         vk_id: int,
+        server_id: int,
         *,
         username: str | None,
         assigned_by: int,
     ) -> User:
-        await CongressRepository._clear_role("is_congress_vice")
-        user = await UserRepository.ensure_user(vk_id, username, assigned_by)
-        user.is_congress_vice = True
-        await user.save()
-        return user
+        await CongressRepository._clear_role(server_id, "is_congress_vice")
+        access = await CongressRepository._ensure_access(
+            vk_id,
+            server_id,
+            username=username,
+            added_by=assigned_by,
+        )
+        access.is_congress_vice = True
+        await access.save()
+        return access.user
 
     @staticmethod
-    async def clear_speaker() -> bool:
-        updated = await User.filter(is_congress_speaker=True).update(
-            is_congress_speaker=False
-        )
+    async def clear_speaker(server_id: int) -> bool:
+        updated = await UserServerAccess.filter(
+            server_id=server_id,
+            is_congress_speaker=True,
+        ).update(is_congress_speaker=False)
         return updated > 0
 
     @staticmethod
-    async def clear_vice() -> bool:
-        updated = await User.filter(is_congress_vice=True).update(
-            is_congress_vice=False
-        )
+    async def clear_vice(server_id: int) -> bool:
+        updated = await UserServerAccess.filter(
+            server_id=server_id,
+            is_congress_vice=True,
+        ).update(is_congress_vice=False)
         return updated > 0
 
     @staticmethod
-    async def clear_speaker_for(vk_id: int) -> bool:
-        user = await User.get_or_none(vk_id=vk_id)
-        if not user or not user.is_congress_speaker:
+    async def clear_speaker_for(vk_id: int, server_id: int) -> bool:
+        access = await UserServerAccess.get_or_none(
+            user_id=vk_id,
+            server_id=server_id,
+        )
+        if not access or not access.is_congress_speaker:
             return False
-        user.is_congress_speaker = False
-        await user.save()
+        access.is_congress_speaker = False
+        await access.save()
         return True
 
     @staticmethod
-    async def clear_vice_for(vk_id: int) -> bool:
-        user = await User.get_or_none(vk_id=vk_id)
-        if not user or not user.is_congress_vice:
+    async def clear_vice_for(vk_id: int, server_id: int) -> bool:
+        access = await UserServerAccess.get_or_none(
+            user_id=vk_id,
+            server_id=server_id,
+        )
+        if not access or not access.is_congress_vice:
             return False
-        user.is_congress_vice = False
-        await user.save()
+        access.is_congress_vice = False
+        await access.save()
         return True
 
     @staticmethod
-    async def get_speaker() -> User | None:
-        return await User.filter(is_congress_speaker=True).first()
+    async def get_speaker(server_id: int) -> User | None:
+        access = (
+            await UserServerAccess.filter(
+                server_id=server_id,
+                is_congress_speaker=True,
+            )
+            .prefetch_related("user")
+            .first()
+        )
+        return access.user if access else None
 
     @staticmethod
-    async def get_vice() -> User | None:
-        return await User.filter(is_congress_vice=True).first()
+    async def get_vice(server_id: int) -> User | None:
+        access = (
+            await UserServerAccess.filter(
+                server_id=server_id,
+                is_congress_vice=True,
+            )
+            .prefetch_related("user")
+            .first()
+        )
+        return access.user if access else None
 
     @staticmethod
-    async def revoke_officer_on_leave(peer_id: int, vk_id: int) -> str | None:
-        """Снять спикера/вице при выходе из беседы конгресса."""
-        if not await CongressRepository.is_congress_chat(peer_id):
+    async def revoke_officer_on_leave(
+        peer_id: int,
+        vk_id: int,
+        server_id: int,
+    ) -> str | None:
+        if not await CongressRepository.is_congress_chat(peer_id, server_id):
             return None
-        user = await User.get_or_none(vk_id=vk_id)
-        if not user:
+        access = await UserServerAccess.get_or_none(
+            user_id=vk_id,
+            server_id=server_id,
+        )
+        if not access:
             return None
-        if user.is_congress_speaker:
-            user.is_congress_speaker = False
-            await user.save()
+        if access.is_congress_speaker:
+            access.is_congress_speaker = False
+            await access.save()
             return "speaker"
-        if user.is_congress_vice:
-            user.is_congress_vice = False
-            await user.save()
+        if access.is_congress_vice:
+            access.is_congress_vice = False
+            await access.save()
             return "vice"
         return None

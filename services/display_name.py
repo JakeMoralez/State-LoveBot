@@ -12,8 +12,9 @@ _TAGGED_USERNAME = re.compile(r"^@?\S+\s+\[[^\]]+\]\s+(.+)$")
 
 
 class DisplayNameService:
-    def __init__(self, api: API) -> None:
+    def __init__(self, api: API, server_id: int | None = None) -> None:
         self.api = api
+        self.server_id = server_id
 
     @staticmethod
     def _clean(value: str | None) -> str | None:
@@ -66,21 +67,34 @@ class DisplayNameService:
         label = cls.sanitize_vk_label(raw, vk_id=vk_id)
         return f"[id{vk_id}|{label}]"
 
-    async def get_ping_nickname(self, vk_id: int) -> str | None:
-        """Ник из /setnick — только поле nickname в БД."""
-        user = await UserRepository.get_by_vk_id(vk_id)
-        if user and user.nickname and user.nickname.strip():
-            return user.nickname.strip()
-        return None
+    def _resolve_server_id(self, server_id: int | None) -> int | None:
+        return server_id if server_id is not None else self.server_id
 
-    @staticmethod
-    async def get_raw_nickname(vk_id: int, api: API) -> str:
+    async def get_ping_nickname(
+        self,
+        vk_id: int,
+        server_id: int | None = None,
+    ) -> str | None:
+        """Ник из /setnick на конкретном сервере."""
+        sid = self._resolve_server_id(server_id)
+        if not sid:
+            return None
+        return await UserRepository.get_nickname(vk_id, sid)
+
+    @classmethod
+    async def get_raw_nickname(
+        cls,
+        vk_id: int,
+        api: API,
+        server_id: int | None = None,
+    ) -> str:
+        nick = await UserRepository.get_nickname(vk_id, server_id) if server_id else None
+        if nick:
+            return nick
         user = await UserRepository.get_by_vk_id(vk_id)
-        if user and user.nickname and user.nickname.strip():
-            return user.nickname.strip()
         if user and user.username and user.username.strip():
             return user.username.strip()
-        svc = DisplayNameService(api)
+        svc = cls(api, server_id)
         return await svc.get_vk_full_name(vk_id)
 
     async def _fetch_vk_user(self, vk_id: int):
@@ -100,8 +114,12 @@ class DisplayNameService:
                 return name
         return f"id{vk_id}"
 
-    async def get_nickname(self, vk_id: int) -> str:
-        nick = await self.get_ping_nickname(vk_id)
+    async def get_nickname(
+        self,
+        vk_id: int,
+        server_id: int | None = None,
+    ) -> str:
+        nick = await self.get_ping_nickname(vk_id, server_id)
         if nick:
             return self.normalize(nick) or nick
 
@@ -113,18 +131,30 @@ class DisplayNameService:
 
         return await self.get_vk_full_name(vk_id)
 
-    async def get_known_nickname(self, vk_id: int) -> str | None:
-        return await self.get_ping_nickname(vk_id)
+    async def get_known_nickname(
+        self,
+        vk_id: int,
+        server_id: int | None = None,
+    ) -> str | None:
+        return await self.get_ping_nickname(vk_id, server_id)
 
-    async def get_invite_label(self, vk_id: int) -> str:
-        nick = await self.get_ping_nickname(vk_id)
+    async def get_invite_label(
+        self,
+        vk_id: int,
+        server_id: int | None = None,
+    ) -> str:
+        nick = await self.get_ping_nickname(vk_id, server_id)
         if nick:
             return nick
         return await self.get_vk_full_name(vk_id)
 
-    async def mention_user(self, vk_id: int) -> str:
+    async def mention_user(
+        self,
+        vk_id: int,
+        server_id: int | None = None,
+    ) -> str:
         """Пинг: системный ник из БД, кликабельный."""
-        nick = await self.get_ping_nickname(vk_id)
+        nick = await self.get_ping_nickname(vk_id, server_id)
         if nick:
             return self.nick_link(vk_id, nick)
 
@@ -133,9 +163,13 @@ class DisplayNameService:
             return self.nick_link(vk_id, full)
         return f"[id{vk_id}|id{vk_id}]"
 
-    async def link_user(self, vk_id: int) -> str:
+    async def link_user(
+        self,
+        vk_id: int,
+        server_id: int | None = None,
+    ) -> str:
         """Ссылка [id|ник] — отправлять с disable_mentions=1 (без уведомления)."""
-        return await self.mention_user(vk_id)
+        return await self.mention_user(vk_id, server_id)
 
     async def format_actor_badge(self, vk_id: int, server_id: int) -> str:
         """Кликабельный инициатор: ［ЗГС ЦА］ Isaac_Grozny."""
@@ -143,13 +177,17 @@ class DisplayNameService:
 
         level = await UserRepository.get_access_level(vk_id, server_id)
         title = AccessChecker.level_name(level) if level else "—"
-        nick = await self.get_nickname(vk_id)
+        nick = await self.get_nickname(vk_id, server_id)
         label = self.sanitize_vk_label(f"［{title}］ {nick}", vk_id=vk_id)
         return f"[id{vk_id}|{label}]"
 
-    async def format_setnick_actor(self, vk_id: int) -> str:
+    async def format_setnick_actor(
+        self,
+        vk_id: int,
+        server_id: int | None = None,
+    ) -> str:
         """Инициатор /snick, /rnick — только ник."""
-        return await self.link_user(vk_id)
+        return await self.link_user(vk_id, server_id)
 
     async def format_kick_announce(
         self,
@@ -159,8 +197,8 @@ class DisplayNameService:
         server_id: int,
         reason: str | None,
     ) -> str:
-        target_m = await self.link_user(target_id)
-        actor_m = await self.link_user(actor_id)
+        target_m = await self.link_user(target_id, server_id)
+        actor_m = await self.link_user(actor_id, server_id)
         reason_text = reason.strip() if reason and reason.strip() else "."
         return (
             f"🚫 {target_m} был(а) исключён(а) по запросу {actor_m}.\n"

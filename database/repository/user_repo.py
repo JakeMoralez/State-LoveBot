@@ -33,22 +33,55 @@ class UserRepository:
         return await User.filter(username__iexact=clean).first()
 
     @staticmethod
-    async def get_by_nickname(nickname: str) -> User | None:
-        return await User.filter(nickname__iexact=nickname).first()
+    async def get_by_nickname(nickname: str, server_id: int) -> User | None:
+        access = await UserServerAccess.filter(
+            server_id=server_id,
+            nickname__iexact=nickname,
+        ).prefetch_related("user").first()
+        return access.user if access else None
 
     @staticmethod
-    async def search_users(query: str, *, limit: int = 10) -> list[User]:
+    async def search_users(
+        query: str,
+        server_id: int,
+        *,
+        limit: int = 10,
+    ) -> list[User]:
         q = (query or "").strip().lstrip("@")
         if not q:
             return []
         if q.isdigit():
             user = await User.get_or_none(vk_id=int(q))
             return [user] if user else []
+
         from tortoise.expressions import Q
 
-        return await User.filter(
-            Q(nickname__icontains=q) | Q(username__icontains=q)
-        ).limit(limit)
+        seen: set[int] = set()
+        result: list[User] = []
+
+        nick_rows = (
+            await UserServerAccess.filter(
+                server_id=server_id,
+                nickname__icontains=q,
+            )
+            .prefetch_related("user")
+            .limit(limit)
+        )
+        for row in nick_rows:
+            if row.user_id not in seen:
+                seen.add(row.user_id)
+                result.append(row.user)
+
+        if len(result) < limit:
+            username_rows = await User.filter(username__icontains=q).limit(limit)
+            for user in username_rows:
+                if user.vk_id not in seen:
+                    seen.add(user.vk_id)
+                    result.append(user)
+                if len(result) >= limit:
+                    break
+
+        return result[:limit]
 
     @staticmethod
     async def is_registered(vk_id: int) -> bool:
@@ -100,9 +133,15 @@ class UserRepository:
             | Q(is_congress_vice=True)
             | Q(is_attorney=True)
             | Q(is_leader=True)
-            | Q(is_admin=True)
         )
-        for user in await User.filter(role_q):
+        for row in await UserServerAccess.filter(
+            server_id=server_id,
+        ).filter(role_q).prefetch_related("user"):
+            if row.user_id in by_id:
+                continue
+            by_id[row.user_id] = (row.user, row.access_level, row)
+
+        for user in await User.filter(is_admin=True):
             if user.vk_id in by_id:
                 continue
             acc = await UserServerAccess.get_or_none(
@@ -262,26 +301,60 @@ class UserRepository:
         return "доступ след. ЦА" if from_sled else "доступ ЦА"
 
     @staticmethod
-    async def set_nickname(vk_id: int, nickname: str) -> User:
+    async def get_nickname(vk_id: int, server_id: int) -> str | None:
+        access = await UserServerAccess.get_or_none(
+            user_id=vk_id,
+            server_id=server_id,
+        )
+        if access and access.nickname and access.nickname.strip():
+            return access.nickname.strip()
+        return None
+
+    @staticmethod
+    async def is_nickname_taken(
+        server_id: int,
+        nickname: str,
+        *,
+        exclude_vk_id: int | None = None,
+    ) -> bool:
+        qs = UserServerAccess.filter(
+            server_id=server_id,
+            nickname__iexact=nickname,
+        )
+        if exclude_vk_id:
+            qs = qs.exclude(user_id=exclude_vk_id)
+        return await qs.exists()
+
+    @staticmethod
+    async def set_nickname(vk_id: int, server_id: int, nickname: str) -> User:
         user = await User.get(vk_id=vk_id)
-        user.nickname = nickname
+        server = await Server.get(id=server_id)
+        access, _ = await UserServerAccess.get_or_create(
+            user=user,
+            server=server,
+            defaults={"access_level": 0},
+        )
+        access.nickname = nickname
+        await access.save()
         user.last_used = datetime.now(timezone.utc)
         await user.save()
         return user
 
     @staticmethod
-    async def clear_nickname(vk_id: int) -> bool:
-        user = await User.get_or_none(vk_id=vk_id)
-        if not user or not (user.nickname and user.nickname.strip()):
+    async def clear_nickname(vk_id: int, server_id: int) -> bool:
+        access = await UserServerAccess.get_or_none(
+            user_id=vk_id,
+            server_id=server_id,
+        )
+        if not access or not (access.nickname and access.nickname.strip()):
             return False
-        user.nickname = None
-        await user.save()
+        access.nickname = None
+        await access.save()
         return True
 
     @staticmethod
-    async def has_nickname(vk_id: int) -> bool:
-        user = await User.get_or_none(vk_id=vk_id)
-        return bool(user and user.nickname and user.nickname.strip())
+    async def has_nickname(vk_id: int, server_id: int) -> bool:
+        return bool(await UserRepository.get_nickname(vk_id, server_id))
 
     @staticmethod
     async def ensure_user(

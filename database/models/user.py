@@ -79,6 +79,12 @@ class UserServerAccess(Model):
         on_delete=fields.CASCADE,
     )
     access_level = fields.IntField(default=AccessLevel.PGS)
+    nickname = fields.CharField(max_length=64, null=True)
+    is_judge = fields.BooleanField(default=False)
+    is_attorney = fields.BooleanField(default=False)
+    is_leader = fields.BooleanField(default=False)
+    is_congress_speaker = fields.BooleanField(default=False)
+    is_congress_vice = fields.BooleanField(default=False)
     granted_by = fields.BigIntField(null=True)
     granted_at = fields.DatetimeField(auto_now_add=True)
     has_ca_access = fields.BooleanField(default=False)

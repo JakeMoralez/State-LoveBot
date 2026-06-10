@@ -182,7 +182,8 @@ def register_chat(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             role_notice: str | None = None
 
             settings = await ChatSettingsRepository.get(peer_id)
-            names = DisplayNameService(api)
+            server_id = await AccessChecker.resolve_server_id(peer_id)
+            names = DisplayNameService(api, server_id)
             target_link = await names.link_user(user_id)
 
             if voluntary:
@@ -252,9 +253,11 @@ def register_chat(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             logger.warning("sled_ca join failed peer=%s member=%s: %s", peer_id, member_id, exc)
 
         try:
+            server_id = await AccessChecker.resolve_server_id(peer_id)
             welcome = await messaging.format_welcome_notice(
                 member_id,
                 invited_by=invited_by,
+                server_id=server_id,
             )
             await _send_text(peer_id, welcome)
         except Exception as exc:
@@ -318,7 +321,7 @@ def register_chat(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             await event.show_snackbar("❌ Некорректный запрос.")
             return
 
-        server_id = await AccessChecker.resolve_server_id(peer_id)
+        server_id = await AccessChecker.resolve_server_id(peer_id, event.user_id)
         if await AccessChecker.get_level(event.user_id, server_id) < AccessLevel.SUPERVISOR:
             await event.show_snackbar("⛔ Недостаточно прав.")
             return

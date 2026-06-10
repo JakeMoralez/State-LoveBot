@@ -87,12 +87,19 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
             else None
         )
 
+        cmd_resolver = VKResolver(api, server_id)
         if reply_id:
-            resolved = await resolver.resolve(str(reply_id))
+            resolved, _ = await cmd_resolver.resolve_with_hint(
+                str(reply_id),
+                server_id,
+            )
             reason = args.strip() or None
         else:
             target_raw, reason = _parse_target_and_reason(args)
-            resolved = await resolver.resolve(target_raw)
+            resolved, _ = await cmd_resolver.resolve_with_hint(
+                target_raw,
+                server_id,
+            )
 
         if not resolved:
             await message.answer("❌ Пользователь не найден.")
@@ -167,8 +174,10 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
             if message.reply_message and message.reply_message.from_id > 0
             else None
         )
-        resolved = await resolver.resolve_from_message(
-            target_raw, reply_from_id=reply_id
+        resolved = await VKResolver(api, server_id).resolve_from_message(
+            target_raw,
+            reply_from_id=reply_id,
+            server_id=server_id,
         )
         if not resolved:
             await message.answer("❌ Пользователь не найден.")

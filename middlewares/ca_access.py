@@ -27,7 +27,8 @@ def requires_ca_scope(
             return None
 
         server_id = kwargs.get("server_id") or await AccessChecker.resolve_server_id(
-            message.peer_id
+            message.peer_id,
+            user_id,
         )
         if not await UserRepository.can_use_ca_scope(user_id, server_id):
             await message.answer(

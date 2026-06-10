@@ -9,7 +9,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from config import FORUM_COOKIES, FORUM_USER_AGENT
-from config.settings import JUDGE_FORUM_ID, SERVER_NUMBER, SERVER_TAG
+from database.repository.server_repo import ServerRepository
+from services.server_display import format_server_label
 from services.forum_format import (
     case_word,
     format_created_date,
@@ -314,13 +315,6 @@ class ForumService:
 
         return threads, pages_scanned
 
-    @staticmethod
-    def _server_label() -> str:
-        base = f"Arizona №{SERVER_NUMBER}" if SERVER_NUMBER else "Arizona"
-        if SERVER_TAG:
-            return f"{base} [{SERVER_TAG}]"
-        return base
-
     async def _resolve_closer_name(self, row: dict[str, Any]) -> str:
         closer = (row.get("username_last_message") or "").strip()
         if closer:
@@ -348,14 +342,16 @@ class ForumService:
     async def get_court_stats(
         self,
         *,
+        server_id: int,
+        judge_forum_id: int,
         pages: int | None = None,
         days: int | None = None,
     ) -> str:
-        """Статистика исков/жалоб в разделе JUDGE_FORUM_ID."""
+        """Статистика исков/жалоб в разделе судебных исков сервера."""
         if not self._api:
             return "❌ Форум не подключён."
 
-        category = await self._api.get_category(JUDGE_FORUM_ID)
+        category = await self._api.get_category(judge_forum_id)
         if not category:
             return "❌ Раздел судебных исков не найден"
 
@@ -421,14 +417,16 @@ class ForumService:
             for name, _tid in resolved:
                 closed_by_stats[name] = closed_by_stats.get(name, 0) + 1
 
+        server = await ServerRepository.get_by_id(server_id)
+        server_label = format_server_label(server, server_id)
         if period_label:
             header = (
-                f"👻 Статистика {period_label} | {self._server_label()} | "
+                f"👻 Статистика {period_label} | {server_label} | "
                 f"{category_title} 👻"
             )
         else:
             header = (
-                f"👻 Статистика | {self._server_label()} | {category_title} 👻"
+                f"👻 Статистика | {server_label} | {category_title} 👻"
             )
 
         if "жалоб" in category_title.lower():

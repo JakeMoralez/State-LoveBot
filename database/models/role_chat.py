@@ -1,4 +1,4 @@
-"""Привязка VK-бесед к форумным ролям (судьи, адвокаты и т.д.)."""
+"""Привязка VK-бесед к форумным ролям (судьи, адвокаты и т.д.) — на каждый сервер."""
 
 from __future__ import annotations
 
@@ -17,16 +17,20 @@ class ForumRoleKey:
 
 
 class RoleChat(Model):
-    role = fields.CharField(max_length=32, pk=True)
-    peer_id = fields.BigIntField()
+    id = fields.IntField(pk=True)
+    role = fields.CharField(max_length=32)
     server = fields.ForeignKeyField(
         "models.Server",
         related_name="role_chats",
-        null=True,
-        on_delete=fields.SET_NULL,
+        on_delete=fields.CASCADE,
     )
+    peer_id = fields.BigIntField()
     registered_by = fields.BigIntField(null=True)
     registered_at = fields.DatetimeField(auto_now_add=True)
 
     class Meta:
         table = "role_chats"
+        unique_together = (("server_id", "role"),)
+
+    def __str__(self) -> str:
+        return f"{self.role}@{self.server_id}"

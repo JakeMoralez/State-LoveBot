@@ -16,11 +16,9 @@ VK_GROUP_ID: int = int(os.getenv("VK_GROUP_ID", "0"))
 VK_GROUP_TOKEN: str = os.getenv("VK_GROUP_TOKEN", "")
 VK_USER_TOKEN: str = os.getenv("VK_USER_TOKEN", "")
 
-# Сервер по умолчанию (для односерверных инсталляций)
+# Сервер по умолчанию (единственный параметр сервера в .env)
+DEFAULT_SERVER_ID: int = int(os.getenv("DEFAULT_SERVER_ID", "30"))
 DEFAULT_SERVER_SLUG: str = os.getenv("DEFAULT_SERVER_SLUG", "default")
-DEFAULT_SERVER_NAME: str = os.getenv("DEFAULT_SERVER_NAME", "Основной сервер")
-SERVER_NUMBER: int = int(os.getenv("SERVER_NUMBER", "0"))
-SERVER_TAG: str = os.getenv("SERVER_TAG", "").strip()
 
 # Администратор / разработчик
 MAIN_ADMIN_ID: int = int(os.getenv("MAIN_ADMIN_ID", "0"))
@@ -46,7 +44,6 @@ FORUM_COOKIES: dict[str, str | None] = {
 }
 
 ATTORNEY_FORUM_ID: int = 3287
-JUDGE_FORUM_ID: int = 3423
 LEADER_ALLOWED_FORUMS: list[int] = [
     2935, 2936, 2937, 2938, 2939, 2940, 2941, 2942, 2943, 2944, 2945,
 ]

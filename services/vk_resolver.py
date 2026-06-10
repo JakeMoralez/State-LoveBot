@@ -30,8 +30,9 @@ class ResolvedUser:
 
 
 class VKResolver:
-    def __init__(self, api: API) -> None:
+    def __init__(self, api: API, server_id: int | None = None) -> None:
         self.api = api
+        self.server_id = server_id
 
     @staticmethod
     def parse_reference(raw: str) -> tuple[int | None, str | None]:
@@ -105,42 +106,51 @@ class VKResolver:
             display_name=name,
         )
 
-    async def _resolve_by_nickname(self, query: str) -> tuple[ResolvedUser | None, str | None]:
-        """Поиск по нику бота: точное совпадение, затем частичное."""
+    async def _resolve_by_nickname(
+        self,
+        query: str,
+        server_id: int | None = None,
+    ) -> tuple[ResolvedUser | None, str | None]:
+        """Поиск по нику бота на сервере: точное совпадение, затем частичное."""
+        sid = server_id if server_id is not None else self.server_id
         query = query.strip().lstrip("@")
-        if not query or query.isdigit():
+        if not query or query.isdigit() or not sid:
             return None, None
 
-        user = await UserRepository.get_by_nickname(query)
+        user = await UserRepository.get_by_nickname(query, sid)
         if user:
+            nick = await UserRepository.get_nickname(user.vk_id, sid)
             return ResolvedUser(
                 vk_id=user.vk_id,
                 username=user.username,
-                display_name=user.nickname,
+                display_name=nick,
             ), None
 
         user = await UserRepository.get_by_username(query)
         if user:
+            nick = await UserRepository.get_nickname(user.vk_id, sid)
             return ResolvedUser(
                 vk_id=user.vk_id,
                 username=user.username,
-                display_name=user.nickname or user.username,
+                display_name=nick or user.username,
             ), None
 
-        matches = await UserRepository.search_users(query, limit=8)
+        matches = await UserRepository.search_users(query, sid, limit=8)
         if not matches:
             return None, None
         if len(matches) == 1:
             u = matches[0]
+            nick = await UserRepository.get_nickname(u.vk_id, sid)
             return ResolvedUser(
                 vk_id=u.vk_id,
                 username=u.username,
-                display_name=u.nickname or u.username,
+                display_name=nick or u.username,
             ), None
 
         lines = [f"❌ Найдено несколько пользователей по «{query}»:"]
         for u in matches[:5]:
-            label = u.nickname or u.username or str(u.vk_id)
+            nick = await UserRepository.get_nickname(u.vk_id, sid)
+            label = nick or u.username or str(u.vk_id)
             lines.append(f"• {label} (id{u.vk_id})")
         lines.append("Уточните ник или укажите VK-ссылку / id.")
         return None, "\n".join(lines)
@@ -149,7 +159,11 @@ class VKResolver:
         resolved, _err = await self.resolve_with_hint(raw)
         return resolved
 
-    async def resolve_with_hint(self, raw: str) -> tuple[ResolvedUser | None, str | None]:
+    async def resolve_with_hint(
+        self,
+        raw: str,
+        server_id: int | None = None,
+    ) -> tuple[ResolvedUser | None, str | None]:
         ref = self.extract_reference(raw)
         vk_id, screen_name = self.parse_reference(ref)
 
@@ -158,7 +172,7 @@ class VKResolver:
 
         lookup = (screen_name or ref).strip().lstrip("@")
         if lookup:
-            nick_resolved, hint = await self._resolve_by_nickname(lookup)
+            nick_resolved, hint = await self._resolve_by_nickname(lookup, server_id)
             if hint:
                 return None, hint
             if nick_resolved:
@@ -190,10 +204,11 @@ class VKResolver:
         args: str,
         *,
         reply_from_id: int | None = None,
+        server_id: int | None = None,
     ) -> tuple[ResolvedUser | None, str | None]:
         if reply_from_id and reply_from_id > 0:
-            return await self.resolve_with_hint(str(reply_from_id))
+            return await self.resolve_with_hint(str(reply_from_id), server_id)
         raw = args.strip()
         if raw:
-            return await self.resolve_with_hint(raw)
+            return await self.resolve_with_hint(raw, server_id)
         return None, None

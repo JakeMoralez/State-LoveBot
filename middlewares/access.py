@@ -9,12 +9,13 @@ from typing import Any, ParamSpec, TypeVar
 
 from vkbottle.bot import Message
 
-from config.settings import DEFAULT_SERVER_SLUG
+from config.settings import DEFAULT_SERVER_ID, DEFAULT_SERVER_SLUG
 from database.models.user import AccessLevel
 from database.repository.chat_repo import ChatRepository
 from database.repository.server_repo import ServerRepository
 from database.repository.forum_role_repo import ForumRoleRepository
 from database.repository.user_repo import UserRepository
+from services.dev_server_context import get_dev_server_override
 
 logger = logging.getLogger(__name__)
 
@@ -26,10 +27,20 @@ class AccessChecker:
     """Централизованная проверка прав с привязкой к серверу."""
 
     @staticmethod
-    async def resolve_server_id(peer_id: int) -> int:
+    async def resolve_server_id(peer_id: int, user_id: int | None = None) -> int:
+        if user_id and await UserRepository.is_developer(user_id):
+            override = get_dev_server_override(user_id)
+            if override is not None:
+                return override
+
         chat = await ChatRepository.get_by_peer_id(peer_id)
         if chat:
             return chat.server_id
+
+        server = await ServerRepository.get_by_id(DEFAULT_SERVER_ID)
+        if server:
+            return server.id
+
         server = await ServerRepository.get_by_slug(DEFAULT_SERVER_SLUG)
         if not server:
             raise RuntimeError("Сервер по умолчанию не настроен")
@@ -75,7 +86,7 @@ def requires_level(
                 return None
 
             server_id = (
-                await AccessChecker.resolve_server_id(message.peer_id)
+                await AccessChecker.resolve_server_id(message.peer_id, user_id)
                 if server_scoped
                 else (await ServerRepository.get_by_slug(DEFAULT_SERVER_SLUG)).id  # type: ignore[union-attr]
             )
@@ -118,7 +129,7 @@ def requires_public(
         user_id = message.from_id
         if user_id is None or user_id <= 0:
             return None
-        server_id = await AccessChecker.resolve_server_id(message.peer_id)
+        server_id = await AccessChecker.resolve_server_id(message.peer_id, user_id)
         kwargs["server_id"] = server_id
         kwargs["access_level"] = await AccessChecker.get_level(user_id, server_id)
         return await func(message, *args, **kwargs)
@@ -141,7 +152,7 @@ def requires_zgs_or_gos(
             await message.answer("⛔ У вас нет доступа к боту.")
             return None
 
-        server_id = await AccessChecker.resolve_server_id(message.peer_id)
+        server_id = await AccessChecker.resolve_server_id(message.peer_id, user_id)
         level = await AccessChecker.get_level(user_id, server_id)
         allowed = level == AccessLevel.ZGS or level >= AccessLevel.GS_GOS
         if await UserRepository.is_developer(user_id):
@@ -169,7 +180,10 @@ def requires_developer(
         if not await UserRepository.is_developer(user_id):
             await message.answer("⛔ Только разработчик (ур. 10).")
             return None
-        kwargs["server_id"] = await AccessChecker.resolve_server_id(message.peer_id)
+        kwargs["server_id"] = await AccessChecker.resolve_server_id(
+            message.peer_id,
+            user_id,
+        )
         kwargs["access_level"] = AccessLevel.DEVELOPER
         return await func(message, *args, **kwargs)
 

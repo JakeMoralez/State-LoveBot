@@ -132,7 +132,9 @@ def register_ca(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             else None
         )
         resolved, hint = await resolver.resolve_from_message_with_hint(
-            target_args, reply_from_id=reply_id
+            target_args,
+            reply_from_id=reply_id,
+            server_id=server_id,
         )
         if hint:
             await message.answer(hint, disable_mentions=1)
@@ -152,7 +154,7 @@ def register_ca(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             enabled=not revoke,
             granted_by=message.from_id,
         )
-        link = await names.link_user(resolved.vk_id)
+        link = await names.link_user(resolved.vk_id, server_id)
         if revoke:
             await message.answer(f"✅ {link} — доступ ЦА снят.", disable_mentions=1)
             action = "ca_access_revoke"
@@ -195,7 +197,9 @@ def register_ca(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             return
 
         resolved, hint = await resolver.resolve_from_message_with_hint(
-            target_args or "", reply_from_id=reply_id
+            target_args or "",
+            reply_from_id=reply_id,
+            server_id=server_id,
         )
         if hint:
             await message.answer(hint, disable_mentions=1)
@@ -229,7 +233,7 @@ def register_ca(bot: Bot, api: API, action_logger: ActionLogger) -> None:
 
         removed = await revoke_accesses(target_id, server_id)
         if not removed:
-            link = await names.link_user(target_id)
+            link = await names.link_user(target_id, server_id)
             await message.answer(
                 f"❌ У {link} нечего снимать.\n"
                 "Нет ролей: судья, спикер/вице, доступ ЦА / след. ЦА.",
@@ -237,7 +241,7 @@ def register_ca(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             )
             return
 
-        link = await names.link_user(target_id)
+        link = await names.link_user(target_id, server_id)
         lines = [f"✅ {link} — снято:", ""]
         for item in removed:
             lines.append(f"• {_RACCESS_LABELS.get(item, item)}")

@@ -8,16 +8,16 @@ from database.repository.user_repo import UserRepository
 
 
 async def revoke_accesses(vk_id: int, server_id: int) -> list[str]:
-    """Снять роли и доступы ЦА с пользователя. Пустой список — нечего снимать."""
+    """Снять роли и доступы ЦА с пользователя на сервере."""
     removed: list[str] = []
 
-    if await ForumRoleRepository.clear_judge_role(vk_id):
+    if await ForumRoleRepository.clear_judge_role(vk_id, server_id):
         removed.append("судья")
 
-    if await CongressRepository.clear_speaker_for(vk_id):
+    if await CongressRepository.clear_speaker_for(vk_id, server_id):
         removed.append("спикер конгресса")
 
-    if await CongressRepository.clear_vice_for(vk_id):
+    if await CongressRepository.clear_vice_for(vk_id, server_id):
         removed.append("вице-спикер конгресса")
 
     ca_label = await UserRepository.revoke_self_ca_access(vk_id, server_id)

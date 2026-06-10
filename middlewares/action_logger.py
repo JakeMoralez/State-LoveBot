@@ -9,7 +9,7 @@ from datetime import datetime
 
 from vkbottle import API
 
-from config.settings import DEFAULT_SERVER_SLUG, LOG_CHAT_ID, MAIN_ADMIN_ID
+from config.settings import DEFAULT_SERVER_ID, DEFAULT_SERVER_SLUG, LOG_CHAT_ID, MAIN_ADMIN_ID
 from database.repository.chat_repo import ChatRepository
 from database.repository.server_repo import ServerRepository
 from database.repository.user_repo import UserRepository
@@ -138,8 +138,11 @@ class ActionLogger:
             chat = await ChatRepository.get_by_peer_id(source_peer_id)
             if chat:
                 return chat.server_id
-        default = await ServerRepository.get_by_slug(DEFAULT_SERVER_SLUG)
-        return default.id if default else None
+        default = await ServerRepository.get_by_id(DEFAULT_SERVER_ID)
+        if default:
+            return default.id
+        by_slug = await ServerRepository.get_by_slug(DEFAULT_SERVER_SLUG)
+        return by_slug.id if by_slug else None
 
     async def _resolve_log_peer(self, source_peer_id: int | None = None) -> int | None:
         server_ids: list[int] = []
@@ -148,7 +151,9 @@ class ActionLogger:
             if chat:
                 server_ids.append(chat.server_id)
 
-        default = await ServerRepository.get_by_slug(DEFAULT_SERVER_SLUG)
+        default = await ServerRepository.get_by_id(DEFAULT_SERVER_ID)
+        if not default:
+            default = await ServerRepository.get_by_slug(DEFAULT_SERVER_SLUG)
         if default and default.id not in server_ids:
             server_ids.append(default.id)
 
@@ -161,7 +166,7 @@ class ActionLogger:
         return fallback if fallback else None
 
     async def _short_user(self, vk_id: int, server_id: int | None = None) -> str:
-        nick = await self.names.get_ping_nickname(vk_id)
+        nick = await self.names.get_ping_nickname(vk_id, server_id)
         full = await self.names.get_vk_full_name(vk_id)
         label = nick or full
         parts = [f"{label} (id{vk_id})"]

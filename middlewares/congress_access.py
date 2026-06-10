@@ -29,9 +29,11 @@ def requires_setnick(
         if not user_id or user_id <= 0:
             return None
 
-        server_id = await AccessChecker.resolve_server_id(message.peer_id)
+        server_id = await AccessChecker.resolve_server_id(message.peer_id, user_id)
 
-        if await CongressRepository.can_setnick_in_chat(message.peer_id, user_id):
+        if await CongressRepository.can_setnick_in_chat(
+            message.peer_id, user_id, server_id
+        ):
             kwargs["server_id"] = server_id
             kwargs["access_level"] = await AccessChecker.get_level(user_id, server_id)
             return await func(message, *args, **kwargs)
@@ -69,9 +71,11 @@ def requires_chat_kick(
         if not user_id or user_id <= 0:
             return None
 
-        server_id = await AccessChecker.resolve_server_id(message.peer_id)
+        server_id = await AccessChecker.resolve_server_id(message.peer_id, user_id)
 
-        if await CongressRepository.can_kick_in_chat(message.peer_id, user_id):
+        if await CongressRepository.can_kick_in_chat(
+            message.peer_id, user_id, server_id
+        ):
             kwargs["server_id"] = server_id
             kwargs["access_level"] = await AccessChecker.get_level(user_id, server_id)
             return await func(message, *args, **kwargs)
@@ -109,9 +113,11 @@ def requires_msg(
         if not user_id or user_id <= 0:
             return None
 
-        server_id = await AccessChecker.resolve_server_id(message.peer_id)
+        server_id = await AccessChecker.resolve_server_id(message.peer_id, user_id)
 
-        if await CongressRepository.can_use_msg(message.peer_id, user_id):
+        if await CongressRepository.can_use_msg(
+            message.peer_id, user_id, server_id
+        ):
             kwargs["server_id"] = server_id
             kwargs["access_level"] = await AccessChecker.get_level(user_id, server_id)
             kwargs["msg_mode"] = "congress"

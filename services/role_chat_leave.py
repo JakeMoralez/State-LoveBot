@@ -30,28 +30,48 @@ async def handle_role_chat_leave(peer_id: int, user_id: int, api: API) -> str | 
     if user_id <= 0 or peer_id < 2_000_000_000:
         return None
 
-    names = DisplayNameService(api)
-    link = await names.link_user(user_id)
+    role_chat = await ForumRoleRepository.get_role_chat_by_peer(peer_id)
+    if not role_chat:
+        return None
+
+    server_id = role_chat.server_id
+    names = DisplayNameService(api, server_id)
+    link = await names.link_user(user_id, server_id)
     notices: list[str] = []
 
-    congress_role = await CongressRepository.revoke_officer_on_leave(peer_id, user_id)
+    congress_role = await CongressRepository.revoke_officer_on_leave(
+        peer_id,
+        user_id,
+        server_id,
+    )
     if congress_role:
         label = _CONGRESS_LABELS.get(congress_role, congress_role)
         notices.append(f"🏛 {link} — снят доступ {label} (выход из беседы).")
         logger.info(
-            "congress %s revoked: vk_id=%s peer=%s",
+            "congress %s revoked: vk_id=%s peer=%s server=%s",
             congress_role,
             user_id,
             peer_id,
+            server_id,
         )
 
-    role = await ForumRoleRepository.find_role_by_peer(peer_id)
-    if role and role in _ROLE_LABELS:
-        if await ForumRoleRepository.revoke_role_on_leave(user_id, role):
+    role = role_chat.role
+    if role in _ROLE_LABELS:
+        if await ForumRoleRepository.revoke_role_on_leave(
+            user_id,
+            role,
+            server_id,
+        ):
             notices.append(
                 f"🔰 {link} — доступ {_ROLE_LABELS[role]} снят (выход из беседы)."
             )
-            logger.info("%s role revoked: vk_id=%s peer=%s", role, user_id, peer_id)
+            logger.info(
+                "%s role revoked: vk_id=%s peer=%s server=%s",
+                role,
+                user_id,
+                peer_id,
+                server_id,
+            )
 
     if not notices:
         return None

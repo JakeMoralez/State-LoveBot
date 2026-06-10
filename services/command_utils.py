@@ -14,6 +14,8 @@ COMMAND_ALIASES: dict[str, tuple[str, ...]] = {
     "members": ("mems", "member", "nlist", "nicklist"),
     "regchat": ("rchat",),
     "devhelp": ("dhelp",),
+    "meserver": ("mserver", "myserver"),
+    "setserver": ("sserver", "servercfg"),
     "createpool": ("cpool",),
     "staff": ("access", "accesses"),
     "court": ("judges",),

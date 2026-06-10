@@ -10,6 +10,8 @@ class Server(Model):
     id = fields.IntField(pk=True)
     slug = fields.CharField(max_length=64, unique=True)
     name = fields.CharField(max_length=128)
+    tag = fields.CharField(max_length=64, null=True)
+    judge_forum_id = fields.IntField(null=True)
     is_active = fields.BooleanField(default=True)
     log_peer_id = fields.BigIntField(null=True)
     created_at = fields.DatetimeField(auto_now_add=True)

@@ -148,9 +148,10 @@ class MessagingService:
         if not visible:
             return "📭 Нет участников для отображения."
 
+        names = DisplayNameService(self.api, server_id)
         lines = [f"👥 Участники беседы ({len(visible)}):"]
         for mid in sorted(visible):
-            lines.append(f"• {await self.names.link_user(mid)}")
+            lines.append(f"• {await names.link_user(mid)}")
         return "\n".join(lines)
 
     async def build_alert_message(
@@ -171,7 +172,8 @@ class MessagingService:
             DisplayNameService.nick_link(mid, "👤") for mid in member_ids
         )
 
-        sender = await self.names.link_user(sender_vk_id)
+        names = DisplayNameService(self.api, server_id)
+        sender = await names.link_user(sender_vk_id)
 
         lines = ["❗ Оповещение❗", ""]
         if pings:
@@ -184,10 +186,12 @@ class MessagingService:
         vk_id: int,
         *,
         invited_by: int | None = None,
+        server_id: int | None = None,
     ) -> str:
-        link = await self.names.link_user(vk_id)
+        names = DisplayNameService(self.api, server_id)
+        link = await names.link_user(vk_id)
         if invited_by and invited_by > 0 and invited_by != vk_id:
-            inviter = await self.names.link_user(invited_by)
+            inviter = await names.link_user(invited_by)
             return f"➕ {inviter} пригласил(а) {link}."
         return f"➕ {link} вступил(а) в беседу."
 

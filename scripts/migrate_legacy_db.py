@@ -16,7 +16,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from config.settings import DEFAULT_SERVER_NAME, DEFAULT_SERVER_SLUG  # noqa: E402
+from config.settings import DEFAULT_SERVER_ID, DEFAULT_SERVER_SLUG  # noqa: E402
 from database.connection import init_db, close_db  # noqa: E402
 from database.models.user import AccessLevel, User, UserServerAccess  # noqa: E402
 from database.repository.server_repo import ServerRepository  # noqa: E402
@@ -42,7 +42,7 @@ async def migrate() -> None:
     await init_db()
     server = await ServerRepository.get_or_create_default(
         slug=DEFAULT_SERVER_SLUG,
-        name=DEFAULT_SERVER_NAME,
+        name=f"Arizona №{DEFAULT_SERVER_ID}",
     )
 
     conn = sqlite3.connect(LEGACY_DB)

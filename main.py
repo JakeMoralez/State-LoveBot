@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 
 from vkbottle import API
 from vkbottle.bot import Bot, Message
@@ -20,12 +21,14 @@ from database import close_db, init_db
 from middlewares.access import requires_developer
 from middlewares.action_logger import ActionLogger
 from modules import register_all_modules
+from services.chat_admin import ChatAdminService
 from services.forum_api import ForumService, _ARIZONA_IMPORT_ERROR, _HAS_ARIZONA
 from services.help_menu import build_dev_help_text, build_help_text
 
 logger = logging.getLogger(__name__)
 
 _forum_service = ForumService()
+_bot_started_at: float | None = None
 
 
 def create_bot(token: str, group_id: int) -> tuple[Bot, API, ActionLogger]:
@@ -56,7 +59,12 @@ def create_bot(token: str, group_id: int) -> tuple[Bot, API, ActionLogger]:
 
     @bot.on.message(text=["/ping", "!ping"])
     async def ping_handler(message: Message) -> None:
-        await message.answer("🏓 pong")
+        if _bot_started_at is None:
+            await message.answer("🏓 pong")
+            return
+        elapsed = int(time.monotonic() - _bot_started_at)
+        uptime = ChatAdminService.format_duration(elapsed)
+        await message.answer(f"🏓 pong\n⏱ Время работы: {uptime}")
 
     return bot, api, action_logger
 
@@ -84,6 +92,8 @@ async def run_bot() -> None:
                         _ARIZONA_IMPORT_ERROR,
                     )
         logger.info("Бот запущен (async architecture)")
+        global _bot_started_at
+        _bot_started_at = time.monotonic()
         try:
             await bot.run_polling()
         except VKAPIError as exc:

@@ -9,9 +9,10 @@ from typing import ParamSpec, TypeVar
 
 from vkbottle.bot import Message
 
-from config.settings import ATTORNEY_FORUM_ID, JUDGE_FORUM_ID, LEADER_ALLOWED_FORUMS
+from config.settings import ATTORNEY_FORUM_ID, LEADER_ALLOWED_FORUMS
 from database.models.user import AccessLevel
 from database.repository.forum_role_repo import ForumRoleRepository
+from database.repository.server_repo import ServerRepository
 from database.repository.user_repo import UserRepository
 from middlewares.access import AccessChecker
 
@@ -37,12 +38,13 @@ class ForumAccessChecker:
         level = await UserRepository.get_access_level(user_id, server_id)
         if level >= AccessLevel.ZGA:
             return True
-        if await ForumRoleRepository.is_leader(user_id):
+        if await ForumRoleRepository.is_leader(user_id, server_id):
             return forum_category_id in LEADER_ALLOWED_FORUMS
-        if await ForumRoleRepository.is_attorney(user_id):
+        if await ForumRoleRepository.is_attorney(user_id, server_id):
             return forum_category_id == ATTORNEY_FORUM_ID
-        if await ForumRoleRepository.is_judge(user_id):
-            return forum_category_id == JUDGE_FORUM_ID
+        if await ForumRoleRepository.is_judge(user_id, server_id):
+            judge_forum_id = await ServerRepository.get_judge_forum_id(server_id)
+            return bool(judge_forum_id and forum_category_id == judge_forum_id)
         return False
 
 
@@ -57,7 +59,7 @@ def requires_court_manager(
         if not user_id or user_id <= 0:
             return None
 
-        server_id = await AccessChecker.resolve_server_id(message.peer_id)
+        server_id = await AccessChecker.resolve_server_id(message.peer_id, user_id)
         if not await ForumAccessChecker.can_manage_court_roles(user_id, server_id):
             await message.answer(
                 "⛔ Требуется ЗГС (3+) и доступ ЦА (ур. 1–4) или ур. 5+."
@@ -89,7 +91,10 @@ def requires_forum_user(
             await message.answer("⛔ У вас нет доступа к боту. Обратитесь к администратору.")
             return None
 
-        kwargs["server_id"] = await AccessChecker.resolve_server_id(message.peer_id)
+        kwargs["server_id"] = await AccessChecker.resolve_server_id(
+            message.peer_id,
+            user_id,
+        )
         return await func(message, *args, **kwargs)
 
     return wrapper
@@ -104,11 +109,15 @@ def requires_judge(
         if not user_id or user_id <= 0:
             return None
 
-        if not await ForumRoleRepository.is_judge(user_id):
-            await message.answer("⛔ Команда доступна только судьям.")
+        server_id = await AccessChecker.resolve_server_id(
+            message.peer_id,
+            user_id,
+        )
+        if not await ForumRoleRepository.is_judge(user_id, server_id):
+            await message.answer("⛔ Команда доступна только судьям на этом сервере.")
             return None
 
-        kwargs["server_id"] = await AccessChecker.resolve_server_id(message.peer_id)
+        kwargs["server_id"] = server_id
         return await func(message, *args, **kwargs)
 
     return wrapper
