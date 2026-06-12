@@ -56,7 +56,9 @@ async def _format_aliases_message(server_id: int, *, header: str) -> str:
 async def _resolve_pool(server_id: int, pool_ref: str):
     pool_ref = pool_ref.strip()
     if pool_ref.isdigit():
-        pool = await PoolRepository.get_by_id(int(pool_ref))
+        pool = await PoolRepository.get_by_number(server_id, int(pool_ref))
+        if not pool:
+            pool = await PoolRepository.get_by_id(int(pool_ref))
     else:
         pool = await PoolRepository.get_by_name(server_id, pool_ref)
     if pool and pool.server_id == server_id:
@@ -212,7 +214,8 @@ def register_pools(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         lines = ["📂 Пулы бесед сервера:", ""]
         for pool in pools:
             chats = await ChatRepository.list_by_pool(pool.id)
-            lines.append(f"• [{pool.id}] {pool.name} — {len(chats)} бесед(ы)")
+            num = PoolRepository.display_number(pool)
+            lines.append(f"• [{num}] {pool.name} — {len(chats)} бесед(ы)")
             for chat in chats:
                 alias = chat.alias or "—"
                 title = chat.title or f"peer {chat.peer_id}"
@@ -242,18 +245,20 @@ def register_pools(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             return
         existing = await PoolRepository.get_by_name(server_id, name)
         if existing:
-            await message.answer(f"⚠️ Пул «{name}» уже существует (ID: {existing.id}).")
+            num = PoolRepository.display_number(existing)
+            await message.answer(f"⚠️ Пул «{name}» уже существует (№ {num}).")
             return
         pool = await PoolRepository.create(
             server_id=server_id,
             name=name,
             created_by=message.from_id,
         )
-        await message.answer(f"✅ Пул «{pool.name}» создан (ID: {pool.id}).")
+        num = PoolRepository.display_number(pool)
+        await message.answer(f"✅ Пул «{pool.name}» создан (№ {num}).")
         await action_logger.log_user(
             "create_pool",
             message.from_id,
-            f"«{pool.name}» (ID {pool.id})",
+            f"«{pool.name}» (№ {num})",
             "Создан",
             source_peer_id=message.peer_id,
         )
@@ -387,7 +392,7 @@ def register_pools(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         )
         await message.answer(
             f"✅ Беседа «{title or chat.peer_id}» зарегистрирована.\n"
-            f"Пул: {pool.name} (ID {pool.id})\n"
+            f"Пул: {pool.name} (№ {PoolRepository.display_number(pool)})\n"
             f"Алиас: {chat.alias}"
         )
         await action_logger.log_user(

@@ -121,3 +121,28 @@ def requires_judge(
         return await func(message, *args, **kwargs)
 
     return wrapper
+
+
+def requires_judge_or_developer(
+    func: Callable[P, Awaitable[R]],
+) -> Callable[P, Awaitable[R | None]]:
+    """Судья на сервере или разработчик — для /form и /myform."""
+
+    @functools.wraps(func)
+    async def wrapper(message: Message, *args: P.args, **kwargs: P.kwargs) -> R | None:
+        user_id = message.from_id
+        if not user_id or user_id <= 0:
+            return None
+
+        server_id = await AccessChecker.resolve_server_id(message.peer_id, user_id)
+        if await UserRepository.is_developer(user_id):
+            kwargs["server_id"] = server_id
+            return await func(message, *args, **kwargs)
+        if not await ForumRoleRepository.is_judge(user_id, server_id):
+            await message.answer("⛔ Команда доступна только судьям на этом сервере.")
+            return None
+
+        kwargs["server_id"] = server_id
+        return await func(message, *args, **kwargs)
+
+    return wrapper

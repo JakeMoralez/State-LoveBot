@@ -13,6 +13,7 @@ class Pool(Model):
         related_name="pools",
         on_delete=fields.CASCADE,
     )
+    number = fields.IntField(null=True)
     name = fields.CharField(max_length=128)
     description = fields.TextField(null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
@@ -22,7 +23,7 @@ class Pool(Model):
 
     class Meta:
         table = "pools"
-        unique_together = (("server_id", "name"),)
+        unique_together = (("server_id", "name"), ("server_id", "number"))
 
     def __str__(self) -> str:
         return self.name

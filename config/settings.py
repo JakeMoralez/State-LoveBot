@@ -60,6 +60,7 @@ TORTOISE_ORM: dict = {
                 "database.models.chat",
                 "database.models.moderation",
                 "database.models.notification",
+                "database.models.court_form",
                 "database.models.role_chat",
                 "database.models.chat_settings",
             ],

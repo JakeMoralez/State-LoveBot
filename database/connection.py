@@ -276,6 +276,40 @@ async def _migrate_legacy_data_to_default_server() -> None:
         )
 
 
+async def _ensure_pool_number_column() -> None:
+    conn = Tortoise.get_connection("default")
+    try:
+        await conn.execute_query("ALTER TABLE pools ADD COLUMN number INTEGER NULL")
+        logger.info("Добавлена колонка pools.number")
+    except Exception:
+        pass
+
+
+async def _migrate_pool_numbers() -> None:
+    from database.models.pool import Pool
+
+    pools = await Pool.all().order_by("server_id", "created_at", "id")
+    if not pools:
+        return
+
+    counters: dict[int, int] = {}
+    migrated = 0
+    for pool in pools:
+        counters[pool.server_id] = counters.get(pool.server_id, 0) + 1
+        expected = counters[pool.server_id]
+        if pool.number != expected:
+            pool.number = expected
+            await pool.save()
+            migrated += 1
+
+    if migrated:
+        logger.info(
+            "Нумерация пулов per-server: обновлено %s из %s",
+            migrated,
+            len(pools),
+        )
+
+
 async def _ensure_ca_access_columns() -> None:
     conn = Tortoise.get_connection("default")
     for ddl in (
@@ -289,6 +323,17 @@ async def _ensure_ca_access_columns() -> None:
             pass
 
 
+async def _ensure_court_form_batch_column() -> None:
+    conn = Tortoise.get_connection("default")
+    try:
+        await conn.execute_query(
+            "ALTER TABLE court_forms ADD COLUMN batch_id VARCHAR(32) NULL"
+        )
+        logger.info("Добавлена колонка court_forms.batch_id")
+    except Exception:
+        pass
+
+
 async def init_db() -> None:
     await Tortoise.init(config=TORTOISE_ORM)
     await Tortoise.generate_schemas(safe=True)
@@ -299,10 +344,13 @@ async def init_db() -> None:
     await _ensure_server_role_columns()
     await _ensure_server_forum_columns()
     await _ensure_server_log_peer_column()
+    await _ensure_pool_number_column()
+    await _ensure_court_form_batch_column()
     await _bootstrap_defaults()
     await _migrate_legacy_data_to_default_server()
     await _migrate_role_chats_per_server()
     await _migrate_global_nicknames_to_servers()
+    await _migrate_pool_numbers()
     await _migrate_global_roles_to_servers()
     logger.info("База данных инициализирована")
 

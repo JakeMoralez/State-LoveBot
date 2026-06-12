@@ -91,9 +91,19 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
         "📄 Форум — раздел судебных исков сервера",
         (
             HelpEntry("/info · /edit", "Инфо о теме и кнопки действий", "forum"),
-            HelpEntry("/fclose · /fopen", "Закрыть / открыть тему", "forum"),
+            HelpEntry("/fclose · /fopen", "Закрыть / открыть тему (алиасы: fclosed, fopened)", "forum"),
             HelpEntry("/fpin · /funpin", "Закрепить / открепить тему", "forum"),
             HelpEntry("/иски", "Статистика исков [страницы 1–20 / дни 1–365]", "forum"),
+            HelpEntry("/form", "Отправить игровые формы (судья)", "forum"),
+            HelpEntry("/myform", "Ваши формы и статусы", "forum"),
+            HelpEntry("/forms", "Команды для игры (без #id)", "forum", ca=True),
+            HelpEntry("/forms id · /formsid", "С #id каждой формы", "forum", ca=True),
+            HelpEntry(
+                "/acceptform · /rejectform",
+                "Принять / отклонить [id|all]",
+                "forum",
+                ca=True,
+            ),
         ),
     ),
     HelpCategory(

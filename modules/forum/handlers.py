@@ -16,6 +16,7 @@ from database.repository.server_repo import ServerRepository
 from middlewares.access import AccessChecker
 from middlewares.action_logger import ActionLogger
 from middlewares.forum_access import ForumAccessChecker, requires_forum_user
+from modules.forum.form_handlers import register_form_handlers
 from services.command_utils import matches_cmd, parse_forum_thread, strip_cmd
 from services.forum_api import ForumService
 from services.forum_format import format_thread_card
@@ -311,6 +312,8 @@ def register_forum(
                 pages=value,
             )
         await message.answer(report)
+
+    register_form_handlers(bot, api, action_logger)
 
     @bot.on.raw_event(GroupEventType.MESSAGE_EVENT, MessageEvent, blocking=False)
     async def forum_thread_callback(event: MessageEvent) -> None:
