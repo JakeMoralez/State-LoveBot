@@ -10,9 +10,8 @@ from vkbottle.bot import Bot, Message, MessageEvent
 from vkbottle.dispatch.rules.base import FuncRule
 
 from database.repository.court_form_repo import CourtFormRepository
-from database.repository.user_repo import UserRepository
 from middlewares.action_logger import ActionLogger
-from middlewares.ca_access import requires_ca_scope
+from middlewares.ca_access import can_review_court_forms, requires_ca_form_reviewer
 from middlewares.forum_access import requires_judge_or_developer
 from services.command_utils import matches_cmd, strip_cmd
 from services.court_form_notify import CourtFormNotifier
@@ -34,12 +33,6 @@ _FORM_CALLBACK_CMDS = frozenset({
     "form_accept_all",
     "form_reject_all",
 })
-
-
-async def _can_review_forms(user_id: int, server_id: int) -> bool:
-    if await UserRepository.is_developer(user_id):
-        return True
-    return await UserRepository.can_use_ca_scope(user_id, server_id)
 
 
 def _parse_target_arg(raw: str) -> tuple[str, str | None]:
@@ -133,7 +126,7 @@ def register_form_handlers(
             or matches_cmd(m.text or "", "formsid")
         )
     )
-    @requires_ca_scope
+    @requires_ca_form_reviewer
     async def list_forms(message: Message, server_id: int = 0) -> None:
         text = message.text or ""
         with_ids = matches_cmd(text, "formsid")
@@ -151,7 +144,7 @@ def register_form_handlers(
             await message.answer(chunk)
 
     @bot.on.message(FuncRule(lambda m: matches_cmd(m.text or "", "acceptform")))
-    @requires_ca_scope
+    @requires_ca_form_reviewer
     async def accept_form(message: Message, server_id: int = 0) -> None:
         raw = strip_cmd(message.text or "", "acceptform")
         target, _ = _parse_target_arg(raw)
@@ -207,7 +200,7 @@ def register_form_handlers(
         )
 
     @bot.on.message(FuncRule(lambda m: matches_cmd(m.text or "", "rejectform")))
-    @requires_ca_scope
+    @requires_ca_form_reviewer
     async def reject_form(message: Message, server_id: int = 0) -> None:
         raw = strip_cmd(message.text or "", "rejectform")
         target, reason = _parse_target_arg(raw)
@@ -290,8 +283,8 @@ def register_form_handlers(
                 event.user_id,
             )
 
-        if not await _can_review_forms(event.user_id, server_id):
-            await event.show_snackbar("⛔ Нужен доступ ЦА.")
+        if not await can_review_court_forms(event.user_id, server_id):
+            await event.show_snackbar("⛔ ЦА + ур. 2+")
             return
 
         try:

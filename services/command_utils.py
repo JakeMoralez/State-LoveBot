@@ -88,6 +88,16 @@ def matches_cmd(text: str, name: str) -> bool:
     return False
 
 
+def matches_who(text: str) -> bool:
+    """/who, !who, кто — без учёта регистра."""
+    t = (text or "").strip()
+    if not t:
+        return False
+    if t.casefold() == "кто":
+        return True
+    return matches_cmd(t, "who")
+
+
 def strip_cmd(text: str, name: str) -> str:
     raw = (text or "").strip()
     prefixes: list[str] = []

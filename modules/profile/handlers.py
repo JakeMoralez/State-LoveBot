@@ -15,7 +15,7 @@ from database.repository.user_repo import UserRepository
 from middlewares.access import AccessChecker, requires_level, requires_public
 from middlewares.congress_access import requires_setnick
 from middlewares.action_logger import ActionLogger
-from services.command_utils import dual, dual_with_args, matches_cmd, strip_cmd
+from services.command_utils import dual, dual_with_args, matches_cmd, matches_who, strip_cmd
 from services.display_name import DisplayNameService
 from services.nickname import NicknameValidator
 from services.staff_display import format_staff_list
@@ -137,9 +137,9 @@ async def _parse_nick_target(message: Message, api: API) -> tuple[int | None, st
     return None, _NICK_TARGET_ERR
 
 
-async def format_who_card(vk_id: int, api: API) -> str:
+async def format_who_card(vk_id: int, api: API, server_id: int = 0) -> str:
     emoji = random.choice(_WHO_EMOJIS)
-    link = await DisplayNameService(api).link_user(vk_id)
+    link = await DisplayNameService(api).link_user(vk_id, server_id)
     return f"{emoji} {link}"
 
 
@@ -251,7 +251,7 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         text = await format_staff_list(server_id, api)
         await message.answer(text, disable_mentions=1)
 
-    @bot.on.message(text=["/who", "!who", "кто"])
+    @bot.on.message(FuncRule(lambda m: matches_who(m.text or "")))
     @requires_public
     async def who(
         message: Message,
@@ -268,7 +268,7 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             await message.answer("ℹ️ Ответьте на сообщение пользователя.")
             return
 
-        card = await format_who_card(target_id, api)
+        card = await format_who_card(target_id, api, server_id)
         await message.answer(card, disable_mentions=1)
 
     @bot.on.message(text=dual("setlevel"))
@@ -342,7 +342,7 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             result_text = f"Выдан уровень {name}."
             log_detail = "Выдан"
         await message.answer(
-            f"✅ {await format_who_card(resolved.vk_id, api)}\n{result_text}",
+            f"✅ {await format_who_card(resolved.vk_id, api, server_id)}\n{result_text}",
             disable_mentions=1,
         )
         await action_logger.log_user(
