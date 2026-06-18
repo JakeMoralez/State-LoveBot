@@ -10,6 +10,8 @@ from vkbottle import API
 
 from database.models.court_form import CourtForm
 from database.models.user import User, UserServerAccess
+from database.repository.user_repo import UserRepository
+from middlewares.access import AccessChecker
 from services.court_form_notify import CourtFormNotifier
 
 logger = logging.getLogger(__name__)
@@ -76,6 +78,56 @@ async def handle_staff_ca(request: web.Request) -> web.Response:
     return web.json_response({"staff": staff})
 
 
+async def handle_staff_full(request: web.Request) -> web.Response:
+    if not _check_secret(request):
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    try:
+        server_id = int(request.rel_url.query.get("server_id", "0"))
+    except ValueError:
+        return web.json_response({"error": "invalid server_id"}, status=400)
+    if not server_id:
+        from config.settings import DEFAULT_SERVER_ID
+
+        server_id = DEFAULT_SERVER_ID
+
+    rows = await UserRepository.list_staff(server_id)
+    staff = []
+    for user, level, access in rows:
+        if await UserRepository.is_developer(user.vk_id):
+            level = max(level, 10)
+        badges: list[str] = []
+        if access and access.has_ca_access:
+            badges.append("ЦА")
+        if access and access.is_judge:
+            badges.append("⚖")
+        if access and access.is_congress_speaker:
+            badges.append("🎙")
+        if access and access.is_congress_vice:
+            badges.append("🎖")
+        if access and access.is_attorney:
+            badges.append("📘")
+        if access and access.is_leader:
+            badges.append("🛡")
+        if user.is_admin:
+            badges.append("👑")
+        staff.append(
+            {
+                "vk_id": user.vk_id,
+                "nickname": (access.nickname if access and access.nickname else None)
+                or user.nickname
+                or user.username,
+                "access_level": level,
+                "access_level_name": AccessChecker.level_name(level),
+                "badges": badges,
+                "has_ca_access": bool(access and access.has_ca_access),
+                "granted_by": access.granted_by if access else None,
+                "granted_at": access.granted_at.isoformat() if access and access.granted_at else None,
+            }
+        )
+    return web.json_response({"server_id": server_id, "staff": staff})
+
+
 async def handle_form_decision(request: web.Request) -> web.Response:
     if not _check_secret(request):
         return web.json_response({"error": "unauthorized"}, status=401)
@@ -117,6 +169,7 @@ async def start_sled_internal_server(api: API) -> web.AppRunner | None:
     app = web.Application()
     app["vk_api"] = api
     app.router.add_get("/internal/staff-ca", handle_staff_ca)
+    app.router.add_get("/internal/staff-full", handle_staff_full)
     app.router.add_post("/internal/notify", handle_notify)
     app.router.add_post("/internal/form-decision", handle_form_decision)
 
