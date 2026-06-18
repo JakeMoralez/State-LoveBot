@@ -149,6 +149,8 @@ DEV_HELP_CATEGORIES: tuple[HelpCategory, ...] = (
             HelpEntry("/regchat logs", "Беседа для логов бота", 10),
             HelpEntry("/regchat logs off", "Отвязать беседу логов", 10),
             HelpEntry("/deluser", "Удалить пользователя из БД", 10),
+            HelpEntry("/forumcheck", "Проверка сессии форума", 10),
+            HelpEntry("/forumcheck reconnect", "Переподключить форум (.env)", 10),
         ),
     ),
 )

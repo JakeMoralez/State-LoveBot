@@ -42,6 +42,7 @@ COMMAND_ALIASES: dict[str, tuple[str, ...]] = {
     "find": ("search", "f"),
     "rejoinkick": ("rjkick",),
     "chatsettings": ("csettings", "chcfg"),
+    "forumcheck": ("fcheck", "forumstatus"),
 }
 
 

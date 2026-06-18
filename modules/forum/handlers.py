@@ -13,12 +13,12 @@ from vkbottle.dispatch.rules.base import FuncRule
 
 from database.repository.forum_role_repo import ForumRoleRepository
 from database.repository.server_repo import ServerRepository
-from middlewares.access import AccessChecker
+from middlewares.access import AccessChecker, requires_developer
 from middlewares.action_logger import ActionLogger
 from middlewares.forum_access import ForumAccessChecker, requires_forum_user
 from modules.forum.form_handlers import register_form_handlers
 from services.command_utils import matches_cmd, parse_forum_thread, strip_cmd
-from services.forum_api import ForumService
+from services.forum_api import ForumService, format_forum_health
 from services.forum_format import format_thread_card
 from services.forum_keyboard import create_thread_action_keyboard
 from services.server_display import format_judge_forum_hint
@@ -312,6 +312,37 @@ def register_forum(
                 pages=value,
             )
         await message.answer(report)
+
+    @bot.on.message(FuncRule(lambda m: matches_cmd(m.text or "", "forumcheck")))
+    @requires_developer
+    async def forum_check(
+        message: Message,
+        server_id: int = 0,
+        access_level: int = 0,
+    ) -> None:
+        arg = strip_cmd(message.text or "", "forumcheck").lower()
+        if arg in ("reconnect", "reload", "refresh"):
+            report = await forum.reconnect()
+            text = format_forum_health(report)
+            await message.answer(text)
+            await action_logger.log_user(
+                "forum_check",
+                message.from_id,
+                "reconnect",
+                "OK" if report.ok else (report.error or "ошибка")[:80],
+                source_peer_id=message.peer_id,
+            )
+            return
+
+        report = await forum.check_health()
+        await message.answer(format_forum_health(report))
+        await action_logger.log_user(
+            "forum_check",
+            message.from_id,
+            "check",
+            "OK" if report.ok else (report.error or "ошибка")[:80],
+            source_peer_id=message.peer_id,
+        )
 
     register_form_handlers(bot, api, action_logger)
 

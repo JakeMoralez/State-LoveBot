@@ -16,6 +16,7 @@ from vkbottle.exception_factory import VKAPIError
 from vkbottle.polling import BotPolling
 
 from config import VK_GROUP_ID, VK_GROUP_TOKEN
+from config.settings import BASE_DIR
 from config.logging_setup import setup_logging
 from database import close_db, init_db
 from middlewares.access import requires_developer
@@ -70,10 +71,14 @@ def create_bot(token: str, group_id: int) -> tuple[Bot, API, ActionLogger]:
 
 
 async def run_bot() -> None:
-    bot, _, _ = create_bot(VK_GROUP_TOKEN, VK_GROUP_ID)
+    bot, api, _ = create_bot(VK_GROUP_TOKEN, VK_GROUP_ID)
+    sled_runner = None
 
     try:
         await init_db()
+        from services.sled_internal_api import start_sled_internal_server, stop_sled_internal_server
+
+        sled_runner = await start_sled_internal_server(api)
         if _forum_service.available:
             try:
                 logger.info("Подключение к форуму...")
@@ -106,6 +111,7 @@ async def run_bot() -> None:
                 )
             raise
     finally:
+        await stop_sled_internal_server(sled_runner)
         if _forum_service.available:
             await _forum_service.close()
         await close_db()
@@ -114,12 +120,17 @@ async def run_bot() -> None:
 
 def main() -> None:
     setup_logging()
+    env_path = BASE_DIR / ".env"
     if not VK_GROUP_TOKEN:
-        logger.error("VK_GROUP_TOKEN не задан. Заполните .env")
-        return
+        logger.error(
+            "VK_GROUP_TOKEN не задан. Проверьте %s (PM2: cwd должен быть %s)",
+            env_path,
+            BASE_DIR,
+        )
+        raise SystemExit(1)
     if not VK_GROUP_ID:
-        logger.error("VK_GROUP_ID не задан. Заполните .env")
-        return
+        logger.error("VK_GROUP_ID не задан. Проверьте %s", env_path)
+        raise SystemExit(1)
     try:
         asyncio.run(run_bot())
     except KeyboardInterrupt:

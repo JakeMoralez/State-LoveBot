@@ -89,6 +89,7 @@ _ACTION_EMOJI: dict[str, str] = {
     "role_leave": "🔰",
     "set_speaker": "🎙",
     "set_vice": "🎖",
+    "forum_check": "🔍",
 }
 
 _ACTION_TITLES: dict[str, str] = {
@@ -129,6 +130,7 @@ _ACTION_TITLES: dict[str, str] = {
     "role_leave": "Снятие роли при выходе",
     "access_denied": "Отказ в доступе",
     "thread_info_error": "Ошибка темы",
+    "forum_check": "Проверка форума",
 }
 
 _VK_ID_RE = re.compile(r"\bid(\d+)\b", re.IGNORECASE)

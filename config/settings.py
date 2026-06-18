@@ -7,9 +7,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-load_dotenv()
-
 BASE_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(BASE_DIR / ".env")
 
 # VK
 VK_GROUP_ID: int = int(os.getenv("VK_GROUP_ID", "0"))

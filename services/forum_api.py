@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from config import FORUM_COOKIES, FORUM_USER_AGENT
+from config.settings import BASE_DIR
 from database.repository.server_repo import ServerRepository
 from services.server_display import format_server_label
 from services.forum_format import (
@@ -38,6 +41,48 @@ THREAD_URL_RE = re.compile(
 )
 
 
+@dataclass
+class ForumHealthReport:
+    configured: bool
+    connected: bool
+    logged_in: bool
+    username: str | None = None
+    error: str | None = None
+
+    @property
+    def ok(self) -> bool:
+        return self.configured and self.connected and self.logged_in
+
+
+def format_forum_health(report: ForumHealthReport) -> str:
+    lines = ["🔍 Проверка форума", ""]
+    if not report.configured:
+        lines.append("❌ Cookies: не заданы (FORUM_XF_USER / FORUM_XF_SESSION)")
+    else:
+        lines.append("✅ Cookies: заданы")
+    if not report.connected:
+        lines.append("❌ Подключение: нет")
+    else:
+        lines.append("✅ Подключение: активно")
+    if report.logged_in and report.username:
+        lines.append(f"✅ Сессия: {report.username}")
+    elif report.logged_in:
+        lines.append("✅ Сессия: авторизован")
+    else:
+        lines.append("❌ Сессия: протухла или недействительна")
+    if report.error:
+        lines.extend(["", f"ℹ️ {report.error}"])
+    if not report.ok:
+        lines.extend(
+            [
+                "",
+                "Обновите cookies в .env и выполните /forumcheck reconnect",
+                "или перезапустите бота (pm2 restart main).",
+            ]
+        )
+    return "\n".join(lines)
+
+
 class ForumService:
     def __init__(self) -> None:
         self._api: Any = None
@@ -65,6 +110,24 @@ class ForumService:
     def _cookie_dict(self) -> dict[str, str]:
         return {k: str(v) for k, v in FORUM_COOKIES.items() if v}
 
+    @staticmethod
+    def _read_cookies_from_env() -> dict[str, str]:
+        from dotenv import load_dotenv
+
+        load_dotenv(BASE_DIR / ".env", override=True)
+        raw = {
+            "xf_user": os.getenv("FORUM_XF_USER"),
+            "xf_session": os.getenv("FORUM_XF_SESSION"),
+            "xf_tfa_trust": os.getenv("FORUM_XF_TFA_TRUST"),
+        }
+        return {k: str(v) for k, v in raw.items() if v}
+
+    def _apply_env_cookies(self) -> bool:
+        cookies = self._read_cookies_from_env()
+        self._cookies_ok = bool(cookies.get("xf_user") and cookies.get("xf_session"))
+        self._available = self._cookies_ok
+        return self._cookies_ok
+
     async def connect(self) -> None:
         if not self._cookies_ok:
             raise RuntimeError("Заполните FORUM_XF_USER и FORUM_XF_SESSION в .env")
@@ -81,6 +144,70 @@ class ForumService:
         await self._api.connect()
         self._backend = "arizona"
         logger.info("✅ Подключение к форуму установлено (arizona_forum_async)")
+
+    async def reconnect(self) -> ForumHealthReport:
+        """Перечитать .env и переподключиться (после обновления cookies)."""
+        await self.close()
+        if not self._apply_env_cookies():
+            return ForumHealthReport(
+                configured=False,
+                connected=False,
+                logged_in=False,
+                error="FORUM_XF_USER / FORUM_XF_SESSION не заданы в .env",
+            )
+        try:
+            cookies = self._read_cookies_from_env()
+            self._api = ArizonaAPI(FORUM_USER_AGENT or None, cookies)
+            await self._api.connect()
+            self._backend = "arizona"
+            logger.info("✅ Форум: переподключение успешно")
+        except Exception as exc:
+            logger.error("Форум: переподключение не удалось: %s", exc)
+            return ForumHealthReport(
+                configured=True,
+                connected=False,
+                logged_in=False,
+                error=str(exc),
+            )
+        return await self.check_health()
+
+    async def check_health(self) -> ForumHealthReport:
+        if not self._cookies_ok:
+            return ForumHealthReport(
+                configured=False,
+                connected=False,
+                logged_in=False,
+                error="Cookies не заданы в .env",
+            )
+        if not self._api or not self._backend:
+            return ForumHealthReport(
+                configured=True,
+                connected=False,
+                logged_in=False,
+                error="HTTP-сессия не открыта (ошибка при старте?)",
+            )
+        try:
+            member = await self._api.get_current_member()
+            if member:
+                return ForumHealthReport(
+                    configured=True,
+                    connected=True,
+                    logged_in=True,
+                    username=getattr(member, "username", None),
+                )
+            return ForumHealthReport(
+                configured=True,
+                connected=True,
+                logged_in=False,
+                error="xf_session протух — обновите cookies",
+            )
+        except Exception as exc:
+            return ForumHealthReport(
+                configured=True,
+                connected=True,
+                logged_in=False,
+                error=str(exc)[:200],
+            )
 
     async def close(self) -> None:
         if self._api:
