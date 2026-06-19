@@ -38,13 +38,16 @@ class ForumAccessChecker:
         level = await UserRepository.get_access_level(user_id, server_id)
         if level >= AccessLevel.ZGA:
             return True
+
+        judge_forum_id = await ServerRepository.get_judge_forum_id(server_id)
+        if judge_forum_id and forum_category_id == judge_forum_id:
+            if await ForumRoleRepository.is_judge_effective(user_id, server_id):
+                return True
+
         if await ForumRoleRepository.is_leader(user_id, server_id):
             return forum_category_id in LEADER_ALLOWED_FORUMS
         if await ForumRoleRepository.is_attorney(user_id, server_id):
             return forum_category_id == ATTORNEY_FORUM_ID
-        if await ForumRoleRepository.is_judge(user_id, server_id):
-            judge_forum_id = await ServerRepository.get_judge_forum_id(server_id)
-            return bool(judge_forum_id and forum_category_id == judge_forum_id)
         return False
 
 
@@ -113,7 +116,7 @@ def requires_judge(
             message.peer_id,
             user_id,
         )
-        if not await ForumRoleRepository.is_judge(user_id, server_id):
+        if not await ForumRoleRepository.is_judge_effective(user_id, server_id):
             await message.answer("⛔ Команда доступна только судьям на этом сервере.")
             return None
 
@@ -138,7 +141,7 @@ def requires_judge_or_developer(
         if await UserRepository.is_developer(user_id):
             kwargs["server_id"] = server_id
             return await func(message, *args, **kwargs)
-        if not await ForumRoleRepository.is_judge(user_id, server_id):
+        if not await ForumRoleRepository.is_judge_effective(user_id, server_id):
             await message.answer("⛔ Команда доступна только судьям на этом сервере.")
             return None
 

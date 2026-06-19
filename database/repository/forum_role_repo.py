@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 from tortoise.expressions import Q
 
+from config.settings import DEFAULT_SERVER_ID
 from database.models.role_chat import ForumRoleKey, RoleChat
 from database.models.server import Server
 from database.models.user import User, UserServerAccess
@@ -47,6 +48,17 @@ class ForumRoleRepository:
     async def is_judge(vk_id: int, server_id: int) -> bool:
         access = await ForumRoleRepository._get_access(vk_id, server_id)
         return bool(access and access.is_judge)
+
+    @staticmethod
+    async def is_judge_effective(vk_id: int, server_id: int) -> bool:
+        """Судья на сервере чата, в ЦА (DEFAULT_SERVER_ID) или legacy users.is_judge."""
+        if await ForumRoleRepository.is_judge(vk_id, server_id):
+            return True
+        if server_id != DEFAULT_SERVER_ID:
+            if await ForumRoleRepository.is_judge(vk_id, DEFAULT_SERVER_ID):
+                return True
+        user = await User.get_or_none(vk_id=vk_id)
+        return bool(user and user.is_judge)
 
     @staticmethod
     async def is_attorney(vk_id: int, server_id: int) -> bool:

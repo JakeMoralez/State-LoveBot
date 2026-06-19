@@ -55,7 +55,7 @@ def register_system(bot: Bot, api: API) -> None:
             f"👤 Ник пользователя: {link}",
             f"👥 Уровень доступа: {level_name}",
         ]
-        if await ForumRoleRepository.is_judge(user_id, server_id):
+        if await ForumRoleRepository.is_judge_effective(user_id, server_id):
             lines.append("⚖️ Судебный доступ: есть")
         if await CongressRepository.is_officer(user_id, server_id):
             access = await UserRepository.get_server_access(user_id, server_id)
