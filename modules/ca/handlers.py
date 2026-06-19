@@ -408,19 +408,20 @@ def register_ca(bot: Bot, api: API, action_logger: ActionLogger) -> None:
 
         if message.peer_id != user_id:
             await message.answer(
-                "❌ Вход на панель — только в личных сообщениях боту.\n"
-                "Напишите /panel мне в ЛС."
+                "Вход на сайт — только в личных сообщениях.\n"
+                "Откройте бота и напишите /panel в ЛС."
             )
             return
 
         if not panel_login_configured():
             await message.answer(
-                "❌ Вход через бота не настроен (PANEL_BASE_URL / SLED_BOT_SECRET)."
+                "Вход через бота сейчас недоступен.\n"
+                "Обратитесь к администратору или войдите через Discord."
             )
             return
 
         if not check_rate_limit(user_id):
-            await message.answer("⏳ Подождите ~30 сек перед повторным запросом ссылки.")
+            await message.answer("Подождите полминуты и запросите ссылку снова.")
             return
 
         try:
@@ -430,13 +431,13 @@ def register_ca(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             return
 
         kb = Keyboard(inline=True)
-        kb.add(OpenLink(link=url, label="Открыть панель"))
+        kb.add(OpenLink(link=url, label="Открыть портал"))
 
         await message.answer(
-            "🔗 Ссылка для входа на панель след. ЦА\n"
-            "• Действует 5 минут, одноразовая\n"
-            "• Альтернатива Discord — если ID не привязан\n"
-            "• Откройте в том браузере, где нужна сессия",
+            "Вход на портал след. ЦА\n\n"
+            "Нажмите кнопку ниже. Ссылка действует 5 минут и срабатывает один раз.\n\n"
+            "Если Discord не привязан — это запасной способ входа. "
+            "Откройте ссылку в том браузере, где будете работать с сайтом.",
             keyboard=kb,
         )
         await action_logger.log_user(

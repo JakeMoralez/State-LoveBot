@@ -13,11 +13,13 @@ from vkbottle.dispatch.rules.base import FuncRule
 from database.models.user import AccessLevel
 from database.repository.user_repo import UserRepository
 from middlewares.access import AccessChecker, requires_level, requires_public
+from middlewares.ca_access import requires_ca_scope
 from middlewares.congress_access import requires_setnick
 from middlewares.action_logger import ActionLogger
-from services.command_utils import dual, dual_with_args, matches_cmd, matches_who, strip_cmd
+from services.command_utils import dual, dual_args, dual_with_args, matches_cmd, matches_who, strip_cmd
 from services.display_name import DisplayNameService
 from services.nickname import NicknameValidator
+from services.panel_client import get_discord_link, set_discord_link
 from services.staff_display import format_staff_list
 from services.vk_resolver import VKResolver
 
@@ -352,3 +354,61 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             log_detail,
             source_peer_id=message.peer_id,
         )
+
+    _DISCORD_CLEAR = frozenset({"off", "0", "нет", "remove", "clear", "снять", "удалить"})
+
+    @bot.on.message(text=dual("editmydiscord"))
+    @requires_ca_scope
+    async def editmydiscord_usage(message: Message, server_id: int = 0) -> None:
+        current = await get_discord_link(message.from_id)
+        lines = [
+            "Привязка Discord для входа на сайт",
+            "",
+        ]
+        if current:
+            lines.append(f"Сейчас указан: {current}")
+        else:
+            lines.append("Сейчас Discord ID не указан.")
+        lines.extend(
+            [
+                "",
+                "Команды:",
+                "/editmydiscord 12345678901234567 — указать свой ID",
+                "/editmydiscord off — снять привязку",
+                "",
+                "Где взять ID: Discord → Настройки → Расширенные → "
+                "режим разработчика → ПКМ по профилю → «Скопировать ID пользователя».",
+            ]
+        )
+        await message.answer("\n".join(lines))
+
+    @bot.on.message(text=dual_args("editmydiscord"))
+    @requires_ca_scope
+    async def editmydiscord_set(message: Message, server_id: int = 0) -> None:
+        raw = strip_cmd(message.text or "", "editmydiscord").strip()
+        if not raw:
+            await editmydiscord_usage(message, server_id=server_id)
+            return
+
+        if raw.lower() in _DISCORD_CLEAR:
+            ok, err = await set_discord_link(message.from_id, None)
+            if ok:
+                await message.answer("✅ Discord ID снят. Вход через Discord на сайте недоступен, пока не укажете новый.")
+            else:
+                await message.answer(f"❌ {err}")
+            return
+
+        ok, err = await set_discord_link(message.from_id, raw)
+        if ok:
+            await message.answer(
+                f"✅ Discord ID сохранён: {raw}\n"
+                "Теперь можно войти на сайт через «Войти через Discord»."
+            )
+            await action_logger.log_user(
+                "editmydiscord",
+                message.from_id,
+                raw,
+                "Привязка Discord ID",
+            )
+        else:
+            await message.answer(f"❌ {err}")

@@ -47,6 +47,7 @@ COMMAND_ALIASES: dict[str, tuple[str, ...]] = {
     "chatsettings": ("csettings", "chcfg"),
     "forumcheck": ("fcheck", "forumstatus"),
     "panel": ("login",),
+    "editmydiscord": ("mydiscord", "discordid", "dsid"),
 }
 
 
