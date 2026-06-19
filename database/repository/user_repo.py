@@ -284,6 +284,22 @@ class UserRepository:
         return True, "ур. 1 и доступ ЦА"
 
     @staticmethod
+    async def grant_leader_from_chat(vk_id: int, server_id: int) -> tuple[bool, str]:
+        """Вход в беседу руководства ЦА: флаг is_leader."""
+        user = await UserRepository.ensure_user(vk_id)
+        server = await Server.get(id=server_id)
+        access, _ = await UserServerAccess.get_or_create(
+            user=user,
+            server=server,
+            defaults={"access_level": 0},
+        )
+        if access.is_leader:
+            return False, ""
+        access.is_leader = True
+        await access.save()
+        return True, "лидер"
+
+    @staticmethod
     async def revoke_self_ca_access(vk_id: int, server_id: int) -> str | None:
         """Снять с себя доступ ЦА / след. ЦА (авто-уровень из беседы)."""
         access = await UserServerAccess.get_or_none(user_id=vk_id, server_id=server_id)

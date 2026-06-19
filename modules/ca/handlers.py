@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from vkbottle import API
+from vkbottle import API, Keyboard, OpenLink
 from vkbottle.bot import Bot, Message
 
 from database.models.role_chat import ForumRoleKey
@@ -18,10 +18,16 @@ from middlewares.ca_access import requires_ca_scope
 from middlewares.forum_access import requires_court_manager
 from services.command_utils import dual, dual_args, dual_with_args, strip_cmd
 from services.display_name import DisplayNameService
+from services.panel_login import (
+    build_login_url,
+    check_rate_limit,
+    panel_login_configured,
+)
 from services.self_access import revoke_accesses
 
 _RACCESS_LABELS = {
     "судья": "⚖️ Судья",
+    "лидер": "🛡 Лидер",
     "спикер конгресса": "🎙 Спикер конгресса",
     "вице-спикер конгресса": "🎖 Вице-спикер конгресса",
     "доступ след. ЦА": "👁 Доступ след. ЦА",
@@ -42,6 +48,13 @@ _REGROLE_ALIASES: dict[str, str] = {
     "sledco": "sledca",
     "следца": "sledca",
     "следцa": "sledca",
+    "leader": "leader",
+    "leaders": "leader",
+    "лидер": "leader",
+    "лидеры": "leader",
+    "руководство": "leader",
+    "руководствoca": "leader",
+    "руководствoца": "leader",
 }
 
 
@@ -236,7 +249,7 @@ def register_ca(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             link = await names.link_user(target_id, server_id)
             await message.answer(
                 f"❌ У {link} нечего снимать.\n"
-                "Нет ролей: судья, спикер/вице, доступ ЦА / след. ЦА.",
+                "Нет ролей: судья, лидер, спикер/вице, доступ ЦА / след. ЦА.",
                 disable_mentions=1,
             )
             return
@@ -288,11 +301,12 @@ def register_ca(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         access_level: int = 0,
     ) -> None:
         await message.answer(
-            "❌ Использование: /regrole [court|congress|sledca]\n"
+            "❌ Использование: /regrole [court|congress|sledca|leader]\n"
             "Примеры:\n"
             "• /regrole court — беседа судей\n"
             "• /regrole congress — конгресс (алиас /msg: /regcongress имя)\n"
             "• /regrole sledca — беседа след. ЦА (авто ур. 1 при входе)\n"
+            "• /regrole leader — беседа руководства ЦА (лидеры)\n"
             "Алиасы: /regcourt, /regcongress, /regsledco"
         )
 
@@ -383,6 +397,55 @@ def register_ca(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             source_peer_id=message.peer_id,
         )
 
+    _PANEL_CMDS = ["/panel", "!panel", "/login", "!login", "/вход", "!вход"]
+
+    @bot.on.message(text=_PANEL_CMDS)
+    @requires_ca_scope
+    async def panel_login(message: Message, server_id: int = 0) -> None:
+        user_id = message.from_id
+        if not user_id or user_id <= 0:
+            return
+
+        if message.peer_id != user_id:
+            await message.answer(
+                "❌ Вход на панель — только в личных сообщениях боту.\n"
+                "Напишите /panel мне в ЛС."
+            )
+            return
+
+        if not panel_login_configured():
+            await message.answer(
+                "❌ Вход через бота не настроен (PANEL_BASE_URL / SLED_BOT_SECRET)."
+            )
+            return
+
+        if not check_rate_limit(user_id):
+            await message.answer("⏳ Подождите ~30 сек перед повторным запросом ссылки.")
+            return
+
+        try:
+            url = build_login_url(user_id)
+        except RuntimeError as exc:
+            await message.answer(f"❌ {exc}")
+            return
+
+        kb = Keyboard(inline=True)
+        kb.add(OpenLink(link=url, label="Открыть панель"))
+
+        await message.answer(
+            "🔗 Ссылка для входа на панель след. ЦА\n"
+            "• Действует 5 минут, одноразовая\n"
+            "• Альтернатива Discord — если ID не привязан\n"
+            "• Откройте в том браузере, где нужна сессия",
+            keyboard=kb,
+        )
+        await action_logger.log_user(
+            "panel_login",
+            user_id,
+            "ЛС",
+            "Запрос ссылки входа на панель",
+        )
+
 
 async def _handle_regrole(
     message: Message,
@@ -400,7 +463,28 @@ async def _handle_regrole(
     kind = _normalize_regrole_type(role_type)
     if not kind:
         await message.answer(
-            "❌ Неизвестный тип. Доступно: court, congress, sledca"
+            "❌ Неизвестный тип. Доступно: court, congress, sledca, leader"
+        )
+        return
+
+    if kind == "leader":
+        await ForumRoleRepository.save_role_chat(
+            ForumRoleKey.LEADER,
+            message.peer_id,
+            message.from_id or 0,
+            server_id,
+        )
+        await message.answer(
+            "✅ Беседа руководства ЦА (лидеры) привязана.\n"
+            "Участники отображаются в панели (раздел «Лидеры»).\n"
+            "При выходе — снимается роль лидера."
+        )
+        await action_logger.log_user(
+            "regleader",
+            message.from_id,
+            f"peer {message.peer_id}",
+            "Беседа руководства ЦА",
+            source_peer_id=message.peer_id,
         )
         return
 

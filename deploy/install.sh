@@ -4,7 +4,7 @@ set -euo pipefail
 
 APP_DIR="${APP_DIR:-/opt/State-LoveBot}"
 APP_USER="${APP_USER:-lovebot}"
-REPO_URL="${REPO_URL:-}"
+REPO_URL="${REPO_URL:-git@github.com:JakeMoralez/State-LoveBot.git}"
 
 echo "==> State-LoveBot install -> ${APP_DIR}"
 

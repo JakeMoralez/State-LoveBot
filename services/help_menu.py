@@ -113,8 +113,14 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
             HelpEntry("/raccess", "Снять роли с пользователя [@user]", 2, ca=True),
             HelpEntry(
                 "/regrole",
-                "Привязать беседу: court, congress, sledca",
+                "Привязать беседу: court, congress, sledca, leader",
                 3,
+                ca=True,
+            ),
+            HelpEntry(
+                "/panel",
+                "Вход на сайт след. ЦА (если нет Discord)",
+                0,
                 ca=True,
             ),
         ),
@@ -135,6 +141,14 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
             HelpEntry("/addcourt", "Назначить судью", 2, ca=True),
             HelpEntry("/removecourt", "Снять судью [@user]", 2, ca=True),
             HelpEntry("/court", "Список судей", 0),
+        ),
+    ),
+    HelpCategory(
+        "🛡 Лидеры",
+        (
+            HelpEntry("/addleader", "Лидер для панели [@user] [фракция]", 2, ca=True),
+            HelpEntry("/removeleader", "Снять лидера [@user]", 2, ca=True),
+            HelpEntry("/leaders", "Список лидеров (панель)", 0),
         ),
     ),
 )

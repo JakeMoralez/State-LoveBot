@@ -161,6 +161,27 @@ async def handle_form_decision(request: web.Request) -> web.Response:
     return web.json_response({"ok": True})
 
 
+async def handle_chat_members(request: web.Request) -> web.Response:
+    if not _check_secret(request):
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    try:
+        peer_id = int(request.rel_url.query.get("peer_id", "0"))
+    except ValueError:
+        return web.json_response({"error": "invalid peer_id"}, status=400)
+    if peer_id < 2_000_000_000:
+        return web.json_response({"error": "peer_id required"}, status=400)
+
+    from config.settings import VK_USER_TOKEN
+    from services.messaging import MessagingService
+
+    api: API = request.app["vk_api"]
+    user_api = API(token=VK_USER_TOKEN) if VK_USER_TOKEN else None
+    messaging = MessagingService(api, user_api=user_api)
+    member_ids = await messaging.get_member_ids(peer_id)
+    return web.json_response({"peer_id": peer_id, "member_ids": member_ids, "count": len(member_ids)})
+
+
 async def start_sled_internal_server(api: API) -> web.AppRunner | None:
     if not SLED_BOT_SECRET:
         logger.info("SLED_BOT_SECRET not set — internal API disabled")
@@ -170,6 +191,7 @@ async def start_sled_internal_server(api: API) -> web.AppRunner | None:
     app["vk_api"] = api
     app.router.add_get("/internal/staff-ca", handle_staff_ca)
     app.router.add_get("/internal/staff-full", handle_staff_full)
+    app.router.add_get("/internal/chat-members", handle_chat_members)
     app.router.add_post("/internal/notify", handle_notify)
     app.router.add_post("/internal/form-decision", handle_form_decision)
 

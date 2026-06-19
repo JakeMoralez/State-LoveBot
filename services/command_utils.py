@@ -10,6 +10,9 @@ COMMAND_ALIASES: dict[str, tuple[str, ...]] = {
     "kick": ("k",),
     "poolkick": ("pkick", "pullkick"),
     "addcourt": ("acourt",),
+    "addleader": ("aleader",),
+    "removeleader": ("rleader",),
+    "leaders": ("leaderlist",),
     "deluser": ("du",),
     "members": ("mems", "member", "nlist", "nicklist"),
     "regchat": ("rchat",),
@@ -43,6 +46,7 @@ COMMAND_ALIASES: dict[str, tuple[str, ...]] = {
     "rejoinkick": ("rjkick",),
     "chatsettings": ("csettings", "chcfg"),
     "forumcheck": ("fcheck", "forumstatus"),
+    "panel": ("login",),
 }
 
 

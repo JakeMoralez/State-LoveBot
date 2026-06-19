@@ -14,6 +14,9 @@ async def revoke_accesses(vk_id: int, server_id: int) -> list[str]:
     if await ForumRoleRepository.clear_judge_role(vk_id, server_id):
         removed.append("судья")
 
+    if await ForumRoleRepository.clear_leader_role(vk_id, server_id):
+        removed.append("лидер")
+
     if await CongressRepository.clear_speaker_for(vk_id, server_id):
         removed.append("спикер конгресса")
 

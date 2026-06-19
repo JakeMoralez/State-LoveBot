@@ -25,6 +25,7 @@ from services.display_name import DisplayNameService
 from services.messaging import MessagingService
 from services.moderation import ModerationService
 from services.ca_access import handle_sled_ca_join, handle_sled_ca_leave
+from services.leader_access import handle_leader_chat_join
 from services.random_reactions import maybe_add_reaction
 from services.role_chat_leave import handle_role_chat_leave
 
@@ -251,6 +252,13 @@ def register_chat(bot: Bot, api: API, action_logger: ActionLogger) -> None:
                 await _send_text(peer_id, sled_notice)
         except Exception as exc:
             logger.warning("sled_ca join failed peer=%s member=%s: %s", peer_id, member_id, exc)
+
+        try:
+            leader_notice = await handle_leader_chat_join(peer_id, member_id, api)
+            if leader_notice:
+                await _send_text(peer_id, leader_notice)
+        except Exception as exc:
+            logger.warning("leader join failed peer=%s member=%s: %s", peer_id, member_id, exc)
 
         try:
             server_id = await AccessChecker.resolve_server_id(peer_id)

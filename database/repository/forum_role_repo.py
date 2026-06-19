@@ -129,6 +129,15 @@ class ForumRoleRepository:
         return True
 
     @staticmethod
+    async def clear_leader_role(vk_id: int, server_id: int) -> bool:
+        access = await ForumRoleRepository._get_access(vk_id, server_id)
+        if not access or not access.is_leader:
+            return False
+        access.is_leader = False
+        await access.save()
+        return True
+
+    @staticmethod
     async def remove_user(vk_id: int) -> bool:
         deleted = await User.filter(vk_id=vk_id).delete()
         return deleted > 0
