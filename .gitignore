@@ -152,6 +152,7 @@ bot.db
 bot.db-*
 *.db-journal
 firefox_profile/
+forum_cookies.json
 .vkbottle/
 
 # Environments

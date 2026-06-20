@@ -13,6 +13,11 @@ from typing import Any
 from config import FORUM_COOKIES, FORUM_USER_AGENT
 from config.settings import BASE_DIR
 from database.repository.server_repo import ServerRepository
+from services.forum_cookies_store import (
+    load_persisted_cookies,
+    merge_cookie_sources,
+    save_persisted_cookies,
+)
 from services.server_display import format_server_label
 from services.forum_format import (
     case_word,
@@ -108,7 +113,26 @@ class ForumService:
         return self._api
 
     def _cookie_dict(self) -> dict[str, str]:
-        return {k: str(v) for k, v in FORUM_COOKIES.items() if v}
+        return merge_cookie_sources(
+            self._read_cookies_from_env(),
+            load_persisted_cookies(),
+        )
+
+    async def _persist_session_cookies(self) -> None:
+        if not self._api or not getattr(self._api, "_session", None):
+            return
+        session = self._api._session
+        if session.closed:
+            return
+        from_jar: dict[str, str] = {}
+        for cookie in session.cookie_jar:
+            if cookie.key.startswith("xf_"):
+                from_jar[cookie.key] = cookie.value
+        if not from_jar:
+            return
+        save_persisted_cookies(
+            merge_cookie_sources(self._read_cookies_from_env(), from_jar)
+        )
 
     @staticmethod
     def _read_cookies_from_env() -> dict[str, str]:
@@ -142,6 +166,7 @@ class ForumService:
         cookies = self._cookie_dict()
         self._api = ArizonaAPI(FORUM_USER_AGENT or None, cookies)
         await self._api.connect()
+        await self._persist_session_cookies()
         self._backend = "arizona"
         logger.info("✅ Подключение к форуму установлено (arizona_forum_async)")
 
@@ -156,9 +181,10 @@ class ForumService:
                 error="FORUM_XF_USER / FORUM_XF_SESSION не заданы в .env",
             )
         try:
-            cookies = self._read_cookies_from_env()
+            cookies = self._cookie_dict()
             self._api = ArizonaAPI(FORUM_USER_AGENT or None, cookies)
             await self._api.connect()
+            await self._persist_session_cookies()
             self._backend = "arizona"
             logger.info("✅ Форум: переподключение успешно")
         except Exception as exc:
@@ -189,6 +215,7 @@ class ForumService:
         try:
             member = await self._api.get_current_member()
             if member:
+                await self._persist_session_cookies()
                 return ForumHealthReport(
                     configured=True,
                     connected=True,
@@ -212,6 +239,7 @@ class ForumService:
     async def close(self) -> None:
         if self._api:
             try:
+                await self._persist_session_cookies()
                 await self._api.close()
             except Exception as exc:
                 logger.warning("forum close: %s", exc)
@@ -404,23 +432,24 @@ class ForumService:
         category: Any,
         pages: int,
     ) -> tuple[list[dict[str, Any]], int]:
-        page_data = await asyncio.gather(
-            *[
-                self._fetch_category_page(category, p)
-                for p in range(1, pages + 1)
-            ],
-            return_exceptions=True,
-        )
         threads: list[dict[str, Any]] = []
         pages_scanned = 0
-        for page, rows in enumerate(page_data, start=1):
-            if isinstance(rows, Exception):
-                logger.error("court stats page %s: %s", page, rows)
-                continue
-            if not rows:
-                continue
-            pages_scanned += 1
-            threads.extend(rows)
+        batch_size = 3
+
+        for start in range(1, pages + 1, batch_size):
+            chunk = range(start, min(start + batch_size, pages + 1))
+            page_data = await asyncio.gather(
+                *[self._fetch_category_page(category, p) for p in chunk],
+                return_exceptions=True,
+            )
+            for page, rows in zip(chunk, page_data, strict=False):
+                if isinstance(rows, Exception):
+                    logger.error("court stats page %s: %s", page, rows)
+                    continue
+                if not rows:
+                    continue
+                pages_scanned += 1
+                threads.extend(rows)
         return threads, pages_scanned
 
     async def _collect_threads_by_days(
@@ -546,7 +575,7 @@ class ForumService:
                 unknown_closers.append(row)
 
         if unknown_closers:
-            sem = asyncio.Semaphore(8)
+            sem = asyncio.Semaphore(3)
 
             async def _fill_closer(row: dict[str, Any]) -> tuple[str, int]:
                 async with sem:
