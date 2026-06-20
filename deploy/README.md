@@ -10,7 +10,16 @@
 
 `git pull` на сервере идёт от пользователя **`lovebot`**. Ключ нужен ему, не root.
 
-### 1. Ключ на VPS
+**Быстрая настройка (рекомендуется):**
+
+```bash
+cd /opt/State-LoveBot
+sudo bash deploy/setup-git-ssh.sh
+```
+
+Скрипт создаст `/opt/State-LoveBot/.ssh/config`, ключ `id_ed25519`, покажет `.pub` для GitHub и проверит `ssh -T git@github.com`.
+
+### Вручную
 
 ```bash
 sudo mkdir -p /opt/State-LoveBot

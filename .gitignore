@@ -150,6 +150,8 @@ activemq-data/
 # Bot runtime
 bot.db
 bot.db-*
+users.db
+users.db-*
 *.db-journal
 firefox_profile/
 forum_cookies.json
