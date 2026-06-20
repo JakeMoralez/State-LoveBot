@@ -278,6 +278,86 @@ def register_forum(
         ) -> None:
             await _run_judge_thread_cmd(message, server_id=server_id, cmd=_c, action=_a)
 
+    @bot.on.message(FuncRule(lambda m: matches_cmd(m.text or "", "fresolve")))
+    @requires_forum_user
+    async def forum_resolve(message: Message, server_id: int = 0) -> None:
+        cmd = "fresolve"
+        if await _forum_not_ready(message):
+            return
+
+        arg = strip_cmd(message.text or "", cmd)
+        thread_id = ForumService.parse_thread_id(arg) if arg else None
+        if not thread_id:
+            await message.answer(
+                f"❌ Использование: /{cmd} или !{cmd} [ссылка/id темы]"
+            )
+            return
+
+        info = await forum.get_thread_info(thread_id)
+        if not info:
+            await message.answer(f"❌ Тема {thread_id} не найдена.")
+            return
+
+        category_id = int(info.get("category_id") or info.get("node_id") or 0)
+        if not await _check_judge_forum(
+            category_id, server_id, message.answer
+        ):
+            return
+
+        if not await _check_access(
+            message.from_id, message.peer_id, category_id, server_id, message.answer
+        ):
+            return
+
+        ok_close, err_close = await forum.set_thread_open(thread_id, False)
+        if not ok_close:
+            await message.answer(f"❌ {err_close or 'Не удалось закрыть тему'}")
+            await action_logger.log_user(
+                "close_thread",
+                message.from_id,
+                f"Тема {thread_id}",
+                f"Ошибка: {(err_close or 'неизвестно')[:80]}",
+                source_peer_id=message.peer_id,
+            )
+            return
+
+        ok_unpin, err_unpin = await forum.set_thread_sticky(thread_id, False)
+        if not ok_unpin:
+            await message.answer(
+                f"⚠️ Тема закрыта, но открепить не удалось: {err_unpin or 'ошибка'}"
+            )
+            await action_logger.log_user(
+                "close_thread",
+                message.from_id,
+                f"Тема {thread_id}",
+                "Закрыта",
+                source_peer_id=message.peer_id,
+            )
+            await action_logger.log_user(
+                "unpin_thread",
+                message.from_id,
+                f"Тема {thread_id}",
+                f"Ошибка: {(err_unpin or 'неизвестно')[:80]}",
+                source_peer_id=message.peer_id,
+            )
+            return
+
+        await message.answer("🔒 Тема закрыта и откреплена")
+        await action_logger.log_user(
+            "close_thread",
+            message.from_id,
+            f"Тема {thread_id}",
+            "Закрыта (fresolve)",
+            source_peer_id=message.peer_id,
+        )
+        await action_logger.log_user(
+            "unpin_thread",
+            message.from_id,
+            f"Тема {thread_id}",
+            "Откреплена (fresolve)",
+            source_peer_id=message.peer_id,
+        )
+
     @bot.on.message(FuncRule(lambda m: matches_cmd(m.text or "", "иски")))
     @requires_forum_user
     async def court_stats(message: Message, server_id: int = 0) -> None:

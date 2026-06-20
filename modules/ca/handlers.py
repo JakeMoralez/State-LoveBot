@@ -12,7 +12,7 @@ from database.models.user import AccessLevel
 from database.repository.congress_repo import CongressRepository
 from database.repository.forum_role_repo import ForumRoleRepository
 from database.repository.user_repo import UserRepository
-from middlewares.access import requires_level
+from middlewares.access import AccessChecker, requires_level
 from middlewares.action_logger import ActionLogger
 from middlewares.ca_access import requires_ca_scope
 from middlewares.forum_access import requires_court_manager
@@ -400,7 +400,6 @@ def register_ca(bot: Bot, api: API, action_logger: ActionLogger) -> None:
     _PANEL_CMDS = ["/panel", "!panel", "/login", "!login", "/вход", "!вход"]
 
     @bot.on.message(text=_PANEL_CMDS)
-    @requires_ca_scope
     async def panel_login(message: Message, server_id: int = 0) -> None:
         user_id = message.from_id
         if not user_id or user_id <= 0:
@@ -410,6 +409,22 @@ def register_ca(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             await message.answer(
                 "Вход на сайт — только в личных сообщениях.\n"
                 "Откройте бота и напишите /panel в ЛС."
+            )
+            return
+
+        if not server_id:
+            server_id = await AccessChecker.resolve_server_id(message.peer_id, user_id)
+
+        if not await UserRepository.can_use_ca_scope(user_id, server_id):
+            level = await UserRepository.get_access_level(user_id, server_id)
+            level_label = AccessChecker.level_name(level) if level else "нет доступа"
+            await message.answer(
+                "⛔ Вход на портал след. ЦА недоступен.\n\n"
+                f"Ваш уровень: {level_label} ({level}).\n\n"
+                "Нужно одно из:\n"
+                "• уровень 5+ (ЗГС ГОС и выше);\n"
+                "• доступ ЦА — /setca или беседа след. ЦА.\n\n"
+                "Если доступ должен быть — напишите ЗГС ЦА+."
             )
             return
 

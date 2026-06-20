@@ -31,6 +31,7 @@ COMMAND_ALIASES: dict[str, tuple[str, ...]] = {
     "removecourt": ("rcourt",),
     "fclose": ("fclosed",),
     "fopen": ("fopened",),
+    "fresolve": ("resolve", "fcloseunpin"),
     "form": ("addform",),
     "forms": ("listforms", "pendingforms"),
     "formsid": ("forms_id",),
