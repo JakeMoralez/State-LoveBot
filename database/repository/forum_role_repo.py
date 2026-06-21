@@ -129,6 +129,10 @@ class ForumRoleRepository:
             access.is_leader = True
         await access.save()
         await user.save()
+        if is_judge:
+            from services.judge_forum_sync import schedule_judge_list_sync
+
+            schedule_judge_list_sync(server_id)
         return user
 
     @staticmethod
@@ -138,6 +142,9 @@ class ForumRoleRepository:
             return False
         access.is_judge = False
         await access.save()
+        from services.judge_forum_sync import schedule_judge_list_sync
+
+        schedule_judge_list_sync(server_id)
         return True
 
     @staticmethod

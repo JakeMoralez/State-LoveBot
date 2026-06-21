@@ -254,9 +254,7 @@ def register_chat(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             logger.warning("sled_ca join failed peer=%s member=%s: %s", peer_id, member_id, exc)
 
         try:
-            leader_notice = await handle_leader_chat_join(peer_id, member_id, api)
-            if leader_notice:
-                await _send_text(peer_id, leader_notice)
+            await handle_leader_chat_join(peer_id, member_id, api)
         except Exception as exc:
             logger.warning("leader join failed peer=%s member=%s: %s", peer_id, member_id, exc)
 

@@ -325,6 +325,8 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             )
             return
 
+        old_level = await UserRepository.get_access_level(resolved.vk_id, server_id)
+
         await UserRepository.ensure_user(
             vk_id=resolved.vk_id,
             username=resolved.username,
@@ -336,15 +338,22 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             level=new_level,
             granted_by=message.from_id,
         )
-        if new_level == 0:
-            result_text = "Доступ снят (ур. 0)."
-            log_detail = "Снят"
-        else:
-            name = AccessChecker.level_name(new_level)
-            result_text = f"Выдан уровень {name}."
-            log_detail = "Выдан"
+
+        def level_label(lvl: int) -> str:
+            if lvl <= 0:
+                return "нет доступа"
+            return AccessChecker.level_name(lvl)
+
+        granter = await names.link_user(message.from_id, server_id)
+        target = await names.link_user(resolved.vk_id, server_id)
+        result_text = (
+            f"{granter} выдал {target} уровень доступа "
+            f"{level_label(new_level)} [{new_level}], "
+            f"было {level_label(old_level)} [{old_level}]"
+        )
+        log_detail = "Снят" if new_level == 0 else "Выдан"
         await message.answer(
-            f"✅ {await format_who_card(resolved.vk_id, api, server_id)}\n{result_text}",
+            f"✅ {result_text}",
             disable_mentions=1,
         )
         await action_logger.log_user(

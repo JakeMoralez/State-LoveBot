@@ -62,6 +62,7 @@ TORTOISE_ORM: dict = {
                 "database.models.court_form",
                 "database.models.role_chat",
                 "database.models.chat_settings",
+                "database.models.judge_forum_list",
             ],
             "default_connection": "default",
         },

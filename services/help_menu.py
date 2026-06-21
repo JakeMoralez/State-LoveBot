@@ -4,6 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from database.models.user import AccessLevel
+from database.repository.forum_role_repo import ForumRoleRepository
+from database.repository.user_repo import UserRepository
+from middlewares.ca_access import can_review_court_forms
+from middlewares.forum_access import ForumAccessChecker
+
 _LEVEL_EMOJI: dict[int, str] = {
     0: "🌐",
     1: "1️⃣",
@@ -30,6 +36,20 @@ class HelpEntry:
     desc: str
     level: int | str = 0
     ca: bool = False
+    public: bool = False
+    judge_only: bool = False
+    ca_forms: bool = False
+
+
+@dataclass
+class HelpContext:
+    access_level: int
+    bot_access: bool
+    ca_scope: bool
+    is_developer: bool
+    is_judge: bool
+    can_review_forms: bool
+    can_manage_court: bool
 
 
 @dataclass(frozen=True)
@@ -42,13 +62,13 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
     HelpCategory(
         "🌐 Общие",
         (
-            HelpEntry("/me", "Ваш профиль"),
-            HelpEntry("/getid", "ID беседы"),
-            HelpEntry("/find", "Поиск по нику или VK", 0),
-            HelpEntry("/reg", "Дата регистрации VK", 0),
-            HelpEntry("/online", "Кто онлайн в беседе", 0),
-            HelpEntry("/help", "Список команд"),
-            HelpEntry("/ping", "Проверка бота и время работы"),
+            HelpEntry("/me", "Ваш профиль", public=True),
+            HelpEntry("/getid", "ID беседы", public=True),
+            HelpEntry("/find", "Поиск по нику или VK", public=True),
+            HelpEntry("/reg", "Дата регистрации VK", public=True),
+            HelpEntry("/online", "Кто онлайн в беседе", public=True),
+            HelpEntry("/help", "Список команд", public=True),
+            HelpEntry("/ping", "Проверка бота и время работы", public=True),
         ),
     ),
     HelpCategory(
@@ -56,8 +76,8 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
         (
             HelpEntry("/setnick", "Установить ник [@user] [ник]", 1),
             HelpEntry("/rnick", "Снять ник [@user]", 1),
-            HelpEntry("/who", "Карточка пользователя", 0),
-            HelpEntry("/members", "Участники беседы", 0),
+            HelpEntry("/who", "Карточка пользователя", public=True),
+            HelpEntry("/members", "Участники беседы", public=True),
             HelpEntry("/staff", "Список доступов и ролей", 1),
             HelpEntry(
                 "/editmydiscord",
@@ -71,7 +91,7 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
         "🛡 Модерация",
         (
             HelpEntry("/kick", "Исключить из беседы", 3),
-            HelpEntry("/poolkick", "Исключить из всех бесед пула", 3),
+            HelpEntry("/poolkick", "Исключить из пула и *_gos бесед", 3),
             HelpEntry("/mute", "Мут [@user] [время] [причина]", 2),
             HelpEntry("/unmute", "Снять мут", 2),
             HelpEntry("/stitle", "Название беседы", 3),
@@ -101,15 +121,16 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
             HelpEntry("/fpin · /funpin", "Закрепить / открепить тему", "forum"),
             HelpEntry("/fresolve", "Закрыть тему и открепить (алиас: resolve)", "forum"),
             HelpEntry("/иски", "Статистика исков [страницы 1–20 / дни 1–365]", "forum"),
-            HelpEntry("/form", "Отправить игровые формы (судья)", "forum"),
-            HelpEntry("/myform", "Ваши формы и статусы", "forum"),
-            HelpEntry("/forms", "Команды для игры (без #id)", 2, ca=True),
-            HelpEntry("/forms id · /formsid", "С #id каждой формы", 2, ca=True),
+            HelpEntry("/form", "Отправить игровые формы (судья)", "forum", judge_only=True),
+            HelpEntry("/myform", "Ваши формы и статусы", "forum", judge_only=True),
+            HelpEntry("/forms", "Команды для игры (без #id)", 2, ca=True, ca_forms=True),
+            HelpEntry("/forms id · /formsid", "С #id каждой формы", 2, ca=True, ca_forms=True),
             HelpEntry(
                 "/acceptform · /rejectform",
                 "Принять / отклонить [id|all]",
                 2,
                 ca=True,
+                ca_forms=True,
             ),
         ),
     ),
@@ -137,7 +158,7 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
         (
             HelpEntry("/setspeaker", "Назначить спикера", 2, ca=True),
             HelpEntry("/setvice", "Назначить вице-спикера", 2, ca=True),
-            HelpEntry("/congress", "Инфо о конгрессе", 0),
+            HelpEntry("/congress", "Инфо о конгрессе", public=True),
             HelpEntry("/removespeaker", "Снять спикера", 2, ca=True),
             HelpEntry("/removevice", "Снять вице-спикера", 2, ca=True),
         ),
@@ -147,7 +168,7 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
         (
             HelpEntry("/addcourt", "Назначить судью", 2, ca=True),
             HelpEntry("/removecourt", "Снять судью [@user]", 2, ca=True),
-            HelpEntry("/court", "Список судей", 0),
+            HelpEntry("/court", "Список судей", public=True),
         ),
     ),
     HelpCategory(
@@ -155,7 +176,7 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
         (
             HelpEntry("/addleader", "Лидер для панели [@user] [фракция]", 2, ca=True),
             HelpEntry("/removeleader", "Снять лидера [@user]", 2, ca=True),
-            HelpEntry("/leaders", "Список лидеров (панель)", 0),
+            HelpEntry("/leaders", "Список лидеров (панель)", public=True),
         ),
     ),
 )
@@ -186,12 +207,25 @@ def _level_marker(entry: HelpEntry) -> str:
     return base
 
 
-def _format_categories(categories: tuple[HelpCategory, ...], *, header: str) -> str:
+def _format_categories(
+    categories: tuple[HelpCategory, ...],
+    *,
+    header: str,
+    visible: set[tuple[str, str]] | None = None,
+) -> str:
     lines = [header, ""]
 
     for category in categories:
-        lines.append(category.title)
+        shown: list[HelpEntry] = []
         for entry in category.entries:
+            if visible is not None and (category.title, entry.cmd) not in visible:
+                continue
+            shown.append(entry)
+        if not shown:
+            continue
+
+        lines.append(category.title)
+        for entry in shown:
             marker = _level_marker(entry)
             lines.append(f"{marker} {entry.cmd} — {entry.desc}")
         lines.append("")
@@ -199,8 +233,77 @@ def _format_categories(categories: tuple[HelpCategory, ...], *, header: str) -> 
     return "\n".join(lines)
 
 
-def build_help_text() -> str:
-    body = _format_categories(HELP_CATEGORIES, header="📗 Команды State-LoveBot")
+async def build_help_context(user_id: int, server_id: int) -> HelpContext:
+    access_level = await UserRepository.get_access_level(user_id, server_id)
+    return HelpContext(
+        access_level=access_level,
+        bot_access=await ForumRoleRepository.can_use_forum_bot(user_id),
+        ca_scope=await UserRepository.can_use_ca_scope(user_id, server_id),
+        is_developer=await UserRepository.is_developer(user_id),
+        is_judge=await ForumRoleRepository.is_judge_effective(user_id, server_id),
+        can_review_forms=await can_review_court_forms(user_id, server_id),
+        can_manage_court=await ForumAccessChecker.can_manage_court_roles(
+            user_id,
+            server_id,
+        ),
+    )
+
+
+def _entry_visible(entry: HelpEntry, ctx: HelpContext) -> bool:
+    if ctx.is_developer:
+        return True
+
+    if entry.ca and not ctx.ca_scope:
+        return False
+
+    if entry.ca_forms and not ctx.can_review_forms:
+        return False
+
+    if entry.judge_only and not ctx.is_judge:
+        return False
+
+    if entry.public:
+        return True
+
+    if not ctx.bot_access:
+        return False
+
+    if isinstance(entry.level, str):
+        if entry.level != "forum":
+            return False
+        if entry.judge_only:
+            return ctx.is_judge
+        if entry.ca_forms:
+            return ctx.can_review_forms
+        return True
+
+    return ctx.access_level >= entry.level
+
+
+async def build_help_text_for_user(user_id: int, server_id: int) -> str:
+    ctx = await build_help_context(user_id, server_id)
+    visible: set[tuple[str, str]] = set()
+    for category in HELP_CATEGORIES:
+        for entry in category.entries:
+            if _entry_visible(entry, ctx):
+                visible.add((category.title, entry.cmd))
+
+    level_name = (
+        AccessLevel.title(ctx.access_level)
+        if ctx.access_level
+        else "нет доступа"
+    )
+    header = (
+        "📗 Команды State-LoveBot\n"
+        f"👤 Ваш уровень: {level_name} ({ctx.access_level or 0})"
+    )
+    body = _format_categories(HELP_CATEGORIES, header=header, visible=visible)
+    if not visible:
+        body = (
+            f"{header}\n\n"
+            "⛔ Нет доступных команд.\n"
+            "Обратитесь к администратору за доступом к боту."
+        )
     return (
         f"{body}"
         "🌐 — всем  ·  1️⃣–9️⃣ — мин. уровень  ·  🏛 — доступ ЦА (ур. 1–4)\n"

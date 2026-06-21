@@ -22,6 +22,7 @@ async def get_leader_chat_server_id(peer_id: int) -> int | None:
 
 
 async def handle_leader_chat_join(peer_id: int, user_id: int, api: API) -> str | None:
+    """Выдаёт is_leader без сообщения в беседу (только лог)."""
     if user_id <= 0 or peer_id < 2_000_000_000:
         return None
     server_id = await get_leader_chat_server_id(peer_id)
@@ -29,15 +30,19 @@ async def handle_leader_chat_join(peer_id: int, user_id: int, api: API) -> str |
         return None
 
     await UserRepository.ensure_user(vk_id=user_id)
-    changed, detail = await UserRepository.grant_leader_from_chat(user_id, server_id)
+    changed, _detail = await UserRepository.grant_leader_from_chat(user_id, server_id)
     if not changed:
         return None
 
-    link = await DisplayNameService(api, server_id).link_user(user_id, server_id)
+    badge = await DisplayNameService(api, server_id).format_actor_badge(
+        user_id,
+        server_id,
+    )
     logger.info(
-        "leader join granted vk_id=%s peer=%s server=%s",
+        "leader join granted vk_id=%s peer=%s server=%s: 🛡 %s — лидер (беседа руководства ЦА).",
         user_id,
         peer_id,
         server_id,
+        badge,
     )
-    return f"🛡 {link} — {detail} (беседа руководства ЦА)."
+    return None

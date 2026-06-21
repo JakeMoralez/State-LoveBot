@@ -161,6 +161,52 @@ async def handle_form_decision(request: web.Request) -> web.Response:
     return web.json_response({"ok": True})
 
 
+async def handle_forum_thread_info(request: web.Request) -> web.Response:
+    if not _check_secret(request):
+        return web.json_response({"error": "unauthorized"}, status=401)
+
+    try:
+        thread_id = int(request.rel_url.query.get("thread_id", "0"))
+    except ValueError:
+        return web.json_response({"error": "invalid thread_id"}, status=400)
+    if thread_id <= 0:
+        return web.json_response({"error": "thread_id required"}, status=400)
+
+    try:
+        server_id = int(request.rel_url.query.get("server_id", "0"))
+    except ValueError:
+        return web.json_response({"error": "invalid server_id"}, status=400)
+    if server_id <= 0:
+        return web.json_response({"error": "server_id required"}, status=400)
+
+    from services.forum_api import ForumService
+    from services.judge_forum_sync import validate_judge_list_thread
+
+    forum = ForumService()
+    try:
+        if forum.available and not forum._api:
+            await forum.connect()
+    except Exception as exc:
+        return web.json_response({"error": f"forum unavailable: {exc}"}, status=503)
+
+    info = await forum.get_thread_info(thread_id)
+    if not info:
+        return web.json_response({"error": "thread not found"}, status=404)
+
+    ok, err = await validate_judge_list_thread(server_id, thread_id, forum)
+    return web.json_response(
+        {
+            "thread_id": thread_id,
+            "server_id": server_id,
+            "category_id": info.get("category_id") or info.get("node_id"),
+            "forum_name": info.get("forum_name"),
+            "title": info.get("title"),
+            "valid": ok,
+            "error": err or None,
+        }
+    )
+
+
 async def handle_chat_members(request: web.Request) -> web.Response:
     if not _check_secret(request):
         return web.json_response({"error": "unauthorized"}, status=401)
@@ -192,6 +238,7 @@ async def start_sled_internal_server(api: API) -> web.AppRunner | None:
     app.router.add_get("/internal/staff-ca", handle_staff_ca)
     app.router.add_get("/internal/staff-full", handle_staff_full)
     app.router.add_get("/internal/chat-members", handle_chat_members)
+    app.router.add_get("/internal/forum/thread-info", handle_forum_thread_info)
     app.router.add_post("/internal/notify", handle_notify)
     app.router.add_post("/internal/form-decision", handle_form_decision)
 

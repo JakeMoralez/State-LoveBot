@@ -15,6 +15,7 @@ from middlewares.action_logger import ActionLogger
 from services.command_utils import dual, dual_with_args
 from services.display_name import DisplayNameService
 from services.moderation import ModerationService
+from services.role_chat_leave import revoke_judge_on_court_kick
 from services.vk_resolver import VKResolver
 
 logger = logging.getLogger(__name__)
@@ -125,6 +126,21 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
                 server_id=server_id,
                 reason=reason,
             )
+            court_notice = await revoke_judge_on_court_kick(
+                message.peer_id,
+                resolved.vk_id,
+                api,
+            )
+            if court_notice:
+                try:
+                    await api.messages.send(
+                        peer_id=message.peer_id,
+                        message=court_notice,
+                        random_id=0,
+                        disable_mentions=1,
+                    )
+                except Exception as exc:
+                    logger.warning("court judge revoke notice failed: %s", exc)
             await action_logger.log_user(
                 "kick",
                 message.from_id,
@@ -152,7 +168,8 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
         access_level: int = 0,
     ) -> None:
         await message.answer(
-            "❌ /poolkick (/pkick) [ссылка vk.com/vk.ru|ID|@user] [причина]"
+            "❌ /poolkick (/pkick) [ссылка vk.com/vk.ru|ID|@user] [причина]\n"
+            "Исключает из бесед текущего пула и общих *_gos (lead_gos, sled_gos…)."
         )
 
     @bot.on.message(text=dual_with_args("poolkick", "<args>"))
@@ -193,6 +210,7 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
             reason=reason,
         )
 
+        judge_revoked = False
         for item in report.results:
             if item.success:
                 await _kick_announce(
@@ -202,6 +220,27 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
                     server_id=server_id,
                     reason=reason,
                 )
+                if not judge_revoked:
+                    court_notice = await revoke_judge_on_court_kick(
+                        item.peer_id,
+                        resolved.vk_id,
+                        api,
+                    )
+                    if court_notice:
+                        judge_revoked = True
+                        try:
+                            await api.messages.send(
+                                peer_id=item.peer_id,
+                                message=court_notice,
+                                random_id=0,
+                                disable_mentions=1,
+                            )
+                        except Exception as exc:
+                            logger.warning(
+                                "court judge revoke notice failed peer=%s: %s",
+                                item.peer_id,
+                                exc,
+                            )
 
         target_link = await names.link_user(resolved.vk_id)
         await message.answer(

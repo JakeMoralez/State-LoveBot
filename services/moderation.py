@@ -80,10 +80,21 @@ class PullKickReport:
     total: int = 0
     kicked: int = 0
     failed: int = 0
+    gos_included: int = 0
     results: list[KickResult] = field(default_factory=list)
 
     def summary(self) -> str:
+        if self.gos_included:
+            return (
+                f"Исключён из {self.kicked}/{self.total} бесед "
+                f"(пул + {self.gos_included} gos)."
+            )
         return f"Исключён из {self.kicked}/{self.total} бесед пула."
+
+    def _pool_label(self, pool_name: str) -> str:
+        if self.gos_included:
+            return f"«{pool_name}» + gos ({self.gos_included})"
+        return f"«{pool_name}»"
 
     def format_message(
         self,
@@ -92,23 +103,24 @@ class PullKickReport:
         pool_name: str,
         reason: str | None = None,
     ) -> str:
+        pool_label = self._pool_label(pool_name)
         if self.total == 0:
             return "❌ В пуле нет зарегистрированных бесед."
 
         if self.kicked == self.total:
             header = (
                 f"✅ | {target_label} был(а) исключён(а) "
-                f"из всех конференций пула «{pool_name}»!"
+                f"из всех конференций {pool_label}!"
             )
         elif self.kicked > 0:
             header = (
                 f"⚠️ | {target_label} исключён(а) "
-                f"из {self.kicked}/{self.total} конференций пула «{pool_name}»"
+                f"из {self.kicked}/{self.total} конференций {pool_label}"
             )
         else:
             header = (
                 f"❌ | Не удалось исключить {target_label} "
-                f"из конференций пула «{pool_name}»"
+                f"из конференций {pool_label}"
             )
 
         lines = [header, "", "📂 Список конференций:"]
@@ -188,8 +200,11 @@ class ModerationService:
         target_vk_id: int,
         reason: str | None,
     ) -> PullKickReport:
-        chats = await ChatRepository.list_by_pool(pool_id)
-        report = PullKickReport(total=len(chats))
+        chats, gos_included = await ChatRepository.list_for_pullkick(
+            server_id,
+            pool_id,
+        )
+        report = PullKickReport(total=len(chats), gos_included=gos_included)
 
         for chat in chats:
             result = await self.kick_from_chat(chat.peer_id, target_vk_id)

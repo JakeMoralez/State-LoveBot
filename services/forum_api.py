@@ -370,6 +370,24 @@ class ForumService:
             logger.error("set_thread_sticky %s: %s", thread_id, exc)
             return False, f"Ошибка: {exc}"
 
+    async def edit_thread_body(self, thread_id: int, body: str) -> tuple[bool, str]:
+        body = body.strip()
+        if not body:
+            return False, "Пустое содержимое темы."
+
+        thread = await self.get_thread(thread_id)
+        if not thread:
+            return False, "Тема не найдена."
+
+        try:
+            resp = await thread.edit(body)
+            if resp and resp.status == 200:
+                return True, "Содержимое темы обновлено."
+            return False, f"Форум отклонил изменение (HTTP {getattr(resp, 'status', '?')})."
+        except Exception as exc:
+            logger.error("edit_thread_body %s: %s", thread_id, exc)
+            return False, f"Ошибка: {exc}"
+
     async def edit_thread_title(self, thread_id: int, new_title: str) -> tuple[bool, str]:
         new_title = new_title.strip()
         if not new_title:

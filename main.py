@@ -19,12 +19,12 @@ from config import VK_GROUP_ID, VK_GROUP_TOKEN
 from config.settings import BASE_DIR
 from config.logging_setup import setup_logging
 from database import close_db, init_db
-from middlewares.access import requires_developer
+from middlewares.access import AccessChecker, requires_developer
 from middlewares.action_logger import ActionLogger
 from modules import register_all_modules
 from services.chat_admin import ChatAdminService
 from services.forum_api import ForumService, _ARIZONA_IMPORT_ERROR, _HAS_ARIZONA
-from services.help_menu import build_dev_help_text, build_help_text
+from services.help_menu import build_dev_help_text, build_help_text_for_user
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,12 @@ def create_bot(token: str, group_id: int) -> tuple[Bot, API, ActionLogger]:
 
     @bot.on.message(text=["/help", "/start", "!help", "!start"])
     async def help_handler(message: Message) -> None:
-        await message.answer(build_help_text())
+        user_id = message.from_id or 0
+        if user_id <= 0:
+            await message.answer("⛔ Команда доступна только пользователям VK.")
+            return
+        server_id = await AccessChecker.resolve_server_id(message.peer_id, user_id)
+        await message.answer(await build_help_text_for_user(user_id, server_id))
 
     @bot.on.message(text=["/devhelp", "!devhelp"])
     @requires_developer

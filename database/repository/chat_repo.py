@@ -71,6 +71,29 @@ class ChatRepository:
         return await Chat.filter(pool_id=pool_id).order_by("alias", "peer_id")
 
     @staticmethod
+    async def list_gos_shared(server_id: int) -> list[Chat]:
+        """Общие gos-беседы сервера (lead_gos, sled_gos, offtop_gos и т.д.)."""
+        return await Chat.filter(
+            server_id=server_id,
+            alias__endswith="_gos",
+        ).order_by("alias", "peer_id")
+
+    @staticmethod
+    async def list_for_pullkick(server_id: int, pool_id: int) -> tuple[list[Chat], int]:
+        """Беседы пула + общие *_gos (без дублей). Возвращает (список, число gos)."""
+        pool_chats = await ChatRepository.list_by_pool(pool_id)
+        gos_chats = await ChatRepository.list_gos_shared(server_id)
+        seen = {chat.peer_id for chat in pool_chats}
+        merged = list(pool_chats)
+        gos_added = 0
+        for chat in gos_chats:
+            if chat.peer_id not in seen:
+                seen.add(chat.peer_id)
+                merged.append(chat)
+                gos_added += 1
+        return merged, gos_added
+
+    @staticmethod
     async def list_aliases(server_id: int, pool_id: int | None = None) -> list[Chat]:
         qs = Chat.filter(server_id=server_id).exclude(alias=None)
         if pool_id is not None:

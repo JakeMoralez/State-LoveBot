@@ -21,6 +21,7 @@ from services.command_utils import matches_cmd, parse_forum_thread, strip_cmd
 from services.forum_api import ForumService, format_forum_health
 from services.forum_format import format_thread_card
 from services.forum_keyboard import create_thread_action_keyboard
+from services.judge_forum_sync import sync_judge_list
 from services.server_display import format_judge_forum_hint
 
 logger = logging.getLogger(__name__)
@@ -421,6 +422,23 @@ def register_forum(
             message.from_id,
             "check",
             "OK" if report.ok else (report.error or "ошибка")[:80],
+            source_peer_id=message.peer_id,
+        )
+
+    @bot.on.message(FuncRule(lambda m: matches_cmd(m.text or "", "syncjudges")))
+    @requires_developer
+    async def sync_judges(
+        message: Message,
+        server_id: int = 0,
+        access_level: int = 0,
+    ) -> None:
+        ok, msg = await sync_judge_list(server_id, forum)
+        await message.answer("✅ " + msg if ok else "❌ " + msg)
+        await action_logger.log_user(
+            "sync_judges",
+            message.from_id,
+            f"server={server_id}",
+            "OK" if ok else msg[:80],
             source_peer_id=message.peer_id,
         )
 
