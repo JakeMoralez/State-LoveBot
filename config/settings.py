@@ -33,6 +33,19 @@ DATABASE_URL: str = os.getenv(
     f"sqlite://{BASE_DIR / 'bot.db'}",
 )
 
+# Панель (должность из staff_notes для {{position}})
+def _default_panel_database_url() -> str:
+    for path in (
+        Path("/opt/State-Love-Admin/data/panel.db"),
+        BASE_DIR.parent / "State-LoveAdmin" / "data" / "panel.db",
+    ):
+        if path.is_file():
+            return f"sqlite:///{path.as_posix()}"
+    return ""
+
+
+PANEL_DATABASE_URL: str = os.getenv("PANEL_DATABASE_URL", "") or _default_panel_database_url()
+
 # Форум (cookies из браузера)
 FORUM_BASE_URL: str = os.getenv("FORUM_BASE_URL", "https://forum.arizona-rp.com")
 FORUM_USER_AGENT: str = os.getenv("FORUM_USER_AGENT", "")

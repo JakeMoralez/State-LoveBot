@@ -54,7 +54,7 @@ class ForumAccessChecker:
 def requires_court_manager(
     func: Callable[P, Awaitable[R]],
 ) -> Callable[P, Awaitable[R | None]]:
-    """ЗГС ЦА (ур. 3+) — для /addcourt, /regcourt и управления судьями."""
+    """ЗГС ЦА (ур. 3+) — для /regcourt и управления судьями на форуме."""
 
     @functools.wraps(func)
     async def wrapper(message: Message, *args: P.args, **kwargs: P.kwargs) -> R | None:

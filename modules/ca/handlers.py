@@ -1,4 +1,4 @@
-"""Доступ ЦА: /setca, /regrole, /raccess."""
+"""Доступ ЦА: /regrole, /raccess, /panel."""
 
 from __future__ import annotations
 
@@ -104,86 +104,6 @@ async def _register_congress_chat(
 def register_ca(bot: Bot, api: API, action_logger: ActionLogger) -> None:
     resolver = VKResolver(api)
     names = DisplayNameService(api)
-
-    @bot.on.message(text=dual("setca"))
-    @requires_level(AccessLevel.ZGS)
-    @requires_ca_scope
-    async def setca_usage(
-        message: Message,
-        server_id: int = 0,
-        access_level: int = 0,
-    ) -> None:
-        await message.answer(
-            "❌ Использование: /setca [@user|ник|vk.ru] [off]\n"
-            "Или ответом на сообщение: /setca [off]\n"
-            "Выдаёт или снимает доступ ЦА (конгресс, суд, ур. 1–4)."
-        )
-
-    @bot.on.message(text=dual_args("setca"))
-    @requires_level(AccessLevel.ZGS)
-    @requires_ca_scope
-    async def set_ca(
-        message: Message,
-        args: str | None = None,
-        server_id: int = 0,
-        access_level: int = 0,
-    ) -> None:
-        raw = strip_cmd(message.text or "", "setca")
-        revoke = False
-        target_args = raw
-
-        if raw.lower().endswith(" off"):
-            revoke = True
-            target_args = raw[:-4].strip()
-        elif raw.lower() == "off":
-            revoke = True
-            target_args = ""
-
-        reply_id = (
-            message.reply_message.from_id
-            if message.reply_message and message.reply_message.from_id > 0
-            else None
-        )
-        resolved, hint = await resolver.resolve_from_message_with_hint(
-            target_args,
-            reply_from_id=reply_id,
-            server_id=server_id,
-        )
-        if hint:
-            await message.answer(hint, disable_mentions=1)
-            return
-        if not resolved:
-            await message.answer("❌ Пользователь не найден.")
-            return
-
-        await UserRepository.ensure_user(
-            vk_id=resolved.vk_id,
-            username=resolved.username,
-            added_by=message.from_id,
-        )
-        await UserRepository.set_ca_access(
-            resolved.vk_id,
-            server_id,
-            enabled=not revoke,
-            granted_by=message.from_id,
-        )
-        link = await names.link_user(resolved.vk_id, server_id)
-        if revoke:
-            await message.answer(f"✅ {link} — доступ ЦА снят.", disable_mentions=1)
-            action = "ca_access_revoke"
-            detail = "Снят доступ ЦА"
-        else:
-            await message.answer(f"✅ {link} — выдан доступ ЦА.", disable_mentions=1)
-            action = "ca_access_grant"
-            detail = "Выдан доступ ЦА"
-
-        await action_logger.log_user(
-            action,
-            message.from_id,
-            f"id{resolved.vk_id}",
-            detail,
-            source_peer_id=message.peer_id,
-        )
 
     async def _run_raccess(
         message: Message,
@@ -415,15 +335,13 @@ def register_ca(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         if not server_id:
             server_id = await AccessChecker.resolve_server_id(message.peer_id, user_id)
 
-        if not await UserRepository.can_use_ca_scope(user_id, server_id):
+        if not await UserRepository.can_use_portal(user_id, server_id):
             level = await UserRepository.get_access_level(user_id, server_id)
             level_label = AccessChecker.level_name(level) if level else "нет доступа"
             await message.answer(
-                "⛔ Вход на портал след. ЦА недоступен.\n\n"
+                "⛔ Вход на портал недоступен.\n\n"
                 f"Ваш уровень: {level_label} ({level}).\n\n"
-                "Нужно одно из:\n"
-                "• уровень 5+ (ЗГС ГОС и выше);\n"
-                "• доступ ЦА — /setca или беседа след. ЦА.\n\n"
+                "Нужен уровень ПГС (1) или выше.\n"
                 "Если доступ должен быть — напишите ЗГС ЦА+."
             )
             return

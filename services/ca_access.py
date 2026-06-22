@@ -12,6 +12,7 @@ from database.repository.forum_role_repo import ForumRoleRepository
 from database.repository.user_repo import UserRepository
 from middlewares.access import AccessChecker
 from services.display_name import DisplayNameService
+from services.panel_client import sync_staff_spheres
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,8 @@ async def handle_sled_ca_join(peer_id: int, user_id: int, api: API) -> str | Non
     if not changed:
         return None
 
+    await sync_staff_spheres(user_id, grant_central_apparatus=True, server_id=server_id)
+
     names = DisplayNameService(api, server_id)
     link = await names.link_user(user_id, server_id)
     level = await UserRepository.get_access_level(user_id, server_id)
@@ -91,6 +94,9 @@ async def handle_sled_ca_leave(peer_id: int, user_id: int, api: API) -> str | No
     )
     if not changed:
         return None
+
+    if "доступ ЦА" in detail or "ур." in detail:
+        await sync_staff_spheres(user_id, grant_central_apparatus=False, server_id=server_id)
 
     link = await DisplayNameService(api, server_id).link_user(user_id, server_id)
     logger.info(

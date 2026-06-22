@@ -9,9 +9,27 @@ TS="$(date +%Y%m%d-%H%M%S)"
 
 cd "${APP_DIR}"
 mkdir -p "${BACKUP_DIR}"
+chown "${APP_USER}:${APP_USER}" "${BACKUP_DIR}"
 
 DB_FILES=(bot.db users.db)
 DB_SIDE_FILES=(bot.db-wal bot.db-shm users.db-wal users.db-shm)
+
+ensure_real_db_file() {
+  local db="$1"
+  [[ -e "${db}" || -L "${db}" ]] || return 0
+  if [[ -L "${db}" ]]; then
+    local real
+    real="$(readlink -f "${db}")"
+    echo "Предупреждение: ${db} был симлинком -> ${real}, заменяем на обычный файл" >&2
+    rm -f "${db}"
+    cp -a "${real}" "${db}"
+    chown "${APP_USER}:${APP_USER}" "${db}"
+  fi
+}
+
+for db in "${DB_FILES[@]}"; do
+  ensure_real_db_file "${db}"
+done
 
 count_users() {
   local db="$1"
@@ -64,7 +82,19 @@ for db in "${DB_FILES[@]}"; do
     chown "${APP_USER}:${APP_USER}" "${db}"
     exit 1
   fi
+  ensure_real_db_file "${db}"
 done
+
+for extra in bot.db-wal bot.db-shm users.db-wal users.db-shm; do
+  if [[ -f "${extra}" ]]; then
+    chown "${APP_USER}:${APP_USER}" "${extra}"
+  fi
+done
+
+chown "${APP_USER}:${APP_USER}" "${APP_DIR}" 2>/dev/null || true
+if [[ "${EUID}" -eq 0 ]]; then
+  chown -R "${APP_USER}:${APP_USER}" "${APP_DIR}"
+fi
 
 sudo -u "${APP_USER}" ./venv/bin/pip install -r requirements.txt
 systemctl restart state-lovebot

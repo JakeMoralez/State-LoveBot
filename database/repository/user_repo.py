@@ -224,6 +224,14 @@ class UserRepository:
         return await UserRepository.has_ca_access(vk_id, server_id)
 
     @staticmethod
+    async def can_use_portal(vk_id: int, server_id: int) -> bool:
+        """Вход на портал State Love: уровень ПГС (1) и выше."""
+        if await UserRepository.is_developer(vk_id):
+            return True
+        level = await UserRepository.get_access_level(vk_id, server_id)
+        return level >= AccessLevel.PGS
+
+    @staticmethod
     async def grant_sled_ca_from_chat(
         vk_id: int,
         server_id: int,

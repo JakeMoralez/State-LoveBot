@@ -13,7 +13,6 @@ from vkbottle.dispatch.rules.base import FuncRule
 from database.models.user import AccessLevel
 from database.repository.user_repo import UserRepository
 from middlewares.access import AccessChecker, requires_level, requires_public
-from middlewares.ca_access import requires_ca_scope
 from middlewares.congress_access import requires_setnick
 from middlewares.action_logger import ActionLogger
 from services.command_utils import dual, dual_args, dual_with_args, matches_cmd, matches_who, strip_cmd
@@ -107,6 +106,21 @@ async def _parse_setnick(message: Message, api: API) -> tuple[int | None, str | 
     return None, None, _SETNICK_FORMAT_ERR
 
 
+async def _staff_nick_blocked_message(
+    target_id: int,
+    server_id: int,
+    names: DisplayNameService,
+) -> str | None:
+    """Ник следящего (ур. 1+) — только через сайт, не /snick и не /rnick."""
+    if await UserRepository.get_access_level(target_id, server_id) < AccessLevel.PGS:
+        return None
+    link = await names.link_user(target_id, server_id)
+    return (
+        f"❌ У {link} есть доступ следящего — "
+        "ник меняется через сайт (Команда → профиль)."
+    )
+
+
 async def _parse_nick_target(message: Message, api: API) -> tuple[int | None, str | None]:
     """(target_id, error_message) — для /rnick."""
     args = strip_cmd(message.text or "", "rnick")
@@ -163,6 +177,11 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             await message.answer("❌ Укажите никнейм.")
             return
 
+        blocked = await _staff_nick_blocked_message(target_id, server_id, names)
+        if blocked:
+            await message.answer(blocked, disable_mentions=1)
+            return
+
         ok, val_err = NicknameValidator.validate(nickname)
         if not ok:
             await message.answer(f"❌ {val_err}")
@@ -217,6 +236,11 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             return
         if target_id is None:
             await message.answer(_NICK_TARGET_ERR)
+            return
+
+        blocked = await _staff_nick_blocked_message(target_id, server_id, names)
+        if blocked:
+            await message.answer(blocked, disable_mentions=1)
             return
 
         if not await UserRepository.has_nickname(target_id, server_id):
@@ -282,7 +306,8 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
     ) -> None:
         max_lvl = 9 if await UserRepository.is_developer(message.from_id or 0) else 8
         await message.answer(
-            f"❌ Использование: /setlevel [vk.ru|ID|@user|ник] [0-{max_lvl}]"
+            f"❌ Использование: /setlevel [vk.ru|ID|@user|ник] [0–{max_lvl}]\n"
+            "Нельзя выдать уровень выше своего или понизить себя."
         )
 
     @bot.on.message(text=dual_with_args("setlevel", "<target> <level>"))
@@ -325,7 +350,26 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             )
             return
 
+        if resolved.vk_id == message.from_id and new_level < granter_level:
+            await message.answer("❌ Нельзя понизить свой уровень ниже текущего.")
+            return
+
         old_level = await UserRepository.get_access_level(resolved.vk_id, server_id)
+
+        if old_level <= 0 and new_level > 0:
+            from services.panel_login import PANEL_BASE_URL
+
+            assign_url = (
+                f"{PANEL_BASE_URL}/assign?type=staff"
+                if PANEL_BASE_URL
+                else "/assign?type=staff"
+            )
+            await message.answer(
+                "❌ У пользователя не было доступа следящего.\n"
+                f"Назначьте через сайт: {assign_url}",
+                disable_mentions=1,
+            )
+            return
 
         await UserRepository.ensure_user(
             vk_id=resolved.vk_id,
@@ -367,7 +411,7 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
     _DISCORD_CLEAR = frozenset({"off", "0", "нет", "remove", "clear", "снять", "удалить"})
 
     @bot.on.message(text=dual("editmydiscord"))
-    @requires_ca_scope
+    @requires_public
     async def editmydiscord_usage(message: Message, server_id: int = 0) -> None:
         current = await get_discord_link(message.from_id)
         lines = [
@@ -392,7 +436,7 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         await message.answer("\n".join(lines))
 
     @bot.on.message(text=dual_args("editmydiscord"))
-    @requires_ca_scope
+    @requires_public
     async def editmydiscord_set(message: Message, server_id: int = 0) -> None:
         raw = strip_cmd(message.text or "", "editmydiscord").strip()
         if not raw:

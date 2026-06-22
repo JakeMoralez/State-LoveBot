@@ -379,11 +379,45 @@ class ForumService:
         if not thread:
             return False, "Тема не найдена."
 
+        post_id = getattr(thread, "thread_post_id", None)
         try:
-            resp = await thread.edit(body)
-            if resp and resp.status == 200:
-                return True, "Содержимое темы обновлено."
-            return False, f"Форум отклонил изменение (HTTP {getattr(resp, 'status', '?')})."
+            if post_id and self._api:
+                logger.info(
+                    "edit_thread_body: thread=%s post=%s len=%s",
+                    thread_id,
+                    post_id,
+                    len(body),
+                )
+                resp = await self._api.edit_post(int(post_id), body)
+            else:
+                logger.warning(
+                    "edit_thread_body: thread=%s fallback thread.edit (post_id missing)",
+                    thread_id,
+                )
+                resp = await thread.edit(body)
+
+            if not resp:
+                return False, "Форум не вернул ответ."
+
+            status = resp.status
+            snippet = (await resp.text())[:800]
+            logger.info(
+                "edit_thread_body: thread=%s post=%s http=%s",
+                thread_id,
+                post_id,
+                status,
+            )
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug("edit_thread_body response snippet: %s", snippet[:400])
+
+            lowered = snippet.lower()
+            if status not in (200, 303):
+                return False, f"Форум отклонил изменение (HTTP {status})."
+            if "you do not have permission" in lowered or "нет прав" in lowered:
+                return False, "Нет прав редактировать первый пост (нужен модератор или автор темы)."
+            if '"errors"' in snippet and "exception" not in lowered:
+                return False, "Форум отклонил изменение (ошибка в ответе)."
+            return True, "Содержимое темы обновлено."
         except Exception as exc:
             logger.error("edit_thread_body %s: %s", thread_id, exc)
             return False, f"Ошибка: {exc}"

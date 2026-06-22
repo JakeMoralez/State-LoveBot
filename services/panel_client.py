@@ -68,3 +68,36 @@ async def set_discord_link(vk_id: int, discord_id: str | None) -> tuple[bool, st
     except Exception as exc:
         logger.warning("set_discord_link vk=%s: %s", vk_id, exc)
         return False, "Не удалось связаться с панелью."
+
+
+async def sync_staff_spheres(
+    vk_id: int,
+    *,
+    grant_central_apparatus: bool,
+    server_id: int | None = None,
+) -> tuple[bool, str]:
+    """Синхронизация сферы «Центральный аппарат» с panel.db."""
+    if not panel_api_configured():
+        return True, ""
+    url = f"{PANEL_INTERNAL_URL}/internal/staff-spheres/{vk_id}"
+    payload: dict = {"grant_central_apparatus": grant_central_apparatus}
+    params = {}
+    if server_id is not None:
+        params["server_id"] = server_id
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.put(
+                url,
+                json=payload,
+                params=params,
+                headers=_headers(),
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                if resp.status == 200:
+                    return True, ""
+                data = await resp.json(content_type=None)
+                detail = data.get("detail") if isinstance(data, dict) else None
+                return False, str(detail or resp.reason or "Ошибка панели")
+    except Exception as exc:
+        logger.warning("sync_staff_spheres vk=%s: %s", vk_id, exc)
+        return False, "Не удалось связаться с панелью."

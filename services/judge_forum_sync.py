@@ -4,14 +4,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 
 from database.models.judge_forum_list import JudgeForumListSettings
 from database.models.role_chat import ForumRoleKey
 from database.models.server import Server
-from database.models.user import User, UserServerAccess
 from database.repository.forum_role_repo import ForumRoleRepository
 from services.forum_api import ForumService
+from services.judge_display import build_judge_line_context, escape_bbcode_text
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +23,7 @@ DEFAULT_BODY_TEMPLATE = """[center][size=5][b]Список судей[/b][/size]
 
 {{judges_block}}"""
 
-DEFAULT_LINE_TEMPLATE = "[*]{{nickname}} — судья с {{since}}{{note_suffix}}"
+DEFAULT_LINE_TEMPLATE = "[b]{{clean_nickname}}[/b] — {{position}} с {{since}}"
 
 DEFAULT_EMPTY_TEXT = "[i]Судей нет.[/i]"
 
@@ -32,29 +33,26 @@ JUDGE_LIST_FORUM_URL = f"https://forum.arizona-rp.com/forums/{JUDGE_LIST_FORUM_I
 _SYNC_LOCKS: dict[int, asyncio.Lock] = {}
 _PENDING: set[int] = set()
 
-
-def escape_bbcode_text(value: str) -> str:
-    return value.replace("[", "［").replace("]", "］")
+_LIST_BB_RE = re.compile(r"\[(?:/?list|\*)\]", re.IGNORECASE)
 
 
-def _judge_since(user: User) -> str:
-    dt = user.last_used or user.added_at
-    if not dt:
-        return "—"
-    if isinstance(dt, datetime):
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return dt.astimezone(MSK).strftime("%d.%m.%Y")
-    return str(dt)
+def strip_list_bbcode(text: str) -> str:
+    """Убрать [list], [/list], [*] — список судей без XenForo-списка."""
+    if not text:
+        return text
+    return _LIST_BB_RE.sub("", text)
 
 
-async def _resolve_nickname(user: User, server_id: int) -> str:
-    access = await UserServerAccess.get_or_none(user_id=user.vk_id, server_id=server_id)
-    if access and (access.nickname or "").strip():
-        return escape_bbcode_text(access.nickname.strip())
-    if user.username and user.username.strip():
-        return escape_bbcode_text(user.username.strip())
-    return f"id{user.vk_id}"
+def _normalize_templates(
+    body_template: str,
+    line_template: str,
+    empty_text: str,
+) -> tuple[str, str, str]:
+    return (
+        strip_list_bbcode(body_template),
+        strip_list_bbcode(line_template),
+        strip_list_bbcode(empty_text),
+    )
 
 
 def _format_updated_at(when: datetime | None = None) -> str:
@@ -64,24 +62,9 @@ def _format_updated_at(when: datetime | None = None) -> str:
     return dt.astimezone(MSK).strftime("%d.%m.%Y %H:%M")
 
 
-def _apply_line_template(
-    template: str,
-    *,
-    nickname: str,
-    since: str,
-    note: str,
-    index: int,
-) -> str:
-    note_suffix = f" — {escape_bbcode_text(note)}" if note.strip() else ""
-    result = template
-    replacements = {
-        "{{nickname}}": nickname,
-        "{{since}}": since,
-        "{{note}}": escape_bbcode_text(note) if note.strip() else "",
-        "{{note_suffix}}": note_suffix,
-        "{{index}}": str(index),
-    }
-    for key, value in replacements.items():
+def _apply_line_template(template: str, values: dict[str, str], *, index: int) -> str:
+    result = template.replace("{{index}}", str(index))
+    for key, value in values.items():
         result = result.replace(key, value)
     return result
 
@@ -97,20 +80,11 @@ async def build_judges_block(
         return empty_text, 0
 
     lines: list[str] = []
+    clean_line = strip_list_bbcode(line_template)
     for index, user in enumerate(users, start=1):
-        nickname = await _resolve_nickname(user, server_id)
-        since = _judge_since(user)
-        note = (user.note or "").strip()
-        lines.append(
-            _apply_line_template(
-                line_template,
-                nickname=nickname,
-                since=since,
-                note=note,
-                index=index,
-            )
-        )
-    return "[LIST]\n" + "\n".join(lines) + "\n[/LIST]", len(users)
+        ctx = await build_judge_line_context(user, server_id)
+        lines.append(_apply_line_template(clean_line, ctx, index=index))
+    return "\n".join(lines), len(users)
 
 
 async def render_judge_list_body(
@@ -124,6 +98,7 @@ async def render_judge_list_body(
     body = body_template or DEFAULT_BODY_TEMPLATE
     line = line_template or DEFAULT_LINE_TEMPLATE
     empty = empty_text or DEFAULT_EMPTY_TEXT
+    body, line, empty = _normalize_templates(body, line, empty)
 
     judges_block, judges_count = await build_judges_block(
         server_id,
@@ -142,7 +117,7 @@ async def render_judge_list_body(
     result = body
     for key, value in replacements.items():
         result = result.replace(key, value)
-    return result
+    return strip_list_bbcode(result)
 
 
 async def get_settings(server_id: int) -> JudgeForumListSettings:
@@ -160,6 +135,21 @@ async def get_settings(server_id: int) -> JudgeForumListSettings:
         settings.line_template = DEFAULT_LINE_TEMPLATE
     if not settings.empty_text.strip():
         settings.empty_text = DEFAULT_EMPTY_TEXT
+
+    body, line, empty = _normalize_templates(
+        settings.body_template,
+        settings.line_template,
+        settings.empty_text,
+    )
+    if (
+        body != settings.body_template
+        or line != settings.line_template
+        or empty != settings.empty_text
+    ):
+        settings.body_template = body
+        settings.line_template = line
+        settings.empty_text = empty
+        await settings.save(update_fields=["body_template", "line_template", "empty_text"])
     return settings
 
 
@@ -174,7 +164,7 @@ async def validate_judge_list_thread(
     thread_id: int,
     forum: ForumService | None = None,
 ) -> tuple[bool, str]:
-    del server_id  # один раздел списка судей на все серверы
+    del server_id
     required_forum_id = JUDGE_LIST_FORUM_ID
 
     svc = forum or ForumService()
@@ -202,8 +192,10 @@ async def validate_judge_list_thread(
 async def sync_judge_list(server_id: int, forum: ForumService | None = None) -> tuple[bool, str]:
     settings = await get_settings(server_id)
     if not settings.enabled:
+        logger.info("judge list sync skipped: server=%s — синхронизация отключена", server_id)
         return False, "Синхронизация отключена"
     if not settings.thread_id:
+        logger.info("judge list sync skipped: server=%s — не задан thread_id", server_id)
         return False, "Не задан thread_id"
 
     svc = forum or ForumService()
@@ -226,6 +218,12 @@ async def sync_judge_list(server_id: int, forum: ForumService | None = None) -> 
         body_template=settings.body_template,
         line_template=settings.line_template,
         empty_text=settings.empty_text,
+    )
+    logger.info(
+        "judge list body: server=%s thread=%s chars=%s",
+        server_id,
+        settings.thread_id,
+        len(body),
     )
 
     ok, msg = await svc.edit_thread_body(settings.thread_id, body)

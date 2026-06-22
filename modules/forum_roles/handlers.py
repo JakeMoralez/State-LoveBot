@@ -1,4 +1,4 @@
-"""Судебные роли: /addcourt, /court."""
+"""Судебные роли: /court, лидеры."""
 
 from __future__ import annotations
 
@@ -88,65 +88,6 @@ async def _list_panel_leaders(server_id: int) -> list[tuple]:
 def register_forum_roles(bot: Bot, api: API, action_logger: ActionLogger) -> None:
     resolver = VKResolver(api)
 
-    @bot.on.message(text=dual_args("addcourt"))
-    @requires_level(AccessLevel.SUPERVISOR)
-    @requires_ca_scope
-    async def add_court(
-        message: Message,
-        args: str | None = None,
-        server_id: int = 0,
-        access_level: int = 0,
-    ) -> None:
-        if not args and not (
-            message.reply_message and message.reply_message.from_id > 0
-        ):
-            await message.answer(
-                "❌ /addcourt [@user] [заметка]\n"
-                "Или ответом на сообщение."
-            )
-            return
-
-        reply_id = (
-            message.reply_message.from_id
-            if message.reply_message and message.reply_message.from_id > 0
-            else None
-        )
-        target_raw, note = _parse_target_and_note(args or "")
-        resolved, hint = await resolver.resolve_from_message_with_hint(
-            target_raw,
-            reply_from_id=reply_id,
-            server_id=server_id,
-        )
-        if hint:
-            await message.answer(hint, disable_mentions=1)
-            return
-        if not resolved:
-            await message.answer("❌ Пользователь не найден.")
-            return
-
-        await ForumRoleRepository.set_role(
-            resolved.vk_id,
-            server_id,
-            username=resolved.username,
-            added_by=message.from_id or 0,
-            note=note,
-            is_judge=True,
-        )
-        names = DisplayNameService(api, server_id)
-        link = await names.link_user(resolved.vk_id, server_id)
-        await message.answer(
-            f"⚖️ {link} назначен судьёй.",
-            disable_mentions=1,
-        )
-        target_label = resolved.display_name or resolved.username or f"id{resolved.vk_id}"
-        await action_logger.log_user(
-            "add_court",
-            message.from_id,
-            f"{target_label} (id{resolved.vk_id})" + (f", {note}" if note else ""),
-            "Назначен судьёй",
-            source_peer_id=message.peer_id,
-        )
-
     @bot.on.message(text=dual_args("deluser"))
     @requires_developer
     async def del_user(
@@ -204,68 +145,6 @@ def register_forum_roles(bot: Bot, api: API, action_logger: ActionLogger) -> Non
         await message.answer(
             await _format_judge_list(users, api, server_id),
             disable_mentions=1,
-        )
-
-    @bot.on.message(text=dual_args("removecourt"))
-    @requires_level(AccessLevel.SUPERVISOR)
-    @requires_ca_scope
-    async def remove_court(
-        message: Message,
-        args: str | None = None,
-        server_id: int = 0,
-        access_level: int = 0,
-    ) -> None:
-        if not args and not (
-            message.reply_message and message.reply_message.from_id > 0
-        ):
-            await message.answer(
-                "❌ /removecourt [@user|ник|vk.ru]\n"
-                "Или ответом на сообщение судьи."
-            )
-            return
-
-        reply_id = (
-            message.reply_message.from_id
-            if message.reply_message and message.reply_message.from_id > 0
-            else None
-        )
-        target_raw = VKResolver.extract_reference(args or "")
-        resolved, hint = await resolver.resolve_from_message_with_hint(
-            target_raw,
-            reply_from_id=reply_id,
-            server_id=server_id,
-        )
-        if hint:
-            await message.answer(hint, disable_mentions=1)
-            return
-        if not resolved:
-            await message.answer("❌ Пользователь не найден.")
-            return
-
-        if not await ForumRoleRepository.is_judge(resolved.vk_id, server_id):
-            link = await DisplayNameService(api, server_id).link_user(
-                resolved.vk_id,
-                server_id,
-            )
-            await message.answer(
-                f"❌ {link} не является судьёй.",
-                disable_mentions=1,
-            )
-            return
-
-        await ForumRoleRepository.clear_judge_role(resolved.vk_id, server_id)
-        names = DisplayNameService(api, server_id)
-        link = await names.link_user(resolved.vk_id, server_id)
-        await message.answer(
-            f"⚖️ {link} — роль судьи снята.",
-            disable_mentions=1,
-        )
-        await action_logger.log_user(
-            "remove_judge",
-            message.from_id,
-            f"id{resolved.vk_id}",
-            "Снят с судей",
-            source_peer_id=message.peer_id,
         )
 
     @bot.on.message(text=dual_args("addleader"))

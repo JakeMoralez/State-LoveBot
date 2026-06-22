@@ -106,9 +106,9 @@ async def _can_use_msg(user_id: int, peer_id: int) -> tuple[bool, int, str]:
     if not await ForumRoleRepository.can_use_forum_bot(user_id):
         return False, server_id, ""
     level = await AccessChecker.get_level(user_id, server_id)
-    if level < AccessLevel.SUPERVISOR and not await UserRepository.is_developer(user_id):
+    if level < AccessLevel.PGS and not await UserRepository.is_developer(user_id):
         return False, server_id, ""
-    return True, server_id, "supervisor"
+    return True, server_id, "pgs"
 
 
 async def _resolve_msg_target(
@@ -438,7 +438,7 @@ def register_pools(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         args: str | None = None,
         server_id: int = 0,
         access_level: int = 0,
-        msg_mode: str = "supervisor",
+        msg_mode: str = "pgs",
     ) -> None:
         raw = strip_cmd(message.text or "", "msg").strip()
         attachments = MessagingService.extract_photo_attachments(message)

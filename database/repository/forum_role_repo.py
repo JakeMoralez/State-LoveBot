@@ -170,10 +170,14 @@ class ForumRoleRepository:
         return True
 
     @staticmethod
-    async def set_note(vk_id: int, note: str) -> None:
+    async def set_note(vk_id: int, note: str, server_id: int | None = None) -> None:
         user = await User.get(vk_id=vk_id)
         user.note = note
         await user.save()
+        if server_id and await ForumRoleRepository.is_judge(vk_id, server_id):
+            from services.judge_forum_sync import schedule_judge_list_sync
+
+            schedule_judge_list_sync(server_id)
 
     @staticmethod
     async def list_by_role(role: str, server_id: int) -> list[User]:

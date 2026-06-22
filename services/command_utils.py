@@ -9,7 +9,6 @@ COMMAND_ALIASES: dict[str, tuple[str, ...]] = {
     "rnick": ("removenick", "clearnick"),
     "kick": ("k",),
     "poolkick": ("pkick", "pullkick"),
-    "addcourt": ("acourt",),
     "addleader": ("aleader",),
     "removeleader": ("rleader",),
     "leaders": ("leaderlist",),
@@ -26,9 +25,7 @@ COMMAND_ALIASES: dict[str, tuple[str, ...]] = {
     "pools": ("pool",),
     "regcongress": ("regcong",),
     "regrole": ("regcourt", "regsledco", "regsledca"),
-    "setca": ("adostupca", "dostupca", "caaccess"),
     "raccess": ("rrole",),
-    "removecourt": ("rcourt",),
     "fclose": ("fclosed",),
     "fopen": ("fopened",),
     "fresolve": ("resolve", "fcloseunpin"),
@@ -72,7 +69,7 @@ def dual_with_args(name: str, args: str) -> list[str]:
 
 
 def dual_args(name: str, args: str = "<args>") -> list[str]:
-    """Голая /cmd + /cmd <args> — для одного хендлера на всё (как /addcourt)."""
+    """Голая /cmd + /cmd <args> — для одного хендлера на всё."""
     patterns: list[str] = []
     for n in cmd_names(name):
         patterns.extend(

@@ -19,7 +19,7 @@ R = TypeVar("R")
 def requires_ca_scope(
     func: Callable[P, Awaitable[R]],
 ) -> Callable[P, Awaitable[R | None]]:
-    """Ур. 5+ — без ограничения; ур. 1–4 — нужен доступ ЦА (/setca или беседа след. ЦА)."""
+    """Ур. 5+ — без ограничения; ур. 1–4 — доступ ЦА (беседа след. ЦА или панель)."""
 
     @functools.wraps(func)
     async def wrapper(message: Message, *args: P.args, **kwargs: P.kwargs) -> R | None:
@@ -34,7 +34,7 @@ def requires_ca_scope(
         if not await UserRepository.can_use_ca_scope(user_id, server_id):
             await message.answer(
                 "⛔ Нужен доступ ЦА.\n"
-                "Ур. 1–4: /setca или беседа след. ЦА.\n"
+                "Ур. 1–4: беседа след. ЦА или панель State Love.\n"
                 "Ур. 5+ — без ограничения."
             )
             return None
@@ -73,7 +73,7 @@ def requires_ca_form_reviewer(
         if not await can_review_court_forms(user_id, server_id):
             await message.answer(
                 "⛔ Модерация форм: нужен доступ ЦА и уровень 2+ (Следящий).\n"
-                "ЦА: /setca или беседа след. ЦА.\n"
+                "ЦА: беседа след. ЦА или панель State Love.\n"
                 "Ур. 5+ — доступ ЦА без отдельного флага."
             )
             return None

@@ -82,8 +82,7 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
             HelpEntry(
                 "/editmydiscord",
                 "Привязать Discord ID для входа на сайт",
-                0,
-                ca=True,
+                public=True,
             ),
         ),
     ),
@@ -98,7 +97,7 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
             HelpEntry("/pin", "Закрепить сообщение", 2),
             HelpEntry("/unpin", "Открепить сообщение", 2),
             HelpEntry("/del", "Удалить сообщение", 2),
-            HelpEntry("/msg", "Оповещение в беседу", 2),
+            HelpEntry("/msg", "Оповещение в беседу", 1),
             HelpEntry("/chatsettings", "Настройки беседы", 3),
             HelpEntry("/rejoinkick", "Автокик при выходе: on / ask", 3),
         ),
@@ -110,7 +109,7 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
             HelpEntry("/createpool", "Создать пул", 5),
             HelpEntry("/regchat", "Привязать беседу к пулу", 5),
             HelpEntry("/unregchat", "Отвязать беседу от пула", 5),
-            HelpEntry("/setlevel", "Уровень [@user] [0–8]", 3),
+            HelpEntry("/setlevel", "Уровень [@user] [0–9]", 3),
         ),
     ),
     HelpCategory(
@@ -137,7 +136,6 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
     HelpCategory(
         "🏛 ЦА",
         (
-            HelpEntry("/setca", "Выдать или снять доступ ЦА [@user] [off]", 3, ca=True),
             HelpEntry("/raccess", "Снять роли с пользователя [@user]", 2, ca=True),
             HelpEntry(
                 "/regrole",
@@ -148,8 +146,7 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
             HelpEntry(
                 "/panel",
                 "Вход на сайт след. ЦА (если нет Discord)",
-                0,
-                ca=True,
+                1,
             ),
         ),
     ),
@@ -166,8 +163,6 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
     HelpCategory(
         "⚖️ Судьи",
         (
-            HelpEntry("/addcourt", "Назначить судью", 2, ca=True),
-            HelpEntry("/removecourt", "Снять судью [@user]", 2, ca=True),
             HelpEntry("/court", "Список судей", public=True),
         ),
     ),

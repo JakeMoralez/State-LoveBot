@@ -25,6 +25,7 @@ from modules import register_all_modules
 from services.chat_admin import ChatAdminService
 from services.forum_api import ForumService, _ARIZONA_IMPORT_ERROR, _HAS_ARIZONA
 from services.help_menu import build_dev_help_text, build_help_text_for_user
+from services.sled_internal_api import start_sled_internal_server, stop_sled_internal_server
 
 logger = logging.getLogger(__name__)
 
@@ -81,8 +82,6 @@ async def run_bot() -> None:
 
     try:
         await init_db()
-        from services.sled_internal_api import start_sled_internal_server, stop_sled_internal_server
-
         sled_runner = await start_sled_internal_server(api)
         if _forum_service.available:
             try:

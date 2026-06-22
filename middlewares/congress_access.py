@@ -105,7 +105,7 @@ def requires_chat_kick(
 def requires_msg(
     func: Callable[P, Awaitable[R]],
 ) -> Callable[P, Awaitable[R | None]]:
-    """Супервайзер+ или спикер/вице — /msg только алиас конгресса (конфа или ЛС)."""
+    """ПГС+ или спикер/вице — /msg только алиас конгресса (конфа или ЛС)."""
 
     @functools.wraps(func)
     async def wrapper(message: Message, *args: P.args, **kwargs: P.kwargs) -> R | None:
@@ -130,19 +130,17 @@ def requires_msg(
             return None
 
         level = await AccessChecker.get_level(user_id, server_id)
-        if level < AccessLevel.SUPERVISOR and not await UserRepository.is_developer(
-            user_id
-        ):
+        if level < AccessLevel.PGS and not await UserRepository.is_developer(user_id):
             await message.answer(
                 f"⛔ Недостаточно прав.\n"
-                f"Требуется: Супервайзер (ур. {AccessLevel.SUPERVISOR})\n"
+                f"Требуется: ПГС (ур. {AccessLevel.PGS})\n"
                 f"Ваш уровень: {AccessChecker.level_name(level) if level else 'нет доступа'}"
             )
             return None
 
         kwargs["server_id"] = server_id
         kwargs["access_level"] = level
-        kwargs["msg_mode"] = "supervisor"
+        kwargs["msg_mode"] = "pgs"
         return await func(message, *args, **kwargs)
 
     return wrapper

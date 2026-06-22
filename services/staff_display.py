@@ -10,8 +10,6 @@ from services.display_name import DisplayNameService
 
 def format_access_badges(user: User, access: UserServerAccess | None) -> str:
     badges: list[str] = []
-    if access and access.has_ca_access:
-        badges.append("ЦА")
     if access and access.is_judge:
         badges.append("⚖")
     if access and access.is_congress_speaker:
