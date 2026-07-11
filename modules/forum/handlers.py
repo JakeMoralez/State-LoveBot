@@ -161,7 +161,10 @@ def register_forum(
             return False
         return True
 
-    @bot.on.message(FuncRule(lambda m: matches_cmd(m.text or "", "info") or matches_cmd(m.text or "", "edit")))
+    @bot.on.message(FuncRule(lambda m: (
+        (matches_cmd(m.text or "", "info") or matches_cmd(m.text or "", "edit"))
+        and parse_forum_thread(m.text or "", ("info", "edit")) is not None
+    )))
     @requires_forum_user
     async def thread_info_or_edit(message: Message, server_id: int = 0) -> None:
         if await _forum_not_ready(message):
@@ -175,10 +178,10 @@ def register_forum(
             )
             return
 
-        info = await forum.get_thread_info(thread_id)
+        info, reconnected = await forum.get_thread_info_with_reconnect(thread_id)
         if not info:
             await message.answer(
-                f"❌ Тема {thread_id} не найдена или нет прав на просмотр."
+                f"❌ {forum.thread_not_found_message(thread_id, reconnected=reconnected)}"
             )
             return
 
@@ -223,9 +226,11 @@ def register_forum(
             )
             return
 
-        info = await forum.get_thread_info(thread_id)
+        info, reconnected = await forum.get_thread_info_with_reconnect(thread_id)
         if not info:
-            await message.answer(f"❌ Тема {thread_id} не найдена.")
+            await message.answer(
+                f"❌ {forum.thread_not_found_message(thread_id, reconnected=reconnected)}"
+            )
             return
 
         category_id = int(info.get("category_id") or info.get("node_id") or 0)
@@ -294,9 +299,11 @@ def register_forum(
             )
             return
 
-        info = await forum.get_thread_info(thread_id)
+        info, reconnected = await forum.get_thread_info_with_reconnect(thread_id)
         if not info:
-            await message.answer(f"❌ Тема {thread_id} не найдена.")
+            await message.answer(
+                f"❌ {forum.thread_not_found_message(thread_id, reconnected=reconnected)}"
+            )
             return
 
         category_id = int(info.get("category_id") or info.get("node_id") or 0)
@@ -485,9 +492,15 @@ def register_forum(
 
         server_id = await AccessChecker.resolve_server_id(event.peer_id, event.user_id)
 
-        info = await forum.get_thread_info(int(thread_id))
+        info, reconnected = await forum.get_thread_info_with_reconnect(int(thread_id))
         if not info:
-            await event.show_snackbar(f"❌ Тема {thread_id} не найдена")
+            if reconnected:
+                await event.send_message(
+                    f"❌ {forum.thread_not_found_message(int(thread_id), reconnected=True)}"
+                )
+            else:
+                await event.show_snackbar(f"❌ Тема {thread_id} не найдена")
+            await event.send_empty_answer()
             return
 
         category_id = int(info.get("category_id") or info.get("node_id") or 0)

@@ -5,10 +5,7 @@ from __future__ import annotations
 from vkbottle import API
 from vkbottle.bot import Bot, Message
 
-from database.repository.congress_repo import CongressRepository
-from database.repository.forum_role_repo import ForumRoleRepository
 from database.repository.server_repo import ServerRepository
-from database.repository.user_repo import UserRepository
 from middlewares.access import AccessChecker, requires_developer
 from services.command_utils import dual, dual_args, strip_cmd
 from services.dev_server_context import (
@@ -16,7 +13,7 @@ from services.dev_server_context import (
     get_dev_server_override,
     set_dev_server_override,
 )
-from services.display_name import DisplayNameService
+from services.profile_card import format_user_profile_card
 from services.server_display import format_judge_forum_hint, format_server_label
 
 
@@ -41,30 +38,8 @@ def register_system(bot: Bot, api: API) -> None:
     async def show_me(message: Message) -> None:
         user_id = message.from_id or 0
         server_id = await AccessChecker.resolve_server_id(message.peer_id, user_id)
-        level = await UserRepository.get_access_level(user_id, server_id)
-        level_name = AccessChecker.level_name(level) if level else "нет доступа"
-
-        names = DisplayNameService(api, server_id)
-        link = await names.link_user(user_id, server_id)
-        server = await ServerRepository.get_by_id(server_id)
-        server_label = format_server_label(server, server_id)
-
-        lines = [
-            "📝 Основая информация о пользователе ⬇",
-            f"🌐 Сервер: {server_label}",
-            f"👤 Ник пользователя: {link}",
-            f"👥 Уровень доступа: {level_name}",
-        ]
-        if await ForumRoleRepository.is_judge_effective(user_id, server_id):
-            lines.append("⚖️ Судебный доступ: есть")
-        if await CongressRepository.is_officer(user_id, server_id):
-            access = await UserRepository.get_server_access(user_id, server_id)
-            if access and access.is_congress_speaker:
-                lines.append("🎙 Спикер конгресса")
-            elif access and access.is_congress_vice:
-                lines.append("🎖 Вице-спикер конгресса")
-
-        await message.answer("\n".join(lines), disable_mentions=1)
+        card = await format_user_profile_card(user_id, api, server_id)
+        await message.answer(card, disable_mentions=True)
 
     @bot.on.message(text=dual_args("meserver", "<text>"))
     @requires_developer

@@ -15,10 +15,18 @@ from database.repository.user_repo import UserRepository
 from middlewares.access import AccessChecker, requires_level, requires_public
 from middlewares.congress_access import requires_setnick
 from middlewares.action_logger import ActionLogger
-from services.command_utils import dual, dual_args, dual_with_args, matches_cmd, matches_who, strip_cmd
+from services.command_utils import (
+    dual,
+    dual_args,
+    dual_with_args,
+    is_user_info_cmd,
+    matches_cmd,
+    matches_who,
+    strip_cmd,
+)
 from services.display_name import DisplayNameService
 from services.nickname import NicknameValidator
-from services.panel_client import get_discord_link, set_discord_link
+from services.profile_card import format_user_profile_card
 from services.staff_display import format_staff_list
 from services.vk_resolver import VKResolver
 
@@ -131,6 +139,44 @@ async def _parse_nick_target(message: Message, api: API) -> tuple[int | None, st
 
     if not args:
         return None, _NICK_TARGET_ERR
+
+    lead = _VK_REF_ONLY.match(args.strip())
+    if not lead:
+        return None, _NICK_TARGET_ERR
+
+    vk_id_raw, screen, url_ref = lead.group(1), lead.group(2), lead.group(3)
+    if vk_id_raw:
+        return int(vk_id_raw), None
+    if screen:
+        resolved = await resolver.resolve(f"@{screen}")
+        if resolved:
+            return resolved.vk_id, None
+        return None, _NICK_TARGET_ERR
+    if url_ref:
+        resolved = await resolver.resolve(url_ref)
+        if resolved:
+            return resolved.vk_id, None
+        return None, _NICK_TARGET_ERR
+
+    return None, _NICK_TARGET_ERR
+
+
+async def _parse_profile_target(message: Message, api: API, cmd: str) -> tuple[int | None, str | None]:
+    """(target_id, error_message) — для /info и похожих."""
+    args = strip_cmd(message.text or "", cmd)
+    resolver = VKResolver(api)
+
+    if message.reply_message and message.reply_message.from_id > 0:
+        if args:
+            return None, (
+                "❌ Укажите только @user, ссылку VK или ответьте на сообщение, но не оба сразу."
+            )
+        return message.reply_message.from_id, None
+
+    if not args:
+        if message.from_id:
+            return message.from_id, None
+        return None, "❌ Не удалось определить пользователя."
 
     lead = _VK_REF_ONLY.match(args.strip())
     if not lead:
@@ -307,7 +353,7 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         max_lvl = 9 if await UserRepository.is_developer(message.from_id or 0) else 8
         await message.answer(
             f"❌ Использование: /setlevel [vk.ru|ID|@user|ник] [0–{max_lvl}]\n"
-            "Нельзя выдать уровень выше своего или понизить себя."
+            "Нельзя выдать другому уровень равный или выше своего; себя понизить нельзя."
         )
 
     @bot.on.message(text=dual_with_args("setlevel", "<target> <level>"))
@@ -348,6 +394,10 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
                 "❌ Пользователь не найден.\n"
                 "Укажите VK-ссылку, id или ник из /setnick."
             )
+            return
+
+        if resolved.vk_id != message.from_id and new_level >= granter_level:
+            await message.answer("❌ Нельзя выдать уровень равный или выше своего.")
             return
 
         if resolved.vk_id == message.from_id and new_level < granter_level:
@@ -408,60 +458,16 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             source_peer_id=message.peer_id,
         )
 
-    _DISCORD_CLEAR = frozenset({"off", "0", "нет", "remove", "clear", "снять", "удалить"})
-
-    @bot.on.message(text=dual("editmydiscord"))
+    @bot.on.message(FuncRule(lambda m: is_user_info_cmd(m.text or "")))
     @requires_public
-    async def editmydiscord_usage(message: Message, server_id: int = 0) -> None:
-        current = await get_discord_link(message.from_id)
-        lines = [
-            "Привязка Discord для входа на сайт",
-            "",
-        ]
-        if current:
-            lines.append(f"Сейчас указан: {current}")
-        else:
-            lines.append("Сейчас Discord ID не указан.")
-        lines.extend(
-            [
-                "",
-                "Команды:",
-                "/editmydiscord 12345678901234567 — указать свой ID",
-                "/editmydiscord off — снять привязку",
-                "",
-                "Где взять ID: Discord → Настройки → Расширенные → "
-                "режим разработчика → ПКМ по профилю → «Скопировать ID пользователя».",
-            ]
-        )
-        await message.answer("\n".join(lines))
-
-    @bot.on.message(text=dual_args("editmydiscord"))
-    @requires_public
-    async def editmydiscord_set(message: Message, server_id: int = 0) -> None:
-        raw = strip_cmd(message.text or "", "editmydiscord").strip()
-        if not raw:
-            await editmydiscord_usage(message, server_id=server_id)
+    async def user_info(message: Message, server_id: int = 0) -> None:
+        target_id, err = await _parse_profile_target(message, api, "info")
+        if err:
+            await message.answer(err)
+            return
+        if target_id is None:
+            await message.answer(_NICK_TARGET_ERR)
             return
 
-        if raw.lower() in _DISCORD_CLEAR:
-            ok, err = await set_discord_link(message.from_id, None)
-            if ok:
-                await message.answer("✅ Discord ID снят. Вход через Discord на сайте недоступен, пока не укажете новый.")
-            else:
-                await message.answer(f"❌ {err}")
-            return
-
-        ok, err = await set_discord_link(message.from_id, raw)
-        if ok:
-            await message.answer(
-                f"✅ Discord ID сохранён: {raw}\n"
-                "Теперь можно войти на сайт через «Войти через Discord»."
-            )
-            await action_logger.log_user(
-                "editmydiscord",
-                message.from_id,
-                raw,
-                "Привязка Discord ID",
-            )
-        else:
-            await message.answer(f"❌ {err}")
+        card = await format_user_profile_card(target_id, api, server_id)
+        await message.answer(card, disable_mentions=True)

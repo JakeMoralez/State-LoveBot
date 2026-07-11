@@ -63,6 +63,12 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
         "🌐 Общие",
         (
             HelpEntry("/me", "Ваш профиль", public=True),
+            HelpEntry("/info", "Профиль [@user] или ответом", public=True),
+            HelpEntry(
+                "/panel",
+                "Вход на сайт (запасной способ, если нет Discord)",
+                1,
+            ),
             HelpEntry("/getid", "ID беседы", public=True),
             HelpEntry("/find", "Поиск по нику или VK", public=True),
             HelpEntry("/reg", "Дата регистрации VK", public=True),
@@ -82,6 +88,11 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
             HelpEntry(
                 "/editmydiscord",
                 "Привязать Discord ID для входа на сайт",
+                public=True,
+            ),
+            HelpEntry(
+                "/editmyforum",
+                "Привязать профиль forum.arizona-rp.com",
                 public=True,
             ),
         ),
@@ -115,7 +126,7 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
     HelpCategory(
         "📄 Форум — раздел судебных исков сервера",
         (
-            HelpEntry("/info · /edit", "Инфо о теме и кнопки действий", "forum"),
+            HelpEntry("/info · /edit", "Тема форума: инфо и кнопки действий", "forum"),
             HelpEntry("/fclose · /fopen", "Закрыть / открыть тему (алиасы: fclosed, fopened)", "forum"),
             HelpEntry("/fpin · /funpin", "Закрепить / открепить тему", "forum"),
             HelpEntry("/fresolve", "Закрыть тему и открепить (алиас: resolve)", "forum"),
@@ -142,11 +153,6 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
                 "Привязать беседу: court, congress, sledca, leader",
                 3,
                 ca=True,
-            ),
-            HelpEntry(
-                "/panel",
-                "Вход на сайт след. ЦА (если нет Discord)",
-                1,
             ),
         ),
     ),

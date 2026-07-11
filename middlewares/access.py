@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import functools
+import inspect
 import logging
 from collections.abc import Awaitable, Callable
 from typing import Any, ParamSpec, TypeVar
@@ -21,6 +22,18 @@ logger = logging.getLogger(__name__)
 
 P = ParamSpec("P")
 R = TypeVar("R")
+
+
+def _filter_handler_kwargs(
+    func: Callable[..., Any],
+    kwargs: dict[str, Any],
+) -> dict[str, Any]:
+    """Передать в хендлер только kwargs, которые он объявил в сигнатуре."""
+    sig = inspect.signature(func)
+    if any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()):
+        return kwargs
+    allowed = set(sig.parameters.keys()) - {"message"}
+    return {k: v for k, v in kwargs.items() if k in allowed}
 
 
 class AccessChecker:
@@ -112,7 +125,7 @@ def requires_level(
 
             kwargs["server_id"] = server_id
             kwargs["access_level"] = level
-            return await func(message, *args, **kwargs)
+            return await func(message, *args, **_filter_handler_kwargs(func, kwargs))
 
         return wrapper
 
@@ -132,7 +145,7 @@ def requires_public(
         server_id = await AccessChecker.resolve_server_id(message.peer_id, user_id)
         kwargs["server_id"] = server_id
         kwargs["access_level"] = await AccessChecker.get_level(user_id, server_id)
-        return await func(message, *args, **kwargs)
+        return await func(message, *args, **_filter_handler_kwargs(func, kwargs))
 
     return wrapper
 
@@ -164,7 +177,7 @@ def requires_zgs_or_gos(
 
         kwargs["server_id"] = server_id
         kwargs["access_level"] = level
-        return await func(message, *args, **kwargs)
+        return await func(message, *args, **_filter_handler_kwargs(func, kwargs))
 
     return wrapper
 
@@ -185,6 +198,6 @@ def requires_developer(
             user_id,
         )
         kwargs["access_level"] = AccessLevel.DEVELOPER
-        return await func(message, *args, **kwargs)
+        return await func(message, *args, **_filter_handler_kwargs(func, kwargs))
 
     return wrapper

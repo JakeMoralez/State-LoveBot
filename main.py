@@ -23,6 +23,7 @@ from middlewares.access import AccessChecker, requires_developer
 from middlewares.action_logger import ActionLogger
 from modules import register_all_modules
 from services.chat_admin import ChatAdminService
+from services.edit_link_handlers import register_edit_link_commands
 from services.forum_api import ForumService, _ARIZONA_IMPORT_ERROR, _HAS_ARIZONA
 from services.help_menu import build_dev_help_text, build_help_text_for_user
 from services.sled_internal_api import start_sled_internal_server, stop_sled_internal_server
@@ -41,6 +42,7 @@ def create_bot(token: str, group_id: int) -> tuple[Bot, API, ActionLogger]:
     bot.labeler.message_view.replace_mention = False
     action_logger = ActionLogger(api)
     register_all_modules(bot, api, action_logger, forum_service=_forum_service)
+    register_edit_link_commands(bot, action_logger)
 
     @bot.error_handler.register_undefined_error_handler
     async def on_vkbottle_error(error: Exception) -> None:

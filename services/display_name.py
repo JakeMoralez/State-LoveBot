@@ -67,6 +67,13 @@ class DisplayNameService:
         label = cls.sanitize_vk_label(raw, vk_id=vk_id)
         return f"[id{vk_id}|{label}]"
 
+    @classmethod
+    def profile_link(cls, vk_id: int, nickname: str) -> str:
+        """Ссылка на профиль VK: кликабельно, без уведомления (для /me, /info)."""
+        raw = (nickname or "").strip().replace("\n", " ")
+        label = cls.sanitize_vk_label(raw, vk_id=vk_id)
+        return f"[https://vk.ru/id{vk_id}|{label}]"
+
     def _resolve_server_id(self, server_id: int | None) -> int | None:
         return server_id if server_id is not None else self.server_id
 
@@ -160,6 +167,20 @@ class DisplayNameService:
     ) -> str:
         """Ссылка [id|ник] — отправлять с disable_mentions=1 (без уведомления)."""
         return await self.mention_user(vk_id, server_id)
+
+    async def profile_card_nick(
+        self,
+        vk_id: int,
+        server_id: int | None = None,
+    ) -> str:
+        """Кликабельный ник для карточки профиля (без уведомления)."""
+        nick = await self.get_ping_nickname(vk_id, server_id)
+        if nick:
+            return self.profile_link(vk_id, nick)
+        full = await self.get_vk_full_name(vk_id)
+        if full and not full.startswith("id"):
+            return self.profile_link(vk_id, full)
+        return f"[https://vk.ru/id{vk_id}|id{vk_id}]"
 
     async def format_actor_badge(self, vk_id: int, server_id: int) -> str:
         """Кликабельный инициатор: ［ЗГС ЦА］ Isaac_Grozny."""

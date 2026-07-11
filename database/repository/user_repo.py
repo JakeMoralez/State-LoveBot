@@ -28,6 +28,25 @@ class UserRepository:
         return await User.get_or_none(vk_id=vk_id)
 
     @staticmethod
+    async def get_forum_member_id(vk_id: int) -> str | None:
+        from services.forum_account import parse_forum_member_id
+
+        user = await User.get_or_none(vk_id=vk_id)
+        if not user:
+            return None
+        return parse_forum_member_id(user.username)
+
+    @staticmethod
+    async def set_forum_member_id(vk_id: int, member_id: str | None) -> None:
+        user, _ = await User.get_or_create(
+            vk_id=vk_id,
+            defaults={"username": str(vk_id)},
+        )
+        user.username = member_id if member_id else str(vk_id)
+        user.last_used = datetime.now(timezone.utc)
+        await user.save()
+
+    @staticmethod
     async def get_by_username(username: str) -> User | None:
         clean = username.lower().lstrip("@")
         return await User.filter(username__iexact=clean).first()

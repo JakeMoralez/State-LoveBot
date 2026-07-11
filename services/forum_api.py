@@ -280,6 +280,34 @@ class ForumService:
         return thread_id, body or None
 
     async def get_thread(self, thread_id: int) -> Any | None:
+        thread, _ = await self.get_thread_with_reconnect(thread_id)
+        return thread
+
+    async def get_thread_with_reconnect(
+        self, thread_id: int
+    ) -> tuple[Any | None, bool]:
+        """Вернуть тему; при отсутствии — один раз переподключить сессию форума."""
+        thread = await self._fetch_thread(thread_id)
+        if thread is not None:
+            return thread, False
+        if not self._available:
+            return None, False
+        logger.info(
+            "Forum thread %s not found — reconnecting session (forumcheck reconnect)...",
+            thread_id,
+        )
+        report = await self.reconnect()
+        if not report.ok:
+            logger.warning(
+                "Forum reconnect after missing thread %s failed: %s",
+                thread_id,
+                report.error,
+            )
+            return None, True
+        thread = await self._fetch_thread(thread_id)
+        return thread, True
+
+    async def _fetch_thread(self, thread_id: int) -> Any | None:
         if not self._api:
             return None
         try:
@@ -288,11 +316,7 @@ class ForumService:
             logger.error("get_thread %s: %s", thread_id, exc)
             return None
 
-    async def get_thread_info(self, thread_id: int) -> dict[str, Any] | None:
-        thread = await self.get_thread(thread_id)
-        if not thread:
-            return None
-
+    async def _build_thread_info(self, thread: Any, thread_id: int) -> dict[str, Any] | None:
         try:
             author = "Неизвестно"
             author_id = None
@@ -329,10 +353,34 @@ class ForumService:
             logger.error("get_thread_info %s: %s", thread_id, exc)
             return None
 
-    async def set_thread_open(self, thread_id: int, opened: bool) -> tuple[bool, str]:
-        thread = await self.get_thread(thread_id)
+    async def get_thread_info(self, thread_id: int) -> dict[str, Any] | None:
+        info, _ = await self.get_thread_info_with_reconnect(thread_id)
+        return info
+
+    async def get_thread_info_with_reconnect(
+        self, thread_id: int
+    ) -> tuple[dict[str, Any] | None, bool]:
+        thread, reconnected = await self.get_thread_with_reconnect(thread_id)
         if not thread:
-            return False, "Тема не найдена."
+            return None, reconnected
+        info = await self._build_thread_info(thread, thread_id)
+        return info, reconnected
+
+    @staticmethod
+    def thread_not_found_message(thread_id: int, *, reconnected: bool) -> str:
+        base = f"Тема {thread_id} не найдена"
+        if reconnected:
+            return (
+                f"{base}.\n"
+                "Сессия форума обновлена автоматически — повтор не помог.\n"
+                "Если ошибка остаётся, обновите cookies в .env и выполните /forumcheck reconnect."
+            )
+        return f"{base} или нет прав на просмотр."
+
+    async def set_thread_open(self, thread_id: int, opened: bool) -> tuple[bool, str]:
+        thread, reconnected = await self.get_thread_with_reconnect(thread_id)
+        if not thread:
+            return False, self.thread_not_found_message(thread_id, reconnected=reconnected)
 
         current_title = getattr(thread, "title", "")
         current_is_sticky = getattr(thread, "is_sticky", False)
@@ -351,9 +399,9 @@ class ForumService:
             return False, f"Ошибка: {exc}"
 
     async def set_thread_sticky(self, thread_id: int, sticky: bool) -> tuple[bool, str]:
-        thread = await self.get_thread(thread_id)
+        thread, reconnected = await self.get_thread_with_reconnect(thread_id)
         if not thread:
-            return False, "Тема не найдена."
+            return False, self.thread_not_found_message(thread_id, reconnected=reconnected)
 
         current_title = getattr(thread, "title", "")
         is_closed = getattr(thread, "is_closed", False)
@@ -375,9 +423,9 @@ class ForumService:
         if not body:
             return False, "Пустое содержимое темы."
 
-        thread = await self.get_thread(thread_id)
+        thread, reconnected = await self.get_thread_with_reconnect(thread_id)
         if not thread:
-            return False, "Тема не найдена."
+            return False, self.thread_not_found_message(thread_id, reconnected=reconnected)
 
         post_id = getattr(thread, "thread_post_id", None)
         try:
@@ -427,9 +475,9 @@ class ForumService:
         if not new_title:
             return False, "Укажите новый заголовок темы."
 
-        thread = await self.get_thread(thread_id)
+        thread, reconnected = await self.get_thread_with_reconnect(thread_id)
         if not thread:
-            return False, "Тема не найдена."
+            return False, self.thread_not_found_message(thread_id, reconnected=reconnected)
 
         try:
             resp = await thread.edit_info(

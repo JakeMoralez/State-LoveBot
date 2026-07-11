@@ -6,6 +6,7 @@ import logging
 
 from vkbottle import API, Keyboard, OpenLink
 from vkbottle.bot import Bot, Message
+from vkbottle.dispatch.rules.base import FuncRule
 
 from database.models.role_chat import ForumRoleKey
 from database.models.user import AccessLevel
@@ -36,6 +37,8 @@ _RACCESS_LABELS = {
 from services.vk_resolver import VKResolver
 
 logger = logging.getLogger(__name__)
+
+_DM_START_TEXTS = frozenset({"начать", "start", "старт"})
 
 _REGROLE_ALIASES: dict[str, str] = {
     "court": "court",
@@ -98,6 +101,73 @@ async def _register_congress_chat(
         f"Алиас /msg: {normalized}\n"
         f"Спикер и вице: /setnick, /kick, /msg {normalized} — только здесь.\n"
         f"Назначение: /setspeaker, /setvice"
+    )
+
+
+async def _send_panel_login(
+    message: Message,
+    action_logger: ActionLogger,
+    *,
+    server_id: int = 0,
+    intro: str | None = None,
+) -> None:
+    user_id = message.from_id or 0
+    if user_id <= 0:
+        return
+
+    if not server_id:
+        server_id = await AccessChecker.resolve_server_id(message.peer_id, user_id)
+
+    if not await UserRepository.can_use_portal(user_id, server_id):
+        level = await UserRepository.get_access_level(user_id, server_id)
+        level_label = AccessChecker.level_name(level) if level else "нет доступа"
+        await message.answer(
+            "⛔ Вход на портал недоступен.\n\n"
+            f"Ваш уровень: {level_label} ({level}).\n\n"
+            "Нужен уровень ПГС (1) или выше.\n"
+            "Если доступ должен быть — обратитесь к руководству вашей структуры.\n\n"
+            "Список команд бота: /help"
+        )
+        return
+
+    if not panel_login_configured():
+        await message.answer(
+            "Вход через бота сейчас недоступен.\n"
+            "Обратитесь к администратору или войдите через Discord.\n\n"
+            "Список команд: /help"
+        )
+        return
+
+    if not check_rate_limit(user_id):
+        await message.answer("Подождите полминуты и запросите ссылку снова.")
+        return
+
+    try:
+        url = build_login_url(user_id)
+    except RuntimeError as exc:
+        await message.answer(f"❌ {exc}")
+        return
+
+    kb = Keyboard(inline=True)
+    kb.add(OpenLink(link=url, label="Открыть портал"))
+
+    lead = intro or (
+        "Вход на портал следящих\n\n"
+        "Портал State Love — для следящих всех государственных структур.\n\n"
+    )
+    await message.answer(
+        f"{lead}"
+        "Нажмите кнопку ниже. Ссылка действует 5 минут и срабатывает один раз.\n\n"
+        "Основной способ — «Войти через Discord» на сайте "
+        "(нужен /editmydiscord).\n"
+        "Кнопка ниже — запасной вход через VK, если Discord не привязан.",
+        keyboard=kb,
+    )
+    await action_logger.log_user(
+        "panel_login",
+        user_id,
+        "ЛС",
+        "Запрос ссылки входа на портал",
     )
 
 
@@ -317,7 +387,7 @@ def register_ca(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             source_peer_id=message.peer_id,
         )
 
-    _PANEL_CMDS = ["/panel", "!panel", "/login", "!login", "/вход", "!вход"]
+    _PANEL_CMDS = list(dual("panel")) + ["/вход", "!вход"]
 
     @bot.on.message(text=_PANEL_CMDS)
     async def panel_login(message: Message, server_id: int = 0) -> None:
@@ -332,52 +402,41 @@ def register_ca(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             )
             return
 
+        await _send_panel_login(message, action_logger, server_id=server_id)
+
+    @bot.on.message(
+        FuncRule(
+            lambda m: (
+                m.from_id
+                and m.from_id > 0
+                and m.peer_id == m.from_id
+                and (m.text or "").strip().lower() in _DM_START_TEXTS
+            )
+        )
+    )
+    async def dm_start(message: Message, server_id: int = 0) -> None:
+        user_id = message.from_id or 0
         if not server_id:
             server_id = await AccessChecker.resolve_server_id(message.peer_id, user_id)
 
-        if not await UserRepository.can_use_portal(user_id, server_id):
-            level = await UserRepository.get_access_level(user_id, server_id)
-            level_label = AccessChecker.level_name(level) if level else "нет доступа"
-            await message.answer(
-                "⛔ Вход на портал недоступен.\n\n"
-                f"Ваш уровень: {level_label} ({level}).\n\n"
-                "Нужен уровень ПГС (1) или выше.\n"
-                "Если доступ должен быть — напишите ЗГС ЦА+."
+        if await UserRepository.can_use_portal(user_id, server_id):
+            await _send_panel_login(
+                message,
+                action_logger,
+                server_id=server_id,
+                intro=(
+                    "👋 Добро пожаловать в State Love Bot!\n\n"
+                    "Вход на портал следящих государственных структур:\n\n"
+                ),
             )
             return
-
-        if not panel_login_configured():
-            await message.answer(
-                "Вход через бота сейчас недоступен.\n"
-                "Обратитесь к администратору или войдите через Discord."
-            )
-            return
-
-        if not check_rate_limit(user_id):
-            await message.answer("Подождите полминуты и запросите ссылку снова.")
-            return
-
-        try:
-            url = build_login_url(user_id)
-        except RuntimeError as exc:
-            await message.answer(f"❌ {exc}")
-            return
-
-        kb = Keyboard(inline=True)
-        kb.add(OpenLink(link=url, label="Открыть портал"))
 
         await message.answer(
-            "Вход на портал след. ЦА\n\n"
-            "Нажмите кнопку ниже. Ссылка действует 5 минут и срабатывает один раз.\n\n"
-            "Если Discord не привязан — это запасной способ входа. "
-            "Откройте ссылку в том браузере, где будете работать с сайтом.",
-            keyboard=kb,
-        )
-        await action_logger.log_user(
-            "panel_login",
-            user_id,
-            "ЛС",
-            "Запрос ссылки входа на панель",
+            "👋 Добро пожаловать в State Love Bot!\n\n"
+            "Бот для следящих государственных структур штата Love.\n\n"
+            "• /panel — вход на портал (нужен уровень ПГС+)\n"
+            "• /help — список команд\n\n"
+            "Если доступ должен быть — обратитесь к руководству вашей структуры."
         )
 
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 # primary -> короткие алиасы
 COMMAND_ALIASES: dict[str, tuple[str, ...]] = {
     "setlevel": ("setlvl", "lvl"),
@@ -46,7 +48,22 @@ COMMAND_ALIASES: dict[str, tuple[str, ...]] = {
     "forumcheck": ("fcheck", "forumstatus"),
     "panel": ("login",),
     "editmydiscord": ("mydiscord", "discordid", "dsid"),
+    "editmyforum": ("myforum", "forumid", "forumlink"),
 }
+
+
+_VK_MENTION_PREFIX = re.compile(r"^\[(?:id|club)\d+\|[^\]]+\]\s*", re.IGNORECASE)
+
+
+def normalize_message_text(text: str) -> str:
+    """Убрать префикс @упоминания бота в беседах ([club…|@name] /cmd)."""
+    t = (text or "").strip()
+    while True:
+        m = _VK_MENTION_PREFIX.match(t)
+        if not m:
+            break
+        t = t[m.end() :].strip()
+    return t
 
 
 def cmd_names(name: str) -> tuple[str, ...]:
@@ -84,7 +101,7 @@ def dual_args(name: str, args: str = "<args>") -> list[str]:
 
 
 def matches_cmd(text: str, name: str) -> bool:
-    t = (text or "").strip().lower()
+    t = normalize_message_text(text).lower()
     for cmd in cmd_names(name):
         for prefix in (f"/{cmd.lower()}", f"!{cmd.lower()}"):
             if t == prefix or t.startswith(f"{prefix} "):
@@ -103,7 +120,7 @@ def matches_who(text: str) -> bool:
 
 
 def strip_cmd(text: str, name: str) -> str:
-    raw = (text or "").strip()
+    raw = normalize_message_text(text)
     prefixes: list[str] = []
     for cmd in cmd_names(name):
         prefixes.extend((f"/{cmd}", f"!{cmd}"))
@@ -125,3 +142,11 @@ def parse_forum_thread(text: str, names: tuple[str, ...]) -> int | None:
                 if thread_id:
                     return thread_id
     return None
+
+
+def is_user_info_cmd(text: str) -> bool:
+    """`/info` для профиля (не тема форума)."""
+    raw = text or ""
+    if not matches_cmd(raw, "info"):
+        return False
+    return parse_forum_thread(raw, ("info",)) is None
