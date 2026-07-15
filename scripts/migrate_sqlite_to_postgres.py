@@ -25,6 +25,7 @@ import logging
 import os
 import sqlite3
 import sys
+from datetime import date, datetime, time
 from pathlib import Path
 from typing import Any
 
@@ -58,12 +59,52 @@ def sqlite_columns(conn: sqlite3.Connection, table: str) -> list[str]:
     return [r[1] for r in conn.execute(f"PRAGMA table_info({table})")]
 
 
+def _parse_dt(value: str) -> datetime:
+    raw = value.strip()
+    if raw.endswith("Z"):
+        raw = raw[:-1] + "+00:00"
+    try:
+        return datetime.fromisoformat(raw)
+    except ValueError:
+        pass
+    for fmt in (
+        "%Y-%m-%d %H:%M:%S.%f%z",
+        "%Y-%m-%d %H:%M:%S%z",
+        "%Y-%m-%d %H:%M:%S.%f",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d",
+    ):
+        try:
+            return datetime.strptime(raw, fmt)
+        except ValueError:
+            continue
+    raise ValueError(f"cannot parse datetime: {value!r}")
+
+
 def normalize_value(value: Any, pg_type: str) -> Any:
     if value is None:
         return None
     pg_type = (pg_type or "").lower()
     if pg_type == "boolean":
+        if isinstance(value, str):
+            return value.strip().lower() in ("1", "true", "t", "yes")
         return bool(value)
+    if pg_type == "date":
+        if isinstance(value, datetime):
+            return value.date()
+        if isinstance(value, date):
+            return value
+        if isinstance(value, str):
+            return _parse_dt(value).date()
+        return value
+    if pg_type in ("timestamp without time zone", "timestamp with time zone", "timestamp"):
+        if isinstance(value, datetime):
+            return value
+        if isinstance(value, date) and not isinstance(value, datetime):
+            return datetime.combine(value, time.min)
+        if isinstance(value, str):
+            return _parse_dt(value)
+        return value
     if pg_type in ("json", "jsonb"):
         if isinstance(value, (dict, list)):
             return json.dumps(value)
