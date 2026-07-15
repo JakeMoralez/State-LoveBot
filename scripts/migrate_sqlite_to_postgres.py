@@ -31,6 +31,9 @@ from typing import Any
 from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+os.chdir(ROOT)
 load_dotenv(ROOT / ".env")
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
