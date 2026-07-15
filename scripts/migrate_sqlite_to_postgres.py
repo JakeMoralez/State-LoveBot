@@ -146,9 +146,30 @@ async def copy_sqlite_to_postgres(
 
     try:
         tables = sqlite_tables(sqlite_conn)
+        # Parents first so FK inserts work without session_replication_role.
+        preferred = (
+            "servers",
+            "users",
+            "user_server_access",
+            "chats",
+            "pools",
+            "role_chats",
+        )
+        tables = sorted(
+            tables,
+            key=lambda t: (preferred.index(t) if t in preferred else 100, t),
+        )
         logger.info("%s: %d tables in SQLite", label, len(tables))
 
-        await pg_conn.execute("SET session_replication_role = replica")
+        try:
+            await pg_conn.execute("SET session_replication_role = replica")
+            replication_role = True
+        except Exception as exc:
+            logger.warning(
+                "  cannot set session_replication_role (%s) — inserting with FK checks",
+                exc,
+            )
+            replication_role = False
 
         copied_total = 0
         for table in tables:
@@ -189,7 +210,8 @@ async def copy_sqlite_to_postgres(
             copied_total += len(batch)
             logger.info("  %s: %d rows", table, len(batch))
 
-        await pg_conn.execute("SET session_replication_role = DEFAULT")
+        if replication_role:
+            await pg_conn.execute("SET session_replication_role = DEFAULT")
         logger.info("%s: done, %d rows total", label, copied_total)
     finally:
         sqlite_conn.close()
@@ -208,9 +230,17 @@ async def init_bot_schema() -> None:
 
 
 async def init_panel_schema() -> None:
-    admin_root = ROOT.parent / "State-LoveAdmin" / "backend"
-    if not admin_root.is_dir():
-        logger.warning("State-LoveAdmin not found at %s — skip panel schema init", admin_root)
+    candidates = [
+        Path("/opt/State-Love-Admin/backend"),
+        ROOT.parent / "State-Love-Admin" / "backend",
+        ROOT.parent / "State-LoveAdmin" / "backend",
+    ]
+    admin_root = next((p for p in candidates if p.is_dir()), None)
+    if admin_root is None:
+        logger.warning(
+            "State-Love-Admin backend not found (tried %s) — skip panel schema init",
+            ", ".join(str(p) for p in candidates),
+        )
         return
 
     sys.path.insert(0, str(admin_root))
@@ -221,14 +251,23 @@ async def init_panel_schema() -> None:
     await Tortoise.init(config=TORTOISE_ORM)
     await Tortoise.generate_schemas(safe=True)
     await Tortoise.close_connections()
-    logger.info("Panel PostgreSQL schema ready")
+    logger.info("Panel PostgreSQL schema ready (%s)", admin_root)
 
 
 async def main_async(args: argparse.Namespace) -> None:
-    bot_pg = os.getenv("DATABASE_URL") or os.getenv("BOT_DATABASE_URL", "")
-    panel_pg = os.getenv("PANEL_DATABASE_URL", "")
+    bot_pg = (
+        args.bot_postgres
+        or os.getenv("DATABASE_URL")
+        or os.getenv("BOT_DATABASE_URL", "")
+    )
+    panel_pg = args.panel_postgres or os.getenv("PANEL_DATABASE_URL", "")
 
     if args.init_schemas:
+        if not bot_pg.lower().startswith(("postgres://", "postgresql://")):
+            raise SystemExit(
+                "DATABASE_URL must be postgres://... for --init-schemas "
+                f"(got {bot_pg!r}). Update /opt/State-LoveBot/.env first."
+            )
         await init_bot_schema()
         await init_panel_schema()
 
@@ -250,6 +289,14 @@ def main() -> None:
     parser.add_argument(
         "--panel-sqlite",
         help="Path to panel.db (source)",
+    )
+    parser.add_argument(
+        "--bot-postgres",
+        help="Override target bot postgres URL (else DATABASE_URL from .env)",
+    )
+    parser.add_argument(
+        "--panel-postgres",
+        help="Override target panel postgres URL (else PANEL_DATABASE_URL)",
     )
     parser.add_argument(
         "--init-schemas",
