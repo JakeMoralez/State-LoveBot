@@ -43,6 +43,10 @@ class ForumAccessChecker:
         if judge_forum_id and forum_category_id == judge_forum_id:
             if await ForumRoleRepository.is_judge_effective(user_id, server_id):
                 return True
+            if level >= AccessLevel.SUPERVISOR and await UserRepository.can_use_ca_scope(
+                user_id, server_id
+            ):
+                return True
 
         if await ForumRoleRepository.is_leader(user_id, server_id):
             return forum_category_id in LEADER_ALLOWED_FORUMS

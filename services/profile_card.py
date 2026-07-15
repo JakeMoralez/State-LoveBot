@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta, timezone
 
 from vkbottle import API
 
+from database.repository.forum_role_repo import ForumRoleRepository
 from database.repository.server_repo import ServerRepository
 from database.repository.user_repo import UserRepository
 from middlewares.access import AccessChecker
@@ -14,6 +15,7 @@ from services.display_name import DisplayNameService
 from services.forum_account import forum_member_url, parse_forum_member_id
 from services.panel_client import get_discord_profile
 from services.server_display import format_server_label
+from database.repository.court_claim_repo import CourtClaimRepository
 
 MSK = timezone(timedelta(hours=3))
 
@@ -108,5 +110,12 @@ async def format_user_profile_card(
     else:
         lines.append("📅 Дата назначения: не указана")
         lines.append("🚀 Дней на посту: —")
+
+    if await ForumRoleRepository.is_judge_effective(vk_id, server_id):
+        total = await CourtClaimRepository.count_total(vk_id, server_id)
+        week = await CourtClaimRepository.count_week(vk_id, server_id)
+        lines.append("")
+        lines.append(f"📁 Закрыто исков всего: {total}")
+        lines.append(f"📁 Закрыто исков за неделю: {week}")
 
     return "\n".join(lines)

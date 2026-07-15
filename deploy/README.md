@@ -193,7 +193,7 @@ sudo systemctl restart state-lovebot
 | Переменная | Зачем |
 |------------|--------|
 | `VK_GROUP_TOKEN`, `VK_GROUP_ID` | VK API |
-| `DATABASE_URL=sqlite://bot.db` | база (файл в папке бота) |
+| `DATABASE_URL=sqlite:////opt/State-LoveBot/bot.db` | база (тот же путь, что `BOT_DATABASE_URL` в панели) |
 | `SLED_BOT_SECRET` | internal API + ссылки `/panel` (как в панели) |
 | `PANEL_BASE_URL` | ссылки входа `/panel` |
 | `SLED_INTERNAL_PORT=8081` | порт internal API |

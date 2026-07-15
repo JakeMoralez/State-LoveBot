@@ -11,6 +11,7 @@ from vkbottle import API, GroupEventType
 from vkbottle.bot import Bot, Message, MessageEvent
 from vkbottle.dispatch.rules.base import FuncRule
 
+from database.repository.court_claim_repo import CourtClaimRepository
 from database.repository.forum_role_repo import ForumRoleRepository
 from database.repository.server_repo import ServerRepository
 from middlewares.access import AccessChecker, requires_developer
@@ -248,6 +249,14 @@ def register_forum(
         if ok:
             emoji, text = _FCMD_OK[cmd]
             await message.answer(f"{emoji} {text}")
+            if cmd == "fclose":
+                await CourtClaimRepository.record_close(
+                    thread_id,
+                    closed_by_vk_id=message.from_id,
+                    server_id=server_id,
+                )
+            elif cmd == "fopen":
+                await CourtClaimRepository.clear_close(thread_id)
             log_action, log_result = _FCMD_LOG[cmd]
             await action_logger.log_user(
                 log_action,
@@ -328,6 +337,12 @@ def register_forum(
                 source_peer_id=message.peer_id,
             )
             return
+
+        await CourtClaimRepository.record_close(
+            thread_id,
+            closed_by_vk_id=message.from_id,
+            server_id=server_id,
+        )
 
         ok_unpin, err_unpin = await forum.set_thread_sticky(thread_id, False)
         if not ok_unpin:
@@ -432,7 +447,7 @@ def register_forum(
             source_peer_id=message.peer_id,
         )
 
-    @bot.on.message(FuncRule(lambda m: matches_cmd(m.text or "", "syncjudges")))
+    @bot.on.message(FuncRule(lambda m: matches_cmd(m.text or "", "syncjudges") or matches_cmd(m.text or "", "courtupdate")))
     @requires_developer
     async def sync_judges(
         message: Message,
@@ -446,6 +461,52 @@ def register_forum(
             message.from_id,
             f"server={server_id}",
             "OK" if ok else msg[:80],
+            source_peer_id=message.peer_id,
+        )
+
+    @bot.on.message(FuncRule(lambda m: matches_cmd(m.text or "", "claimfill")))
+    @requires_developer
+    async def claim_fill(
+        message: Message,
+        server_id: int = 0,
+        access_level: int = 0,
+    ) -> None:
+        if await _forum_not_ready(message):
+            return
+
+        arg = strip_cmd(message.text or "", "claimfill")
+        parsed = _parse_iski_arg(arg)
+        if isinstance(parsed, str):
+            await message.answer(
+                f"❌ {parsed}\n"
+                "Примеры: /claimfill 5 · /claimfill 30д · /claimfill дни 14"
+            )
+            return
+
+        mode, value = parsed
+        await message.answer("⚙️ Claimfill: сканирую закрытые иски...")
+        judge_forum_id = await ServerRepository.get_judge_forum_id(server_id)
+        if not judge_forum_id:
+            await message.answer("⛔ Раздел судебных исков не настроен для этого сервера.")
+            return
+        if mode == "days":
+            report = await forum.fill_claim_closes(
+                server_id=server_id,
+                judge_forum_id=judge_forum_id,
+                days=value,
+            )
+        else:
+            report = await forum.fill_claim_closes(
+                server_id=server_id,
+                judge_forum_id=judge_forum_id,
+                pages=value,
+            )
+        await message.answer(report)
+        await action_logger.log_user(
+            "claimfill",
+            message.from_id,
+            f"server={server_id} {mode}={value}",
+            report.split("\n")[0][:80],
             source_peer_id=message.peer_id,
         )
 
@@ -532,6 +593,14 @@ def register_forum(
             if ok:
                 emoji, text = _ACTION_OK[cmd]
                 await event.send_message(f"{emoji} {text} (тема {thread_id})")
+                if cmd == "close":
+                    await CourtClaimRepository.record_close(
+                        int(thread_id),
+                        closed_by_vk_id=event.user_id,
+                        server_id=server_id,
+                    )
+                elif cmd == "open":
+                    await CourtClaimRepository.clear_close(int(thread_id))
                 log_action, log_result = _CALLBACK_LOG[cmd]
                 await action_logger.log_user(
                     log_action,

@@ -748,6 +748,129 @@ class ForumService:
                 )
         return "\n".join(lines)
 
+    async def _resolve_closer_member_id(self, row: dict[str, Any]) -> str | None:
+        """XF member id закрывшего (last post creator), если удаётся вытащить."""
+        for key in ("user_id_last_message", "last_message_user_id", "closer_user_id"):
+            raw = row.get(key)
+            if raw is not None and str(raw).isdigit() and len(str(raw)) >= 4:
+                return str(raw)
+
+        thread_id = row.get("thread_id")
+        if not thread_id or not self._api:
+            return None
+        try:
+            thread = await self._api.get_thread(int(thread_id))
+            if not thread:
+                return None
+            post_ids = await thread.get_posts()
+            if not post_ids:
+                return None
+            last_post = await self._api.get_post(post_ids[-1])
+            creator = getattr(last_post, "creator", None)
+            if not creator:
+                return None
+            for attr in ("user_id", "id", "member_id"):
+                val = getattr(creator, attr, None)
+                if val is not None and str(val).isdigit() and len(str(val)) >= 4:
+                    return str(val)
+        except Exception as exc:
+            logger.warning("claimfill closer member_id thread=%s: %s", thread_id, exc)
+        return None
+
+    async def fill_claim_closes(
+        self,
+        *,
+        server_id: int,
+        judge_forum_id: int,
+        pages: int | None = None,
+        days: int | None = None,
+    ) -> str:
+        """Дозаписать закрытые иски в БД по формунику (users.username)."""
+        from database.models.user import User
+        from database.repository.court_claim_repo import CourtClaimRepository
+        from services.forum_account import parse_forum_member_id
+
+        if not self._api:
+            return "❌ Форум не подключён."
+
+        category = await self._api.get_category(judge_forum_id)
+        if not category:
+            return "❌ Раздел судебных исков не найден"
+
+        if days is not None:
+            days = max(1, min(days, 365))
+            threads, pages_scanned = await self._collect_threads_by_days(category, days)
+            period = f"за {days} дн."
+        else:
+            pages = max(1, min(pages or 1, 20))
+            threads, pages_scanned = await self._collect_threads_by_pages(
+                category, pages
+            )
+            period = f"{pages_scanned} стр."
+
+        threads = self._filter_court_threads(threads)
+        closed = [row for row in threads if row.get("is_closed")]
+        if not closed:
+            return f"📭 Закрытых тем нет ({period})."
+
+        member_to_vk: dict[str, int] = {}
+        for user in await User.all():
+            mid = parse_forum_member_id(user.username)
+            if mid and mid != str(user.vk_id):
+                member_to_vk[mid] = user.vk_id
+
+        added = 0
+        skipped = 0
+        unmatched = 0
+        sem = asyncio.Semaphore(3)
+
+        async def _process(row: dict[str, Any]) -> str:
+            tid = int(row.get("thread_id") or 0)
+            if not tid:
+                return "skip"
+            if await CourtClaimRepository.exists(tid):
+                return "skip"
+
+            async with sem:
+                member_id = await self._resolve_closer_member_id(row)
+
+            if not member_id or member_id not in member_to_vk:
+                return "unmatched"
+
+            closed_at = None
+            ts = row.get("last_message_date")
+            if ts:
+                try:
+                    closed_at = datetime.fromtimestamp(float(ts), tz=timezone.utc)
+                except (TypeError, ValueError, OSError):
+                    closed_at = None
+
+            ok = await CourtClaimRepository.record_close_if_missing(
+                tid,
+                closed_by_vk_id=member_to_vk[member_id],
+                server_id=server_id,
+                forum_member_id=member_id,
+                closed_at=closed_at,
+            )
+            return "added" if ok else "skip"
+
+        results = await asyncio.gather(*[_process(row) for row in closed])
+        for r in results:
+            if r == "added":
+                added += 1
+            elif r == "skip":
+                skipped += 1
+            else:
+                unmatched += 1
+
+        return (
+            f"✅ Claimfill ({period})\n"
+            f"Закрытых тем: {len(closed)}\n"
+            f"Добавлено: {added}\n"
+            f"Уже в БД: {skipped}\n"
+            f"Без матча по формунику: {unmatched}"
+        )
+
     async def is_logged_in(self) -> bool:
         if not self._api:
             return False

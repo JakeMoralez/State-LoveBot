@@ -194,6 +194,12 @@ DEV_HELP_CATEGORIES: tuple[HelpCategory, ...] = (
             HelpEntry("/deluser", "Удалить пользователя из БД", 10),
             HelpEntry("/forumcheck", "Проверка сессии форума", 10),
             HelpEntry("/forumcheck reconnect", "Переподключить форум (.env)", 10),
+            HelpEntry("/syncjudges · /courtupdate", "Обновить форумный список судей", 10),
+            HelpEntry(
+                "/claimfill",
+                "Дозаписать закрытые иски в БД [страницы / дни]",
+                10,
+            ),
         ),
     ),
 )
