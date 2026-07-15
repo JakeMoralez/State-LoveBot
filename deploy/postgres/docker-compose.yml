@@ -1,0 +1,33 @@
+# PostgreSQL for State-LoveBot + State-LoveAdmin
+# Usage on VPS:
+#   cd /opt/State-LoveBot/deploy/postgres
+#   cp .env.example .env   # set POSTGRES_PASSWORD
+#   docker compose up -d
+#
+# Then set in bot and admin .env:
+#   DATABASE_URL=postgres://lovebot:PASSWORD@127.0.0.1:5432/state_love_bot
+#   BOT_DATABASE_URL=postgres://lovebot:PASSWORD@127.0.0.1:5432/state_love_bot
+#   PANEL_DATABASE_URL=postgres://lovebot:PASSWORD@127.0.0.1:5432/state_love_panel
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: state-love-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: lovebot
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: state_love_bot
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - state_love_pg_data:/var/lib/postgresql/data
+      - ./init-panel-db.sql:/docker-entrypoint-initdb.d/02-init-panel-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lovebot -d state_love_bot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  state_love_pg_data:

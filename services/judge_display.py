@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import re
-import sqlite3
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
-from config.settings import BASE_DIR, PANEL_DATABASE_URL
 from database.models.user import User, UserServerAccess
+from services.panel_db import read_staff_note
 
 logger = logging.getLogger(__name__)
 
@@ -41,62 +38,6 @@ def split_nickname_tags(raw: str) -> tuple[str, str, str]:
     return text, clean, tag_str
 
 
-def _sqlite_path_from_url(url: str) -> Path | None:
-    raw = (url or "").strip()
-    if not raw.startswith("sqlite:"):
-        return None
-    path = raw.removeprefix("sqlite:///").removeprefix("sqlite://")
-    if path.startswith("//"):
-        path = path[1:]
-    return Path(path)
-
-
-def _panel_db_path() -> Path | None:
-    candidates: list[Path] = []
-    from_url = _sqlite_path_from_url(PANEL_DATABASE_URL)
-    if from_url:
-        candidates.append(from_url)
-    candidates.extend(
-        [
-            Path("/opt/State-Love-Admin/data/panel.db"),
-            BASE_DIR.parent / "State-LoveAdmin" / "data" / "panel.db",
-        ]
-    )
-    for candidate in candidates:
-        if candidate.is_file():
-            return candidate
-    return None
-
-
-def _read_panel_staff_note_sync(vk_id: int, server_id: int) -> dict[str, str] | None:
-    db_path = _panel_db_path()
-    if not db_path:
-        return None
-    try:
-        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-        try:
-            row = conn.execute(
-                """
-                SELECT leader_position, note, leader_note
-                FROM staff_notes
-                WHERE vk_id = ? AND server_id = ?
-                """,
-                (vk_id, server_id),
-            ).fetchone()
-        finally:
-            conn.close()
-    except Exception as exc:
-        logger.debug("panel staff_notes read failed vk_id=%s: %s", vk_id, exc)
-        return None
-    if not row:
-        return None
-    return {
-        "leader_position": (row[0] or "").strip(),
-        "note": (row[1] or "").strip(),
-        "leader_note": (row[2] or "").strip(),
-    }
-
-
 def _pick_position_from_sources(
     *,
     bot_note: str,
@@ -113,7 +54,7 @@ def _pick_position_from_sources(
 
 
 async def resolve_panel_staff_note(vk_id: int, server_id: int) -> dict[str, str] | None:
-    return await asyncio.to_thread(_read_panel_staff_note_sync, vk_id, server_id)
+    return await read_staff_note(vk_id, server_id)
 
 
 async def resolve_judge_position(user: User, server_id: int) -> str:

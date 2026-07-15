@@ -8,11 +8,13 @@ from tortoise import Tortoise
 
 from config import TORTOISE_ORM
 from config.settings import (
+    DATABASE_URL,
     DEFAULT_SERVER_ID,
     DEFAULT_SERVER_SLUG,
     MAIN_ADMIN_ID,
     MAIN_ADMIN_USERNAME,
 )
+from services.db_utils import is_sqlite_url
 from database.models.user import AccessLevel, User, UserServerAccess
 from database.repository.server_repo import ServerRepository
 
@@ -337,22 +339,25 @@ async def _ensure_court_form_batch_column() -> None:
 async def init_db() -> None:
     await Tortoise.init(config=TORTOISE_ORM)
     await Tortoise.generate_schemas(safe=True)
-    await _ensure_chat_alias_column()
-    await _ensure_congress_columns()
-    await _ensure_ca_access_columns()
-    await _ensure_server_nickname_column()
-    await _ensure_server_role_columns()
-    await _ensure_server_forum_columns()
-    await _ensure_server_log_peer_column()
-    await _ensure_pool_number_column()
-    await _ensure_court_form_batch_column()
+    sqlite = is_sqlite_url(DATABASE_URL)
+    if sqlite:
+        await _ensure_chat_alias_column()
+        await _ensure_congress_columns()
+        await _ensure_ca_access_columns()
+        await _ensure_server_nickname_column()
+        await _ensure_server_role_columns()
+        await _ensure_server_forum_columns()
+        await _ensure_server_log_peer_column()
+        await _ensure_pool_number_column()
+        await _ensure_court_form_batch_column()
     await _bootstrap_defaults()
-    await _migrate_legacy_data_to_default_server()
-    await _migrate_role_chats_per_server()
+    if sqlite:
+        await _migrate_legacy_data_to_default_server()
+        await _migrate_role_chats_per_server()
     await _migrate_global_nicknames_to_servers()
     await _migrate_pool_numbers()
     await _migrate_global_roles_to_servers()
-    logger.info("База данных инициализирована")
+    logger.info("База данных инициализирована (%s)", "sqlite" if sqlite else "postgresql")
 
 
 async def close_db() -> None:
