@@ -49,11 +49,19 @@ def save_persisted_cookies(cookies: dict[str, str]) -> None:
         logger.warning("forum cookies store write: %s", exc)
 
 
+def clear_persisted_cookies() -> None:
+    try:
+        if _STORE_PATH.is_file():
+            _STORE_PATH.unlink()
+    except OSError as exc:
+        logger.warning("forum cookies store clear: %s", exc)
+
+
 def merge_cookie_sources(*sources: dict[str, str]) -> dict[str, str]:
     merged: dict[str, str] = {}
     for source in sources:
         for key in _COOKIE_KEYS:
             value = source.get(key)
             if value:
-                merged[key] = str(value)
+                merged[key] = str(value).strip().strip('"').strip("'")
     return merged

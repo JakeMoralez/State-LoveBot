@@ -14,6 +14,7 @@ from config import FORUM_COOKIES, FORUM_USER_AGENT
 from config.settings import BASE_DIR
 from database.repository.server_repo import ServerRepository
 from services.forum_cookies_store import (
+    clear_persisted_cookies,
     load_persisted_cookies,
     merge_cookie_sources,
     save_persisted_cookies,
@@ -173,6 +174,8 @@ class ForumService:
     async def reconnect(self) -> ForumHealthReport:
         """Перечитать .env и переподключиться (после обновления cookies)."""
         await self.close()
+        # Старый forum_cookies.json иначе перекрывал свежие значения из .env
+        clear_persisted_cookies()
         if not self._apply_env_cookies():
             return ForumHealthReport(
                 configured=False,
@@ -181,7 +184,7 @@ class ForumService:
                 error="FORUM_XF_USER / FORUM_XF_SESSION не заданы в .env",
             )
         try:
-            cookies = self._cookie_dict()
+            cookies = self._read_cookies_from_env()
             self._api = ArizonaAPI(FORUM_USER_AGENT or None, cookies)
             await self._api.connect()
             await self._persist_session_cookies()
