@@ -560,10 +560,11 @@ class ForumService:
         category: Any,
         days: int,
     ) -> tuple[list[dict[str, Any]], int]:
+        """Закрытые темы, у которых last_message_date (момент закрытия) за N дней."""
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).timestamp()
         threads: list[dict[str, Any]] = []
         pages_scanned = 0
-        empty_streak = 0
+        older_streak = 0
 
         for page in range(1, 81):
             rows = await self._fetch_category_page(category, page)
@@ -571,19 +572,31 @@ class ForumService:
                 break
 
             pages_scanned += 1
-            matched = [
-                row
-                for row in rows
-                if row.get("created_date") is not None
-                and row["created_date"] >= cutoff
-            ]
+            matched: list[dict[str, Any]] = []
+            for row in rows:
+                if not row.get("is_closed"):
+                    continue
+                closed_at = row.get("last_message_date")
+                if closed_at is None:
+                    continue
+                if float(closed_at) >= cutoff:
+                    matched.append(row)
             threads.extend(matched)
 
+            page_dates = [
+                float(r["last_message_date"])
+                for r in rows
+                if r.get("last_message_date") is not None
+            ]
             if matched:
-                empty_streak = 0
+                older_streak = 0
+            elif page_dates and max(page_dates) < cutoff:
+                older_streak += 1
+                if older_streak >= 2:
+                    break
             else:
-                empty_streak += 1
-                if empty_streak >= 2:
+                older_streak += 1
+                if older_streak >= 2:
                     break
 
         return threads, pages_scanned
@@ -594,7 +607,7 @@ class ForumService:
         date_from: datetime,
         date_to: datetime,
     ) -> tuple[list[dict[str, Any]], int]:
-        """Темы с created_date в [date_from, date_to] (UTC, inclusive)."""
+        """Закрытые темы с last_message_date в [date_from, date_to] (UTC)."""
         if date_from.tzinfo is None:
             date_from = date_from.replace(tzinfo=timezone.utc)
         if date_to.tzinfo is None:
@@ -615,23 +628,31 @@ class ForumService:
 
             pages_scanned += 1
             matched: list[dict[str, Any]] = []
-            all_older = True
             for row in rows:
-                created = row.get("created_date")
-                if created is None:
+                if not row.get("is_closed"):
                     continue
-                if created >= start_ts:
-                    all_older = False
-                if start_ts <= created <= end_ts:
+                closed_at = row.get("last_message_date")
+                if closed_at is None:
+                    continue
+                if start_ts <= float(closed_at) <= end_ts:
                     matched.append(row)
             threads.extend(matched)
 
-            if all_older:
+            page_dates = [
+                float(r["last_message_date"])
+                for r in rows
+                if r.get("last_message_date") is not None
+            ]
+            if matched:
+                older_streak = 0
+            elif page_dates and max(page_dates) < start_ts:
                 older_streak += 1
                 if older_streak >= 2:
                     break
-            else:
-                older_streak = 0
+            elif not matched:
+                older_streak += 1
+                if older_streak >= 2:
+                    break
 
         return threads, pages_scanned
 
@@ -685,12 +706,12 @@ class ForumService:
                 category, date_from, date_to
             )
             period_label = period_label or "за выбранные даты"
-            empty_hint = "📭 За указанные даты нет тем"
+            empty_hint = "📭 За указанные даты нет закрытых исков"
         elif days is not None:
             days = max(1, min(days, 365))
             threads, pages_scanned = await self._collect_threads_by_days(category, days)
             period_label = period_label or f"за {days} дней"
-            empty_hint = "📭 За указанный период нет тем"
+            empty_hint = "📭 За указанный период нет закрытых исков"
         else:
             pages = max(1, min(pages or 1, 20))
             threads, pages_scanned = await self._collect_threads_by_pages(
