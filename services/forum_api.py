@@ -588,6 +588,53 @@ class ForumService:
 
         return threads, pages_scanned
 
+    async def _collect_threads_by_range(
+        self,
+        category: Any,
+        date_from: datetime,
+        date_to: datetime,
+    ) -> tuple[list[dict[str, Any]], int]:
+        """Темы с created_date в [date_from, date_to] (UTC, inclusive)."""
+        if date_from.tzinfo is None:
+            date_from = date_from.replace(tzinfo=timezone.utc)
+        if date_to.tzinfo is None:
+            date_to = date_to.replace(tzinfo=timezone.utc)
+        start_ts = date_from.astimezone(timezone.utc).timestamp()
+        end_ts = date_to.astimezone(timezone.utc).timestamp()
+        if end_ts < start_ts:
+            start_ts, end_ts = end_ts, start_ts
+
+        threads: list[dict[str, Any]] = []
+        pages_scanned = 0
+        older_streak = 0
+
+        for page in range(1, 81):
+            rows = await self._fetch_category_page(category, page)
+            if not rows:
+                break
+
+            pages_scanned += 1
+            matched: list[dict[str, Any]] = []
+            all_older = True
+            for row in rows:
+                created = row.get("created_date")
+                if created is None:
+                    continue
+                if created >= start_ts:
+                    all_older = False
+                if start_ts <= created <= end_ts:
+                    matched.append(row)
+            threads.extend(matched)
+
+            if all_older:
+                older_streak += 1
+                if older_streak >= 2:
+                    break
+            else:
+                older_streak = 0
+
+        return threads, pages_scanned
+
     async def _resolve_closer_name(self, row: dict[str, Any]) -> str:
         closer = (row.get("username_last_message") or "").strip()
         if closer:
@@ -619,6 +666,9 @@ class ForumService:
         judge_forum_id: int,
         pages: int | None = None,
         days: int | None = None,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+        period_label: str | None = None,
     ) -> str:
         """Статистика исков/жалоб в разделе судебных исков сервера."""
         if not self._api:
@@ -630,17 +680,23 @@ class ForumService:
 
         category_title = getattr(category, "title", "Судебные иски")
 
-        if days is not None:
+        if date_from is not None and date_to is not None:
+            threads, pages_scanned = await self._collect_threads_by_range(
+                category, date_from, date_to
+            )
+            period_label = period_label or "за выбранные даты"
+            empty_hint = "📭 За указанные даты нет тем"
+        elif days is not None:
             days = max(1, min(days, 365))
             threads, pages_scanned = await self._collect_threads_by_days(category, days)
-            period_label = f"за {days} дней"
+            period_label = period_label or f"за {days} дней"
             empty_hint = "📭 За указанный период нет тем"
         else:
             pages = max(1, min(pages or 1, 20))
             threads, pages_scanned = await self._collect_threads_by_pages(
                 category, pages
             )
-            period_label = ""
+            period_label = period_label or ""
             empty_hint = "📭 На просканированных страницах нет тем"
 
         threads = self._filter_court_threads(threads)
@@ -787,6 +843,9 @@ class ForumService:
         judge_forum_id: int,
         pages: int | None = None,
         days: int | None = None,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+        period_label: str | None = None,
     ) -> str:
         """Дозаписать закрытые иски в БД по формунику (users.username)."""
         from database.models.user import User
@@ -800,17 +859,21 @@ class ForumService:
         if not category:
             return "❌ Раздел судебных исков не найден"
 
-        if days is not None:
+        if date_from is not None and date_to is not None:
+            threads, pages_scanned = await self._collect_threads_by_range(
+                category, date_from, date_to
+            )
+            period = period_label or "даты"
+        elif days is not None:
             days = max(1, min(days, 365))
             threads, pages_scanned = await self._collect_threads_by_days(category, days)
-            period = f"за {days} дн."
+            period = period_label or f"за {days} дн."
         else:
             pages = max(1, min(pages or 1, 20))
             threads, pages_scanned = await self._collect_threads_by_pages(
                 category, pages
             )
-            period = f"{pages_scanned} стр."
-
+            period = period_label or f"{pages_scanned} стр."
         threads = self._filter_court_threads(threads)
         closed = [row for row in threads if row.get("is_closed")]
         if not closed:

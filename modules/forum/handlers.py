@@ -6,6 +6,7 @@ import json
 import logging
 import re
 import time
+from datetime import datetime, timedelta, timezone
 
 from vkbottle import API, GroupEventType
 from vkbottle.bot import Bot, Message, MessageEvent
@@ -41,10 +42,36 @@ _ISKI_DAYS_RE = re.compile(
     r"^(\d+)\s*(?:д|d|дн(?:ей|я)?|days?)$",
     re.IGNORECASE,
 )
+_ISKI_DATE_RE = re.compile(r"^(\d{1,2})\.(\d{1,2})\.(\d{4})$")
+_MSK = timezone(timedelta(hours=3))
 
 
-def _parse_iski_arg(arg: str) -> tuple[str, int] | str:
-    """('pages'|'days', value) или строка ошибки."""
+def _parse_iski_date(token: str) -> datetime | None:
+    """ДД.ММ.ГГГГ → datetime 00:00 МСК (aware)."""
+    m = _ISKI_DATE_RE.match(token.strip())
+    if not m:
+        return None
+    day, month, year = int(m.group(1)), int(m.group(2)), int(m.group(3))
+    try:
+        return datetime(year, month, day, tzinfo=_MSK)
+    except ValueError:
+        return None
+
+
+def _iski_day_bounds_utc(day_start_msk: datetime) -> tuple[datetime, datetime]:
+    """Начало и конец календарного дня МСК в UTC."""
+    start = day_start_msk.astimezone(timezone.utc)
+    end = (day_start_msk + timedelta(days=1) - timedelta(microseconds=1)).astimezone(
+        timezone.utc
+    )
+    return start, end
+
+
+def _parse_iski_arg(arg: str) -> tuple[str, object] | str:
+    """('pages'|'days'|'range', value) или строка ошибки.
+
+    range value: (start_utc: datetime, end_utc: datetime, label: str)
+    """
     raw = (arg or "").strip()
     if not raw:
         return "pages", 1
@@ -59,7 +86,10 @@ def _parse_iski_arg(arg: str) -> tuple[str, int] | str:
     parts = raw.split()
     if parts[0].lower() in ("дни", "дней", "дня", "days", "day", "d"):
         if len(parts) < 2:
-            return "Использование: /иски [страницы 1–20] или /иски [дни 1–365]"
+            return (
+                "Использование: /иски [страницы] · /иски 30д · "
+                "/иски 21.07.2026 · /иски 19.07.2026 21.07.2026"
+            )
         try:
             days = int(parts[1])
         except ValueError:
@@ -68,10 +98,37 @@ def _parse_iski_arg(arg: str) -> tuple[str, int] | str:
             return "Укажите число дней от 1 до 365."
         return "days", days
 
+    # Одна или две даты: 21.07.2026 | 19.07.2026 21.07.2026
+    if 1 <= len(parts) <= 2 and all(_ISKI_DATE_RE.match(p) for p in parts):
+        d0 = _parse_iski_date(parts[0])
+        if not d0:
+            return "Некорректная дата. Формат: ДД.ММ.ГГГГ"
+        if len(parts) == 1:
+            start_utc, end_utc = _iski_day_bounds_utc(d0)
+            label = parts[0]
+        else:
+            d1 = _parse_iski_date(parts[1])
+            if not d1:
+                return "Некорректная дата. Формат: ДД.ММ.ГГГГ"
+            if d1 < d0:
+                d0, d1 = d1, d0
+            start_utc, _ = _iski_day_bounds_utc(d0)
+            _, end_utc = _iski_day_bounds_utc(d1)
+            a, b = parts[0], parts[1]
+            da, db = _parse_iski_date(a), _parse_iski_date(b)
+            if da and db and db < da:
+                label = f"{b}–{a}"
+            else:
+                label = f"{a}–{b}"
+        return "range", (start_utc, end_utc, label)
+
     try:
         pages = int(parts[0])
     except ValueError:
-        return "Использование: /иски [страницы 1–20] или /иски 30д"
+        return (
+            "Использование: /иски [1–20] · /иски 30д · "
+            "/иски 21.07.2026 · /иски 19.07.2026 21.07.2026"
+        )
     if pages < 1 or pages > 20:
         return "Укажите число страниц от 1 до 20."
     return "pages", pages
@@ -392,7 +449,8 @@ def register_forum(
         if isinstance(parsed, str):
             await message.answer(
                 f"❌ {parsed}\n"
-                "Примеры: /иски 5 · /иски 30д · /иски дни 14"
+                "Примеры: /иски 5 · /иски 30д · /иски 21.07.2026 · "
+                "/иски 19.07.2026 21.07.2026"
             )
             return
 
@@ -406,13 +464,22 @@ def register_forum(
             report = await forum.get_court_stats(
                 server_id=server_id,
                 judge_forum_id=judge_forum_id,
-                days=value,
+                days=int(value),  # type: ignore[arg-type]
+            )
+        elif mode == "range":
+            start_utc, end_utc, label = value  # type: ignore[misc]
+            report = await forum.get_court_stats(
+                server_id=server_id,
+                judge_forum_id=judge_forum_id,
+                date_from=start_utc,
+                date_to=end_utc,
+                period_label=f"за {label}",
             )
         else:
             report = await forum.get_court_stats(
                 server_id=server_id,
                 judge_forum_id=judge_forum_id,
-                pages=value,
+                pages=int(value),  # type: ignore[arg-type]
             )
         await message.answer(report)
 
@@ -479,7 +546,8 @@ def register_forum(
         if isinstance(parsed, str):
             await message.answer(
                 f"❌ {parsed}\n"
-                "Примеры: /claimfill 5 · /claimfill 30д · /claimfill дни 14"
+                "Примеры: /claimfill 5 · /claimfill 30д · /claimfill 21.07.2026 · "
+                "/claimfill 19.07.2026 21.07.2026"
             )
             return
 
@@ -493,13 +561,22 @@ def register_forum(
             report = await forum.fill_claim_closes(
                 server_id=server_id,
                 judge_forum_id=judge_forum_id,
-                days=value,
+                days=int(value),  # type: ignore[arg-type]
+            )
+        elif mode == "range":
+            start_utc, end_utc, label = value  # type: ignore[misc]
+            report = await forum.fill_claim_closes(
+                server_id=server_id,
+                judge_forum_id=judge_forum_id,
+                date_from=start_utc,
+                date_to=end_utc,
+                period_label=label,
             )
         else:
             report = await forum.fill_claim_closes(
                 server_id=server_id,
                 judge_forum_id=judge_forum_id,
-                pages=value,
+                pages=int(value),  # type: ignore[arg-type]
             )
         await message.answer(report)
         await action_logger.log_user(

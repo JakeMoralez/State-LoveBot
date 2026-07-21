@@ -130,7 +130,7 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
             HelpEntry("/fclose · /fopen", "Закрыть / открыть тему (алиасы: fclosed, fopened)", "forum"),
             HelpEntry("/fpin · /funpin", "Закрепить / открепить тему", "forum"),
             HelpEntry("/fresolve", "Закрыть тему и открепить (алиас: resolve)", "forum"),
-            HelpEntry("/иски", "Статистика исков [страницы 1–20 / дни 1–365]", "forum"),
+            HelpEntry("/иски", "Статистика: стр. / дни / дата / период дат", "forum"),
             HelpEntry("/form", "Отправить игровые формы (судья)", "forum", judge_only=True),
             HelpEntry("/myform", "Ваши формы и статусы", "forum", judge_only=True),
             HelpEntry("/forms", "Команды для игры (без #id)", 2, ca=True, ca_forms=True),
