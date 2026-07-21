@@ -583,6 +583,8 @@ class ForumService:
                     matched.append(row)
             threads.extend(matched)
 
+            # Останавливаемся только когда страница целиком старше окна
+            # (не когда просто нет совпадений среди свежих тем).
             page_dates = [
                 float(r["last_message_date"])
                 for r in rows
@@ -591,10 +593,6 @@ class ForumService:
             if matched:
                 older_streak = 0
             elif page_dates and max(page_dates) < cutoff:
-                older_streak += 1
-                if older_streak >= 2:
-                    break
-            else:
                 older_streak += 1
                 if older_streak >= 2:
                     break
@@ -646,13 +644,12 @@ class ForumService:
             if matched:
                 older_streak = 0
             elif page_dates and max(page_dates) < start_ts:
+                # Ушли глубже начала периода — дальше только старше
                 older_streak += 1
                 if older_streak >= 2:
                     break
-            elif not matched:
-                older_streak += 1
-                if older_streak >= 2:
-                    break
+            # Иначе страница ещё «новее» диапазона или внутри него без
+            # нужных закрытий — продолжаем листать к нужным датам.
 
         return threads, pages_scanned
 
