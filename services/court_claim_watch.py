@@ -110,6 +110,72 @@ class CourtClaimWatcher:
             except asyncio.TimeoutError:
                 continue
 
+    async def force_scan(self) -> str:
+        """Принудительная проверка (для /claimwatch)."""
+        if not CLAIM_WATCH_ENABLED:
+            return "❌ Вотчер выключен (CLAIM_WATCH_ENABLED=0)."
+        if not self._forum.backend or not self._forum.api:
+            return "❌ Форум не подключён."
+
+        servers = await ServerRepository.list_active()
+        lines: list[str] = ["🔍 Claim watch — ручная проверка", ""]
+        checked = 0
+        total_new = 0
+        total_seeded = 0
+        skipped_no_chat = 0
+        skipped_no_forum = 0
+
+        for server in servers:
+            forum_id = server.judge_forum_id
+            if not forum_id:
+                skipped_no_forum += 1
+                continue
+            peer_id = await ForumRoleRepository.get_role_chat(
+                ForumRoleKey.JUDGE,
+                server.id,
+            )
+            if not peer_id:
+                skipped_no_chat += 1
+                continue
+            try:
+                stats = await self._scan_server(
+                    server_id=server.id,
+                    judge_forum_id=int(forum_id),
+                    peer_id=int(peer_id),
+                )
+            except Exception as exc:
+                lines.append(f"⚠️ server={server.id}: {exc}")
+                continue
+            checked += 1
+            total_new += stats["notified"]
+            total_seeded += stats["seeded"]
+            label = format_server_label(server, server.id)
+            if stats["seeded"]:
+                lines.append(
+                    f"• {label}: seed {stats['seeded']} тем (уведомлений нет)"
+                )
+            else:
+                lines.append(
+                    f"• {label}: новых {stats['notified']}, "
+                    f"уже видели {stats['known']}, на стр. {stats['scanned']}"
+                )
+
+        if not checked:
+            lines.append("Нет серверов с разделом исков и /regcourt.")
+        else:
+            lines.extend(
+                [
+                    "",
+                    f"Итого: серверов {checked}, новых уведомлений {total_new}"
+                    + (f", seed {total_seeded}" if total_seeded else ""),
+                ]
+            )
+        if skipped_no_forum or skipped_no_chat:
+            lines.append(
+                f"(пропущено: без forum={skipped_no_forum}, без беседы={skipped_no_chat})"
+            )
+        return "\n".join(lines)
+
     async def _tick(self) -> None:
         if not self._forum.backend or not self._forum.api:
             return
@@ -145,13 +211,13 @@ class CourtClaimWatcher:
         server_id: int,
         judge_forum_id: int,
         peer_id: int,
-    ) -> None:
+    ) -> dict[str, int]:
         category = await self._forum.api.get_category(judge_forum_id)
         if not category:
-            return
+            return {"notified": 0, "seeded": 0, "known": 0, "scanned": 0}
 
-        known = await CourtClaimSeen.filter(server_id=server_id).count()
-        seed = known == 0
+        known_before = await CourtClaimSeen.filter(server_id=server_id).count()
+        seed = known_before == 0
 
         # При первом запуске помечаем 1–2 страницы как уже виденные (без спама)
         pages = (1, 2) if seed else (1,)
@@ -166,11 +232,16 @@ class CourtClaimWatcher:
         server = await ServerRepository.get_by_id(server_id)
         server_label = format_server_label(server, server_id)
 
+        notified = 0
+        seeded = 0
+        already = 0
+
         for row in rows:
             tid = int(row.get("thread_id") or 0)
             if tid <= 0:
                 continue
             if await CourtClaimSeen.exists(thread_id=tid):
+                already += 1
                 continue
 
             if seed:
@@ -179,6 +250,7 @@ class CourtClaimWatcher:
                     server_id=server_id,
                     notified=False,
                 )
+                seeded += 1
                 continue
 
             text = _format_new_claim(row, server_label=server_label)
@@ -191,6 +263,7 @@ class CourtClaimWatcher:
                     disable_mentions=1,
                 )
                 sent = True
+                notified += 1
                 logger.info(
                     "new claim notify server=%s thread=%s peer=%s",
                     server_id,
@@ -205,7 +278,6 @@ class CourtClaimWatcher:
                     exc,
                 )
 
-            # Помечаем увиденным и при ошибке отправки — чтобы не спамить циклом
             await CourtClaimSeen.create(
                 thread_id=tid,
                 server_id=server_id,
@@ -216,5 +288,12 @@ class CourtClaimWatcher:
             logger.info(
                 "court claim watch seeded server=%s (%s threads)",
                 server_id,
-                len(rows),
+                seeded,
             )
+
+        return {
+            "notified": notified,
+            "seeded": seeded,
+            "known": already,
+            "scanned": len(rows),
+        }

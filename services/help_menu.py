@@ -200,6 +200,11 @@ DEV_HELP_CATEGORIES: tuple[HelpCategory, ...] = (
                 "Дозаписать закрытые иски в БД [страницы / дни]",
                 10,
             ),
+            HelpEntry(
+                "/claimwatch · /checkclaims",
+                "Сейчас проверить новые иски → беседа судей",
+                10,
+            ),
         ),
     ),
 )

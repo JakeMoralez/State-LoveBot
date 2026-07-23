@@ -12,6 +12,7 @@ import time
 
 from vkbottle import API
 from vkbottle.bot import Bot, Message
+from vkbottle.dispatch.rules.base import FuncRule
 from vkbottle.exception_factory import VKAPIError
 from vkbottle.polling import BotPolling
 
@@ -23,6 +24,7 @@ from middlewares.access import AccessChecker, requires_developer
 from middlewares.action_logger import ActionLogger
 from modules import register_all_modules
 from services.chat_admin import ChatAdminService
+from services.command_utils import matches_cmd
 from services.court_claim_watch import CourtClaimWatcher
 from services.edit_link_handlers import register_edit_link_commands
 from services.forum_api import ForumService, _ARIZONA_IMPORT_ERROR, _HAS_ARIZONA
@@ -34,6 +36,10 @@ logger = logging.getLogger(__name__)
 _forum_service = ForumService()
 _bot_started_at: float | None = None
 _claim_watcher: CourtClaimWatcher | None = None
+
+
+def get_claim_watcher() -> CourtClaimWatcher | None:
+    return _claim_watcher
 
 
 def create_bot(token: str, group_id: int) -> tuple[Bot, API, ActionLogger]:
@@ -76,6 +82,26 @@ def create_bot(token: str, group_id: int) -> tuple[Bot, API, ActionLogger]:
         elapsed = int(time.monotonic() - _bot_started_at)
         uptime = ChatAdminService.format_duration(elapsed)
         await message.answer(f"🏓 pong\n⏱ Время работы: {uptime}")
+
+    @bot.on.message(
+        FuncRule(
+            lambda m: matches_cmd(m.text or "", "claimwatch")
+            or matches_cmd(m.text or "", "checkclaims")
+        )
+    )
+    @requires_developer
+    async def claim_watch_now(
+        message: Message,
+        server_id: int = 0,
+        access_level: int = 0,
+    ) -> None:
+        watcher = get_claim_watcher()
+        if not watcher:
+            await message.answer("❌ Вотчер ещё не запущен.")
+            return
+        await message.answer("⚙️ Проверяю раздел исков…")
+        report = await watcher.force_scan()
+        await message.answer(report)
 
     return bot, api, action_logger
 
