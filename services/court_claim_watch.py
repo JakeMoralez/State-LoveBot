@@ -7,13 +7,15 @@ import logging
 import os
 from typing import Any
 
-from vkbottle import API
+from vkbottle import API, Keyboard, OpenLink
 
 from config.settings import FORUM_BASE_URL
 from database.models.court_claim import CourtClaimSeen
 from database.models.role_chat import ForumRoleKey
+from database.models.user import UserServerAccess
 from database.repository.forum_role_repo import ForumRoleRepository
 from database.repository.server_repo import ServerRepository
+from services.display_name import DisplayNameService
 from services.forum_api import ForumService
 from services.server_display import format_server_label
 
@@ -29,6 +31,7 @@ CLAIM_WATCH_INTERVAL_SEC = max(
     30,
     int(os.getenv("CLAIM_WATCH_INTERVAL_SEC", "60") or "60"),
 )
+_MAX_JUDGE_PINGS = 20
 
 
 def _thread_url(thread_id: int) -> str:
@@ -36,25 +39,51 @@ def _thread_url(thread_id: int) -> str:
     return f"{base}/threads/{thread_id}/"
 
 
-def _format_new_claim(row: dict[str, Any], *, server_label: str) -> str:
+def _open_thread_keyboard(thread_id: int) -> str:
+    kb = Keyboard(inline=True)
+    kb.add(OpenLink(link=_thread_url(thread_id), label="Открыть тему ↗️"))
+    return kb.get_json()
+
+
+async def _judge_ping_line(api: API, server_id: int) -> str:
+    rows = await UserServerAccess.filter(
+        server_id=server_id,
+        is_judge=True,
+    )
+    if not rows:
+        return ""
+    names = DisplayNameService(api, server_id)
+    links: list[str] = []
+    for access in rows[:_MAX_JUDGE_PINGS]:
+        vk_id = int(access.user_id)
+        links.append(await names.mention_user(vk_id, server_id))
+    return " ".join(links)
+
+
+async def _format_new_claim(
+    api: API,
+    row: dict[str, Any],
+    *,
+    server_id: int,
+    server_label: str,
+) -> str:
     title = (row.get("thread_title") or "Без названия").strip()
     author = (row.get("username_author") or "—").strip()
     prefix = (row.get("prefix") or "").strip()
-    tid = int(row.get("thread_id") or 0)
-    lines = [
-        "📥 Новый иск",
-        "",
-        f"🖥 {server_label}",
-        f"📌 {title}",
-    ]
+
+    ping = await _judge_ping_line(api, server_id)
+    lines: list[str] = []
+    if ping:
+        lines.extend([ping, ""])
+
+    lines.append("🆕 Новый иск в разделе судебных дел.")
+    lines.append("")
+    title_line = f"📝 Название: {title}"
     if prefix:
-        lines.append(f"🏷 {prefix}")
-    lines.extend(
-        [
-            f"👤 Автор: {author}",
-            f"🔗 {_thread_url(tid)}",
-        ]
-    )
+        title_line += f" | Префикс: {prefix}"
+    lines.append(title_line)
+    lines.append(f"👤 Автор: {author}")
+    lines.append(f"🖥 {server_label}")
     return "\n".join(lines)
 
 
@@ -253,14 +282,20 @@ class CourtClaimWatcher:
                 seeded += 1
                 continue
 
-            text = _format_new_claim(row, server_label=server_label)
+            text = await _format_new_claim(
+                self._api,
+                row,
+                server_id=server_id,
+                server_label=server_label,
+            )
             sent = False
             try:
                 await self._api.messages.send(
                     peer_id=peer_id,
                     message=text,
                     random_id=0,
-                    disable_mentions=1,
+                    disable_mentions=0,
+                    keyboard=_open_thread_keyboard(tid),
                 )
                 sent = True
                 notified += 1
