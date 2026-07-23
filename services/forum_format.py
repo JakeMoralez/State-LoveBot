@@ -6,8 +6,6 @@ import re
 from datetime import datetime
 from typing import Any
 
-from config.settings import FORUM_BASE_URL
-
 VK_MESSAGE_LIMIT = 4090
 _WS_RE = re.compile(r"[ \t]+\n")
 _MULTI_NL_RE = re.compile(r"\n{3,}")
@@ -38,11 +36,6 @@ def format_thread_card(info: dict[str, Any]) -> str:
     )
 
 
-def _thread_url(thread_id: int) -> str:
-    base = (FORUM_BASE_URL or "https://forum.arizona-rp.com").rstrip("/")
-    return f"{base}/threads/{thread_id}/"
-
-
 def _clean_body(text: str) -> str:
     cleaned = (text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
     cleaned = _WS_RE.sub("\n", cleaned)
@@ -56,40 +49,56 @@ def format_claim_detail(info: dict[str, Any]) -> str:
     title = (info.get("title") or "Без названия").strip()
     prefix = (info.get("prefix") or "").strip()
     author = (info.get("author") or "Неизвестно").strip()
-    created = info.get("created_date") or "Неизвестно"
-    forum_name = info.get("forum_name") or "Неизвестно"
+    created = _format_claim_date(info.get("created_date"))
+    forum_name = (info.get("forum_name") or "Неизвестно").strip()
     is_closed = bool(info.get("is_closed", info.get("closed", False)))
-    status = "Закрыта" if is_closed else "Открыта"
+    status = "закрыт" if is_closed else "открыт"
     body = _clean_body(str(info.get("body") or info.get("text_content") or ""))
 
-    header_lines = [
-        f"📋 Иск: {title}",
-    ]
+    lines: list[str] = [title]
     if prefix:
-        header_lines.append(f"🏷 Префикс: {prefix}")
-    header_lines.extend(
-        [
-            f"🆔 ID: {tid or '—'}",
-            f"{'🔒' if is_closed else '🔓'} Статус: {status}",
-            f"👤 Автор: {author}",
-            f"📅 Создана: {created}",
-            f"📂 Раздел: {forum_name}",
-        ]
-    )
+        lines.append(prefix)
+    lines.append("")
+    lines.append(f"{author}  ·  {created}  ·  {status}")
+    meta = forum_name
     if tid:
-        header_lines.append(f"🔗 {_thread_url(tid)}")
-    header_lines.append("━━━━━━━━━━━━━━━━")
-    header = "\n".join(header_lines)
+        meta = f"{meta}  ·  #{tid}"
+    lines.append(meta)
+    lines.append("")
+    lines.append("— — —")
+    lines.append("")
 
-    if not body:
-        return f"{header}\n📄 Содержание: —"
+    if body:
+        lines.append(body)
+    else:
+        lines.append("Содержание пустое.")
 
-    body_label = "📄 Содержание:\n"
-    reserve = len(header) + 1 + len(body_label) + 40
-    max_body = max(200, VK_MESSAGE_LIMIT - reserve)
-    if len(body) > max_body:
-        body = body[: max_body - 1].rstrip() + "…"
-    return f"{header}\n{body_label}{body}"
+    text = "\n".join(lines)
+    if len(text) <= VK_MESSAGE_LIMIT:
+        return text
+
+    # Обрезаем только тело, шапка остаётся целой
+    header = "\n".join(lines[: lines.index("— — —") + 2])
+    reserve = len(header) + 2
+    max_body = max(120, VK_MESSAGE_LIMIT - reserve - 1)
+    clipped = body[:max_body].rstrip() + "…"
+    return f"{header}\n{clipped}"
+
+
+def _format_claim_date(raw: Any) -> str:
+    if raw is None:
+        return "—"
+    text = str(raw).strip()
+    if not text:
+        return "—"
+    # YYYY-MM-DD → ДД.ММ.ГГГГ
+    if len(text) >= 10 and text[4] == "-" and text[7] == "-":
+        try:
+            y, m, d = text[:10].split("-")
+            return f"{int(d):02d}.{int(m):02d}.{y}"
+        except ValueError:
+            pass
+    return text
 
 
 def plural_cases(

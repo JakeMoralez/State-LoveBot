@@ -7,8 +7,9 @@ import logging
 import os
 from typing import Any
 
-from vkbottle import API, Callback, Keyboard, KeyboardButtonColor
+from vkbottle import API, Callback, Keyboard, KeyboardButtonColor, OpenLink
 
+from config.settings import FORUM_BASE_URL
 from database.models.court_claim import CourtClaimSeen
 from database.models.role_chat import ForumRoleKey
 from database.models.user import UserServerAccess
@@ -33,8 +34,14 @@ CLAIM_WATCH_INTERVAL_SEC = max(
 _MAX_JUDGE_PINGS = 20
 
 
+def _thread_url(thread_id: int) -> str:
+    base = (FORUM_BASE_URL or "https://forum.arizona-rp.com").rstrip("/")
+    return f"{base}/threads/{thread_id}/"
+
+
 def _new_claim_keyboard(thread_id: int, server_id: int) -> str:
     kb = Keyboard(inline=True)
+    kb.add(OpenLink(link=_thread_url(thread_id), label="Открыть тему"))
     kb.add(
         Callback(
             "Информация",
@@ -80,14 +87,13 @@ async def _format_new_claim(
     if ping:
         lines.extend([ping, ""])
 
-    lines.append("🆕 Новый иск в разделе судебных дел.")
+    lines.append("Новый иск")
     lines.append("")
-    title_line = f"📝 Название: {title}"
+    lines.append(title)
     if prefix:
-        title_line += f" | Префикс: {prefix}"
-    lines.append(title_line)
-    lines.append(f"👤 Автор: {author}")
-    lines.append(f"🖥 {server_label}")
+        lines.append(prefix)
+    lines.append("")
+    lines.append(f"{author}  ·  {server_label}")
     return "\n".join(lines)
 
 
