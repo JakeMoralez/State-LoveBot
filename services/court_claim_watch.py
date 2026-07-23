@@ -7,9 +7,8 @@ import logging
 import os
 from typing import Any
 
-from vkbottle import API, Keyboard, OpenLink
+from vkbottle import API, Callback, Keyboard, KeyboardButtonColor
 
-from config.settings import FORUM_BASE_URL
 from database.models.court_claim import CourtClaimSeen
 from database.models.role_chat import ForumRoleKey
 from database.models.user import UserServerAccess
@@ -34,14 +33,19 @@ CLAIM_WATCH_INTERVAL_SEC = max(
 _MAX_JUDGE_PINGS = 20
 
 
-def _thread_url(thread_id: int) -> str:
-    base = (FORUM_BASE_URL or "https://forum.arizona-rp.com").rstrip("/")
-    return f"{base}/threads/{thread_id}/"
-
-
-def _open_thread_keyboard(thread_id: int) -> str:
+def _new_claim_keyboard(thread_id: int, server_id: int) -> str:
     kb = Keyboard(inline=True)
-    kb.add(OpenLink(link=_thread_url(thread_id), label="Открыть тему ↗️"))
+    kb.add(
+        Callback(
+            "Информация",
+            payload={
+                "cmd": "claim_info",
+                "thread_id": thread_id,
+                "server_id": server_id,
+            },
+        ),
+        color=KeyboardButtonColor.PRIMARY,
+    )
     return kb.get_json()
 
 
@@ -295,7 +299,7 @@ class CourtClaimWatcher:
                     message=text,
                     random_id=0,
                     disable_mentions=0,
-                    keyboard=_open_thread_keyboard(tid),
+                    keyboard=_new_claim_keyboard(tid, server_id),
                 )
                 sent = True
                 notified += 1

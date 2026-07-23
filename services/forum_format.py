@@ -2,8 +2,15 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Any
+
+from config.settings import FORUM_BASE_URL
+
+VK_MESSAGE_LIMIT = 4090
+_WS_RE = re.compile(r"[ \t]+\n")
+_MULTI_NL_RE = re.compile(r"\n{3,}")
 
 
 def format_thread_card(info: dict[str, Any]) -> str:
@@ -29,6 +36,60 @@ def format_thread_card(info: dict[str, Any]) -> str:
         f"📂 Раздел: {info.get('forum_name', 'Неизвестно')}\n"
         f"━━━━━━━━━━━━━━━━"
     )
+
+
+def _thread_url(thread_id: int) -> str:
+    base = (FORUM_BASE_URL or "https://forum.arizona-rp.com").rstrip("/")
+    return f"{base}/threads/{thread_id}/"
+
+
+def _clean_body(text: str) -> str:
+    cleaned = (text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    cleaned = _WS_RE.sub("\n", cleaned)
+    cleaned = _MULTI_NL_RE.sub("\n\n", cleaned)
+    return cleaned
+
+
+def format_claim_detail(info: dict[str, Any]) -> str:
+    """Карточка иска с содержимым первого поста (для кнопки «Информация»)."""
+    tid = int(info.get("thread_id") or 0)
+    title = (info.get("title") or "Без названия").strip()
+    prefix = (info.get("prefix") or "").strip()
+    author = (info.get("author") or "Неизвестно").strip()
+    created = info.get("created_date") or "Неизвестно"
+    forum_name = info.get("forum_name") or "Неизвестно"
+    is_closed = bool(info.get("is_closed", info.get("closed", False)))
+    status = "Закрыта" if is_closed else "Открыта"
+    body = _clean_body(str(info.get("body") or info.get("text_content") or ""))
+
+    header_lines = [
+        f"📋 Иск: {title}",
+    ]
+    if prefix:
+        header_lines.append(f"🏷 Префикс: {prefix}")
+    header_lines.extend(
+        [
+            f"🆔 ID: {tid or '—'}",
+            f"{'🔒' if is_closed else '🔓'} Статус: {status}",
+            f"👤 Автор: {author}",
+            f"📅 Создана: {created}",
+            f"📂 Раздел: {forum_name}",
+        ]
+    )
+    if tid:
+        header_lines.append(f"🔗 {_thread_url(tid)}")
+    header_lines.append("━━━━━━━━━━━━━━━━")
+    header = "\n".join(header_lines)
+
+    if not body:
+        return f"{header}\n📄 Содержание: —"
+
+    body_label = "📄 Содержание:\n"
+    reserve = len(header) + 1 + len(body_label) + 40
+    max_body = max(200, VK_MESSAGE_LIMIT - reserve)
+    if len(body) > max_body:
+        body = body[: max_body - 1].rstrip() + "…"
+    return f"{header}\n{body_label}{body}"
 
 
 def plural_cases(

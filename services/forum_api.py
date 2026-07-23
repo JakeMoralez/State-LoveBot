@@ -351,6 +351,9 @@ class ForumService:
                 "category_id": node_id,
                 "node_id": node_id,
                 "thread_id": thread_id,
+                "prefix": (getattr(thread, "prefix", None) or "").strip(),
+                "body": (getattr(thread, "text_content", None) or "").strip(),
+                "text_content": (getattr(thread, "text_content", None) or "").strip(),
             }
         except Exception as exc:
             logger.error("get_thread_info %s: %s", thread_id, exc)
