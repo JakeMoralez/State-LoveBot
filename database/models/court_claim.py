@@ -1,4 +1,4 @@
-"""Учёт закрытых судебных исков (по thread_id)."""
+"""Учёт закрытых судебных исков и увиденных тем (для уведомлений)."""
 
 from __future__ import annotations
 
@@ -18,3 +18,16 @@ class CourtClaimClose(Model):
 
     class Meta:
         table = "court_claim_closes"
+
+
+class CourtClaimSeen(Model):
+    """Темы раздела исков, которые бот уже видел (для «новый иск» в беседу судей)."""
+
+    id = fields.IntField(pk=True)
+    thread_id = fields.BigIntField(unique=True)
+    server_id = fields.IntField(index=True)
+    notified = fields.BooleanField(default=False)
+    first_seen_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "court_claim_seen"

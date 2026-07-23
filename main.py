@@ -23,6 +23,7 @@ from middlewares.access import AccessChecker, requires_developer
 from middlewares.action_logger import ActionLogger
 from modules import register_all_modules
 from services.chat_admin import ChatAdminService
+from services.court_claim_watch import CourtClaimWatcher
 from services.edit_link_handlers import register_edit_link_commands
 from services.forum_api import ForumService, _ARIZONA_IMPORT_ERROR, _HAS_ARIZONA
 from services.help_menu import build_dev_help_text, build_help_text_for_user
@@ -32,6 +33,7 @@ logger = logging.getLogger(__name__)
 
 _forum_service = ForumService()
 _bot_started_at: float | None = None
+_claim_watcher: CourtClaimWatcher | None = None
 
 
 def create_bot(token: str, group_id: int) -> tuple[Bot, API, ActionLogger]:
@@ -79,8 +81,10 @@ def create_bot(token: str, group_id: int) -> tuple[Bot, API, ActionLogger]:
 
 
 async def run_bot() -> None:
+    global _claim_watcher
     bot, api, _ = create_bot(VK_GROUP_TOKEN, VK_GROUP_ID)
     sled_runner = None
+    _claim_watcher = CourtClaimWatcher(api, _forum_service)
 
     try:
         await init_db()
@@ -102,6 +106,8 @@ async def run_bot() -> None:
                         "Выполните: pip install -r requirements.txt",
                         _ARIZONA_IMPORT_ERROR,
                     )
+        if _forum_service.backend:
+            _claim_watcher.start()
         logger.info("Бот запущен (async architecture)")
         global _bot_started_at
         _bot_started_at = time.monotonic()
@@ -117,6 +123,9 @@ async def run_bot() -> None:
                 )
             raise
     finally:
+        if _claim_watcher:
+            await _claim_watcher.stop()
+            _claim_watcher = None
         await stop_sled_internal_server(sled_runner)
         if _forum_service.available:
             await _forum_service.close()

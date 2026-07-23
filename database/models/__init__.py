@@ -1,5 +1,5 @@
 from database.models.chat import Chat
-from database.models.court_claim import CourtClaimClose
+from database.models.court_claim import CourtClaimClose, CourtClaimSeen
 from database.models.moderation import ModerationLog
 from database.models.notification import Notification
 from database.models.pool import Pool
@@ -11,6 +11,7 @@ __all__ = [
     "AccessLevel",
     "Chat",
     "CourtClaimClose",
+    "CourtClaimSeen",
     "ModerationLog",
     "Notification",
     "ForumRoleKey",
