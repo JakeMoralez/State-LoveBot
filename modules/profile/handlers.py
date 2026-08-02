@@ -350,7 +350,7 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         server_id: int = 0,
         access_level: int = 0,
     ) -> None:
-        max_lvl = 9 if await UserRepository.is_developer(message.from_id or 0) else 8
+        max_lvl = AccessLevel.GA if await UserRepository.is_developer(message.from_id or 0) else AccessLevel.ZGA
         await message.answer(
             f"❌ Использование: /setlevel [vk.ru|ID|@user|ник] [0–{max_lvl}]\n"
             "Нельзя выдать другому уровень равный или выше своего; себя понизить нельзя."
@@ -366,7 +366,7 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         access_level: int = 0,
     ) -> None:
         is_dev = await UserRepository.is_developer(message.from_id)
-        max_grant = 9 if is_dev else 8
+        max_grant = AccessLevel.GA if is_dev else AccessLevel.ZGA
 
         try:
             new_level = int(level)

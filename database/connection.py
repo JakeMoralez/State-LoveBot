@@ -350,6 +350,7 @@ async def init_db() -> None:
         await _ensure_server_log_peer_column()
         await _ensure_pool_number_column()
         await _ensure_court_form_batch_column()
+    await _migrate_structure_supervisor_level()
     await _bootstrap_defaults()
     if sqlite:
         await _migrate_legacy_data_to_default_server()
@@ -363,6 +364,31 @@ async def init_db() -> None:
 async def close_db() -> None:
     await Tortoise.close_connections()
 
+
+async def _migrate_structure_supervisor_level() -> None:
+    """Insert STRUCTURE_SUPERVISOR=5: shift old levels >=5 up by 1 (once).
+
+    Old: 5=ЗГС ГОС … 10=Разработчик
+    New: 5=Следящий структуры, 6=ЗГС ГОС … 11=Разработчик
+    """
+    top = await UserServerAccess.all().order_by("-access_level").first()
+    if top is None:
+        return
+    max_level = int(top.access_level)
+    if max_level >= AccessLevel.DEVELOPER:
+        return
+    if AccessLevel.DEVELOPER != 11:
+        return
+
+    shifted = 0
+    for lvl in range(10, 4, -1):
+        updated = await UserServerAccess.filter(access_level=lvl).update(access_level=lvl + 1)
+        shifted += updated
+    if shifted:
+        logger.info(
+            "Миграция уровней: +1 для access_level>=5 (вставлена «Следящий структуры»), строк=%s",
+            shifted,
+        )
 
 async def _bootstrap_defaults() -> None:
     server = await ServerRepository.ensure_primary_server(
@@ -385,4 +411,9 @@ async def _bootstrap_defaults() -> None:
         server_id=server.id,
         defaults={"access_level": AccessLevel.DEVELOPER},
     )
-    logger.info("Разработчик vk_id=%s → уровень 10 на сервере %s", MAIN_ADMIN_ID, server.slug)
+    logger.info(
+        "Разработчик vk_id=%s → уровень %s на сервере %s",
+        MAIN_ADMIN_ID,
+        AccessLevel.DEVELOPER,
+        server.slug,
+    )

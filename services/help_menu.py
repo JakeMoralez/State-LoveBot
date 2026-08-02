@@ -21,7 +21,8 @@ _LEVEL_EMOJI: dict[int, str] = {
     7: "7️⃣",
     8: "8️⃣",
     9: "9️⃣",
-    10: "🔟",
+    10: "🅰️",
+    11: "🔟",
 }
 
 _SPECIAL_EMOJI = {
@@ -117,10 +118,10 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
         "📂 Пулы и беседы",
         (
             HelpEntry("/pools", "Список пулов", 1),
-            HelpEntry("/createpool", "Создать пул", 5),
-            HelpEntry("/regchat", "Привязать беседу к пулу", 5),
-            HelpEntry("/unregchat", "Отвязать беседу от пула", 5),
-            HelpEntry("/setlevel", "Уровень [@user] [0–9]", 3),
+            HelpEntry("/createpool", "Создать пул", AccessLevel.ZGS_GOS),
+            HelpEntry("/regchat", "Привязать беседу к пулу", AccessLevel.ZGS_GOS),
+            HelpEntry("/unregchat", "Отвязать беседу от пула", AccessLevel.ZGS_GOS),
+            HelpEntry("/setlevel", f"Уровень [@user] [0–{AccessLevel.GA}]", AccessLevel.ZGS),
         ),
     ),
     HelpCategory(
@@ -186,24 +187,24 @@ DEV_HELP_CATEGORIES: tuple[HelpCategory, ...] = (
     HelpCategory(
         "🔟 Разработчик",
         (
-            HelpEntry("/devhelp", "Справка для ур. 10"),
-            HelpEntry("/meserver", "Переключить активный server_id", 10),
-            HelpEntry("/setserver", "Тег, раздел исков, имя сервера", 10),
-            HelpEntry("/regchat logs", "Беседа для логов бота", 10),
-            HelpEntry("/regchat logs off", "Отвязать беседу логов", 10),
-            HelpEntry("/deluser", "Удалить пользователя из БД", 10),
-            HelpEntry("/forumcheck", "Проверка сессии форума", 10),
-            HelpEntry("/forumcheck reconnect", "Переподключить форум (.env)", 10),
-            HelpEntry("/syncjudges · /courtupdate", "Обновить форумный список судей", 10),
+            HelpEntry("/devhelp", f"Справка для ур. {AccessLevel.DEVELOPER}"),
+            HelpEntry("/meserver", "Переключить активный server_id", AccessLevel.DEVELOPER),
+            HelpEntry("/setserver", "Тег, раздел исков, имя сервера", AccessLevel.DEVELOPER),
+            HelpEntry("/regchat logs", "Беседа для логов бота", AccessLevel.DEVELOPER),
+            HelpEntry("/regchat logs off", "Отвязать беседу логов", AccessLevel.DEVELOPER),
+            HelpEntry("/deluser", "Удалить пользователя из БД", AccessLevel.DEVELOPER),
+            HelpEntry("/forumcheck", "Проверка сессии форума", AccessLevel.DEVELOPER),
+            HelpEntry("/forumcheck reconnect", "Переподключить форум (.env)", AccessLevel.DEVELOPER),
+            HelpEntry("/syncjudges · /courtupdate", "Обновить форумный список судей", AccessLevel.DEVELOPER),
             HelpEntry(
                 "/claimfill",
                 "Дозаписать закрытые иски в БД [страницы / дни]",
-                10,
+                AccessLevel.DEVELOPER,
             ),
             HelpEntry(
                 "/claimwatch · /checkclaims",
                 "Сейчас проверить новые иски → беседа судей",
-                10,
+                AccessLevel.DEVELOPER,
             ),
         ),
     ),
@@ -318,11 +319,14 @@ async def build_help_text_for_user(user_id: int, server_id: int) -> str:
         )
     return (
         f"{body}"
-        "🌐 — всем  ·  1️⃣–9️⃣ — мин. уровень  ·  🏛 — доступ ЦА (ур. 1–4)\n"
+        "🌐 — всем  ·  1️⃣–9️⃣ / 🅰️ — мин. уровень  ·  🏛 — доступ ЦА (ур. 1–4)\n"
         "⚖️ — судебный доступ к форуму  ·  / и !"
     )
 
 
 def build_dev_help_text() -> str:
-    body = _format_categories(DEV_HELP_CATEGORIES, header="🛠 Dev-команды (ур. 10)")
+    body = _format_categories(
+        DEV_HELP_CATEGORIES,
+        header=f"🛠 Dev-команды (ур. {AccessLevel.DEVELOPER})",
+    )
     return f"{body}🔟 — только разработчик  ·  / и !"

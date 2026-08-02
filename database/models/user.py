@@ -7,30 +7,32 @@ from tortoise.models import Model
 
 
 class AccessLevel:
-    """Числовые уровни доступа (1–10)."""
+    """Числовые уровни доступа (1–11)."""
 
     PGS = 1
     SUPERVISOR = 2
     ZGS = 3
     GS = 4
-    ZGS_GOS = 5
-    GS_GOS = 6
-    CURATOR = 7
-    ZGA = 8
-    GA = 9
-    DEVELOPER = 10
+    STRUCTURE_SUPERVISOR = 5  # Следящий структуры (между ГС сферы и ЗГС структуры)
+    ZGS_GOS = 6
+    GS_GOS = 7
+    CURATOR = 8
+    ZGA = 9
+    GA = 10
+    DEVELOPER = 11
 
     NAMES: dict[int, str] = {
         1: "ПГС",
         2: "Следящий",
         3: "ЗГС",
         4: "ГС",
-        5: "ЗГС ГОС",
-        6: "ГС ГОС",
-        7: "Куратор",
-        8: "ЗГА",
-        9: "ГА",
-        10: "Разработчик",
+        5: "Следящий структуры",
+        6: "ЗГС ГОС",
+        7: "ГС ГОС",
+        8: "Куратор",
+        9: "ЗГА",
+        10: "ГА",
+        11: "Разработчик",
     }
 
     @classmethod

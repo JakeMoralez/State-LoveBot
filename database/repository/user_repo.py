@@ -12,7 +12,7 @@ from database.models.user import AccessLevel, User, UserServerAccess
 class UserRepository:
     @staticmethod
     async def is_developer(vk_id: int) -> bool:
-        """Разработчик: MAIN_ADMIN_ID из .env или уровень 10 на любом сервере."""
+        """Разработчик: MAIN_ADMIN_ID из .env или уровень DEVELOPER на любом сервере."""
         if MAIN_ADMIN_ID and vk_id == MAIN_ADMIN_ID:
             return True
         return await UserServerAccess.filter(
@@ -108,7 +108,7 @@ class UserRepository:
 
     @staticmethod
     async def is_pingable_in_chat(vk_id: int, server_id: int) -> bool:
-        """7+ ур. не пингуются в /msg и /members; ур. 10 (разработчик) — исключение."""
+        """7+ ур. не пингуются в /msg и /members; разработчик (DEVELOPER) — исключение."""
         level = await UserRepository.get_access_level(vk_id, server_id)
         if level == AccessLevel.DEVELOPER:
             return True
