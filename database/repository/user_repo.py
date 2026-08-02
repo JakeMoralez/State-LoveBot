@@ -234,11 +234,11 @@ class UserRepository:
 
     @staticmethod
     async def can_use_ca_scope(vk_id: int, server_id: int) -> bool:
-        """Ур. 5+ — без флага ЦА; иначе — флаг has_ca_access (уровень может быть 0)."""
+        """Ур. 5+ (следящий структуры и выше) — без флага ЦА; иначе — флаг has_ca_access."""
         if await UserRepository.is_developer(vk_id):
             return True
         level = await UserRepository.get_access_level(vk_id, server_id)
-        if level >= AccessLevel.ZGS_GOS:
+        if level >= AccessLevel.STRUCTURE_SUPERVISOR:
             return True
         return await UserRepository.has_ca_access(vk_id, server_id)
 

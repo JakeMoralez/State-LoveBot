@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from database.models.user import User, UserServerAccess
+from database.models.user import AccessLevel, User, UserServerAccess
 from database.repository.user_repo import UserRepository
 from middlewares.access import AccessChecker
 from services.display_name import DisplayNameService
@@ -55,7 +55,7 @@ async def format_staff_list(server_id: int, api) -> str:
     lines = [f"🔐 Доступы ({len(rows)}):"]
     for user, level, access in rows:
         if await UserRepository.is_developer(user.vk_id):
-            level = max(level, 10)
+            level = max(level, AccessLevel.DEVELOPER)
         link = await names.link_user(user.vk_id, server_id)
         badges = format_access_badges(user, access)
         line = _format_staff_line(link, level, badges)

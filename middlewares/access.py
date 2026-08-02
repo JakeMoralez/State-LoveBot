@@ -191,7 +191,7 @@ def requires_developer(
         if not user_id or user_id <= 0:
             return None
         if not await UserRepository.is_developer(user_id):
-            await message.answer("⛔ Только разработчик (ур. 10).")
+            await message.answer(f"⛔ Только разработчик (ур. {AccessLevel.DEVELOPER}).")
             return None
         kwargs["server_id"] = await AccessChecker.resolve_server_id(
             message.peer_id,
