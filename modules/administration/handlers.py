@@ -29,6 +29,34 @@ def _parse_target_and_reason(args: str) -> tuple[str, str | None]:
     return target, parts[1] if len(parts) > 1 else None
 
 
+def _parse_poolkick_args(args: str) -> tuple[str, str | None, bool]:
+    """Цель, причина, флаг «1» = все зарегистрированные беседы сервера."""
+    text = args.strip()
+    if not text:
+        return "", None, False
+    parts = text.split()
+    all_chats = False
+    if parts and parts[-1] == "1":
+        all_chats = True
+        parts = parts[:-1]
+    if not parts:
+        return "", None, all_chats
+    target = VKResolver.extract_reference(parts[0])
+    reason = " ".join(parts[1:]).strip() or None
+    return target, reason, all_chats
+
+
+def _strip_all_chats_flag(text: str) -> tuple[str | None, bool]:
+    """Для ответа на сообщение: причина и опциональный флаг 1 в конце."""
+    parts = text.strip().split()
+    if not parts:
+        return None, False
+    if parts[-1] == "1":
+        reason = " ".join(parts[:-1]).strip() or None
+        return reason, True
+    return text.strip() or None, False
+
+
 def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> None:
     moderation = ModerationService(api)
     names = DisplayNameService(api)
@@ -168,8 +196,9 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
         access_level: int = 0,
     ) -> None:
         await message.answer(
-            "❌ /poolkick (/pkick) [ссылка vk.com/vk.ru|ID|@user] [причина]\n"
-            "Исключает из бесед текущего пула и общих *_gos (lead_gos, sled_gos…)."
+            "❌ /poolkick (/pkick) [ссылка|ID|@user] [причина] [1]\n"
+            "Без 1 — пул + *_gos. С 1 в конце — все зарегистрированные беседы сервера.\n"
+            "Ответом: /poolkick причина 1"
         )
 
     @bot.on.message(text=dual_with_args("poolkick", "<args>"))
@@ -181,16 +210,25 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
         access_level: int = 0,
     ) -> None:
         chat = await ChatRepository.get_by_peer_id(message.peer_id)
-        if not chat or not chat.pool_id:
-            await message.answer("❌ Беседа не привязана к пулу (/regchat).")
+        if not chat:
+            await message.answer("❌ Беседа не зарегистрирована (/regchat).")
             return
 
-        target_raw, reason = _parse_target_and_reason(args)
         reply_id = (
             message.reply_message.from_id
             if message.reply_message and message.reply_message.from_id > 0
             else None
         )
+        if reply_id:
+            reason, all_chats = _strip_all_chats_flag(args)
+            target_raw = str(reply_id)
+        else:
+            target_raw, reason, all_chats = _parse_poolkick_args(args)
+
+        if not all_chats and not chat.pool_id:
+            await message.answer("❌ Беседа не привязана к пулу (/regchat).")
+            return
+
         resolved = await VKResolver(api, server_id).resolve_from_message(
             target_raw,
             reply_from_id=reply_id,
@@ -201,13 +239,14 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
             return
 
         await chat.fetch_related("pool")
-        pool_name = chat.pool.name if chat.pool else str(chat.pool_id)
+        pool_name = chat.pool.name if chat.pool else str(chat.pool_id or "—")
         report = await moderation.pullkick(
             server_id=server_id,
             pool_id=chat.pool_id,
             actor_vk_id=message.from_id,
             target_vk_id=resolved.vk_id,
             reason=reason,
+            all_chats=all_chats,
         )
 
         judge_revoked = False
@@ -251,10 +290,11 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
             ),
             disable_mentions=1,
         )
+        scope = "все беседы сервера" if all_chats else f"пул {pool_name}"
         await action_logger.log_user(
             "poolkick",
             message.from_id,
-            f"id{resolved.vk_id}, пул {pool_name}" + (f", {reason}" if reason else ""),
+            f"id{resolved.vk_id}, {scope}" + (f", {reason}" if reason else ""),
             report.summary(),
             source_peer_id=message.peer_id,
         )

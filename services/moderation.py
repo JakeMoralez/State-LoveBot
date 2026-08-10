@@ -81,9 +81,12 @@ class PullKickReport:
     kicked: int = 0
     failed: int = 0
     gos_included: int = 0
+    all_chats: bool = False
     results: list[KickResult] = field(default_factory=list)
 
     def summary(self) -> str:
+        if self.all_chats:
+            return f"Исключён из {self.kicked}/{self.total} бесед сервера."
         if self.gos_included:
             return (
                 f"Исключён из {self.kicked}/{self.total} бесед "
@@ -91,7 +94,9 @@ class PullKickReport:
             )
         return f"Исключён из {self.kicked}/{self.total} бесед пула."
 
-    def _pool_label(self, pool_name: str) -> str:
+    def _scope_label(self, pool_name: str) -> str:
+        if self.all_chats:
+            return "сервера (все зарегистрированные)"
         if self.gos_included:
             return f"«{pool_name}» + gos ({self.gos_included})"
         return f"«{pool_name}»"
@@ -103,24 +108,26 @@ class PullKickReport:
         pool_name: str,
         reason: str | None = None,
     ) -> str:
-        pool_label = self._pool_label(pool_name)
+        scope_label = self._scope_label(pool_name)
         if self.total == 0:
+            if self.all_chats:
+                return "❌ На сервере нет зарегистрированных бесед."
             return "❌ В пуле нет зарегистрированных бесед."
 
         if self.kicked == self.total:
             header = (
                 f"✅ | {target_label} был(а) исключён(а) "
-                f"из всех конференций {pool_label}!"
+                f"из всех конференций {scope_label}!"
             )
         elif self.kicked > 0:
             header = (
                 f"⚠️ | {target_label} исключён(а) "
-                f"из {self.kicked}/{self.total} конференций {pool_label}"
+                f"из {self.kicked}/{self.total} конференций {scope_label}"
             )
         else:
             header = (
                 f"❌ | Не удалось исключить {target_label} "
-                f"из конференций {pool_label}"
+                f"из конференций {scope_label}"
             )
 
         lines = [header, "", "📂 Список конференций:"]
@@ -129,8 +136,8 @@ class PullKickReport:
             if item.success:
                 lines.append(f"• {name} — Исключён ✅")
             else:
-                reason = item.error or "Нет прав у бота"
-                lines.append(f"• {name} — {reason} ❌")
+                err = item.error or "Нет прав у бота"
+                lines.append(f"• {name} — {err} ❌")
 
         if reason:
             lines.extend(["", f"📝 Причина: {reason}"])
@@ -195,16 +202,23 @@ class ModerationService:
         self,
         *,
         server_id: int,
-        pool_id: int,
+        pool_id: int | None,
         actor_vk_id: int,
         target_vk_id: int,
         reason: str | None,
+        all_chats: bool = False,
     ) -> PullKickReport:
-        chats, gos_included = await ChatRepository.list_for_pullkick(
-            server_id,
-            pool_id,
-        )
-        report = PullKickReport(total=len(chats), gos_included=gos_included)
+        if all_chats:
+            chats = await ChatRepository.list_all_registered(server_id)
+            report = PullKickReport(total=len(chats), all_chats=True)
+        else:
+            if pool_id is None:
+                return PullKickReport(total=0)
+            chats, gos_included = await ChatRepository.list_for_pullkick(
+                server_id,
+                pool_id,
+            )
+            report = PullKickReport(total=len(chats), gos_included=gos_included)
 
         for chat in chats:
             result = await self.kick_from_chat(chat.peer_id, target_vk_id)
@@ -220,7 +234,7 @@ class ModerationService:
             pool_id=pool_id,
             actor_vk_id=actor_vk_id,
             target_vk_id=target_vk_id,
-            action="pullkick",
+            action="pullkick_all" if all_chats else "pullkick",
             reason=reason,
             success=report.kicked > 0,
             details=report.summary(),

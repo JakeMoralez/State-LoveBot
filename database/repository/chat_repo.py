@@ -94,6 +94,11 @@ class ChatRepository:
         return merged, gos_added
 
     @staticmethod
+    async def list_all_registered(server_id: int) -> list[Chat]:
+        """Все зарегистрированные беседы сервера (где бот привязан через /regchat)."""
+        return await Chat.filter(server_id=server_id).order_by("alias", "peer_id")
+
+    @staticmethod
     async def list_aliases(server_id: int, pool_id: int | None = None) -> list[Chat]:
         qs = Chat.filter(server_id=server_id).exclude(alias=None)
         if pool_id is not None:

@@ -102,7 +102,7 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
         "🛡 Модерация",
         (
             HelpEntry("/kick", "Исключить из беседы", 3),
-            HelpEntry("/poolkick", "Исключить из пула и *_gos бесед", 3),
+            HelpEntry("/poolkick", "Исключить из пула+*_gos; +1 — все беседы сервера", 3),
             HelpEntry("/mute", "Мут [@user] [время] [причина]", 2),
             HelpEntry("/unmute", "Снять мут", 2),
             HelpEntry("/stitle", "Название беседы", 3),
