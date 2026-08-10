@@ -11,10 +11,8 @@ from vkbottle import API, Callback, Keyboard, KeyboardButtonColor, OpenLink
 
 from config.settings import FORUM_BASE_URL, LEADER_COMPLAINT_FORUM_ID
 from database.models.leader_complaint import LeaderComplaintSeen
-from database.models.user import UserServerAccess
 from database.repository.chat_repo import ChatRepository
 from database.repository.server_repo import ServerRepository
-from services.display_name import DisplayNameService
 from services.forum_api import ForumService
 from services.server_display import format_server_label
 
@@ -31,7 +29,6 @@ COMPLAINT_WATCH_INTERVAL_SEC = max(
     int(os.getenv("COMPLAINT_WATCH_INTERVAL_SEC", "60") or "60"),
 )
 _RUK_GOS_ALIAS = "ruk_gos"
-_MAX_LEADER_PINGS = 20
 
 
 def _thread_url(thread_id: int) -> str:
@@ -56,21 +53,6 @@ def _new_complaint_keyboard(thread_id: int, server_id: int) -> str:
     return kb.get_json()
 
 
-async def _leader_ping_line(api: API, server_id: int) -> str:
-    rows = await UserServerAccess.filter(
-        server_id=server_id,
-        is_leader=True,
-    )
-    if not rows:
-        return ""
-    names = DisplayNameService(api, server_id)
-    links: list[str] = []
-    for access in rows[:_MAX_LEADER_PINGS]:
-        vk_id = int(access.user_id)
-        links.append(await names.mention_user(vk_id, server_id))
-    return " ".join(links)
-
-
 async def _format_new_complaint(
     api: API,
     row: dict[str, Any],
@@ -82,14 +64,11 @@ async def _format_new_complaint(
     author = (row.get("username_author") or "—").strip()
     prefix = (row.get("prefix") or "").strip()
 
-    ping = await _leader_ping_line(api, server_id)
-    lines: list[str] = []
-    if ping:
-        lines.extend([ping, ""])
-
-    lines.append("Новая жалоба на лидера")
-    lines.append("")
-    lines.append(title)
+    lines: list[str] = [
+        "Новая жалоба на лидера",
+        "",
+        title,
+    ]
     if prefix:
         lines.append(prefix)
     lines.append("")
@@ -272,7 +251,7 @@ class LeaderComplaintWatcher:
                         peer_id=peer_id,
                         message=text,
                         random_id=0,
-                        disable_mentions=0,
+                        disable_mentions=1,
                         keyboard=_new_complaint_keyboard(tid, server_id),
                     )
                     any_sent = True
