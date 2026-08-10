@@ -15,6 +15,7 @@ from vkbottle.dispatch.rules.base import FuncRule
 from database.repository.court_claim_repo import CourtClaimRepository
 from database.repository.forum_role_repo import ForumRoleRepository
 from database.repository.server_repo import ServerRepository
+from config.settings import LEADER_COMPLAINT_FORUM_ID
 from middlewares.access import AccessChecker, requires_developer
 from middlewares.action_logger import ActionLogger
 from middlewares.forum_access import ForumAccessChecker, requires_forum_user
@@ -30,6 +31,7 @@ logger = logging.getLogger(__name__)
 
 _FORUM_CALLBACK_CMDS = frozenset({"close", "open", "pin", "unpin"})
 _CLAIM_INFO_CMD = "claim_info"
+_COMPLAINT_INFO_CMD = "complaint_info"
 
 _ACTION_OK: dict[str, tuple[str, str]] = {
     "close": ("🔒", "Тема закрыта"),
@@ -605,6 +607,9 @@ def register_forum(
         if cmd == _CLAIM_INFO_CMD:
             await _handle_claim_info(event, forum, payload)
             return
+        if cmd == _COMPLAINT_INFO_CMD:
+            await _handle_complaint_info(event, forum, payload)
+            return
         if cmd not in _FORUM_CALLBACK_CMDS:
             return
 
@@ -763,6 +768,58 @@ async def _handle_claim_info(
         await event.send_message(detail, disable_mentions=1)
     except Exception as exc:
         logger.warning("claim_info send failed thread=%s: %s", thread_id, exc)
+        await event.show_snackbar("❌ Не удалось отправить карточку")
+        await event.send_empty_answer()
+        return
+    await event.send_empty_answer()
+
+
+async def _handle_complaint_info(
+    event: MessageEvent,
+    forum: ForumService,
+    payload: dict,
+) -> None:
+    if not await ForumRoleRepository.can_use_forum_bot(event.user_id):
+        await event.show_snackbar("⛔ Нет доступа к боту.")
+        return
+
+    if not forum.backend or not forum.api:
+        await event.show_snackbar("❌ Форум не подключён.")
+        return
+
+    thread_id = payload.get("thread_id")
+    if not thread_id:
+        await event.show_snackbar("❌ ID темы не найден")
+        return
+
+    server_id = int(payload.get("server_id") or 0)
+    if not server_id:
+        server_id = await AccessChecker.resolve_server_id(event.peer_id, event.user_id)
+
+    info, reconnected = await forum.get_thread_info_with_reconnect(int(thread_id))
+    if not info:
+        await event.show_snackbar(
+            forum.thread_not_found_message(int(thread_id), reconnected=reconnected)[:80]
+        )
+        await event.send_empty_answer()
+        return
+
+    category_id = int(info.get("category_id") or info.get("node_id") or 0)
+    if LEADER_COMPLAINT_FORUM_ID and category_id and category_id != LEADER_COMPLAINT_FORUM_ID:
+        await event.show_snackbar("⛔ Тема не из раздела жалоб на лидеров")
+        return
+
+    if category_id and not await ForumAccessChecker.is_thread_allowed(
+        event.user_id, category_id, server_id
+    ):
+        await event.show_snackbar("⛔ Нет доступа к разделу форума.")
+        return
+
+    detail = format_claim_detail(info)
+    try:
+        await event.send_message(detail, disable_mentions=1)
+    except Exception as exc:
+        logger.warning("complaint_info send failed thread=%s: %s", thread_id, exc)
         await event.show_snackbar("❌ Не удалось отправить карточку")
         await event.send_empty_answer()
         return

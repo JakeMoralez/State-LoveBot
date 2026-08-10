@@ -273,7 +273,7 @@ def register_pools(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         await message.answer(
             "❌ Использование: /regchat [ID/название пула] [алиас]\n"
             "Пример: /regchat 1 court\n"
-            "Алиасы: court, lead_co, lead_gos и т.д.\n"
+            "Алиасы: court, lead_co, lead_gos, ruk_gos и т.д.\n"
             "Ур. 10: /devhelp — /regchat logs"
         )
 

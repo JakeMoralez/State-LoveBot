@@ -56,8 +56,11 @@ FORUM_COOKIES: dict[str, str | None] = {
 }
 
 ATTORNEY_FORUM_ID: int = 3287
+# Жалобы на лидеров → беседа ruk_gos (https://forum.arizona-rp.com/forums/3303/)
+LEADER_COMPLAINT_FORUM_ID: int = int(os.getenv("LEADER_COMPLAINT_FORUM_ID", "3303") or "3303")
 LEADER_ALLOWED_FORUMS: list[int] = [
     2935, 2936, 2937, 2938, 2939, 2940, 2941, 2942, 2943, 2944, 2945,
+    LEADER_COMPLAINT_FORUM_ID,
 ]
 TECH_CHAT_ID: int = 2000000007
 
@@ -77,6 +80,7 @@ TORTOISE_ORM: dict = {
                 "database.models.chat_settings",
                 "database.models.judge_forum_list",
                 "database.models.court_claim",
+                "database.models.leader_complaint",
             ],
             "default_connection": "default",
         },

@@ -9,7 +9,7 @@ from typing import ParamSpec, TypeVar
 
 from vkbottle.bot import Message
 
-from config.settings import ATTORNEY_FORUM_ID, LEADER_ALLOWED_FORUMS
+from config.settings import ATTORNEY_FORUM_ID, LEADER_ALLOWED_FORUMS, LEADER_COMPLAINT_FORUM_ID
 from database.models.user import AccessLevel
 from database.repository.forum_role_repo import ForumRoleRepository
 from database.repository.server_repo import ServerRepository
@@ -46,6 +46,12 @@ class ForumAccessChecker:
             if level >= AccessLevel.SUPERVISOR and await UserRepository.can_use_ca_scope(
                 user_id, server_id
             ):
+                return True
+
+        if LEADER_COMPLAINT_FORUM_ID and forum_category_id == LEADER_COMPLAINT_FORUM_ID:
+            if await ForumRoleRepository.is_leader(user_id, server_id):
+                return True
+            if level >= AccessLevel.STRUCTURE_SUPERVISOR:
                 return True
 
         if await ForumRoleRepository.is_leader(user_id, server_id):

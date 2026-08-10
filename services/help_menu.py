@@ -206,6 +206,11 @@ DEV_HELP_CATEGORIES: tuple[HelpCategory, ...] = (
                 "Сейчас проверить новые иски → беседа судей",
                 AccessLevel.DEVELOPER,
             ),
+            HelpEntry(
+                "/complaintwatch · /checkcomplaints",
+                "Сейчас проверить жалобы на лидеров → ruk_gos",
+                AccessLevel.DEVELOPER,
+            ),
         ),
     ),
 )

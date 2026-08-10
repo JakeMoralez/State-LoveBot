@@ -49,6 +49,7 @@ COMMAND_ALIASES: dict[str, tuple[str, ...]] = {
     "syncjudges": ("courtupdate",),
     "claimfill": ("fillclaims", "courtstatfill"),
     "claimwatch": ("checkclaims", "watchclaims"),
+    "complaintwatch": ("checkcomplaints", "watchcomplaints"),
     "panel": ("login",),
     "editmydiscord": ("mydiscord", "discordid", "dsid"),
     "editmyforum": ("myforum", "forumid", "forumlink"),
