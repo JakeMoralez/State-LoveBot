@@ -20,6 +20,16 @@ SPHERE_LABELS: dict[str, str] = {
     SERVER: "Сервер",
 }
 
+ALL_SPHERE_KEYS: tuple[str, ...] = (
+    CENTRAL_APPARATUS,
+    JUSTICE,
+    DEFENSE,
+    HEALTH,
+    GOV_STRUCTURES,
+    ILLEGAL_STRUCTURES,
+    SERVER,
+)
+
 
 def format_spheres_display(spheres: list[str]) -> str:
     if not spheres:

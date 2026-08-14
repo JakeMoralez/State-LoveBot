@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import sqlite3
 from datetime import UTC, datetime
@@ -97,6 +98,69 @@ def _read_staff_note_sync(vk_id: int, server_id: int) -> dict[str, str] | None:
         "note": (row[1] or "").strip(),
         "leader_note": (row[2] or "").strip(),
     }
+
+
+def _parse_spheres_json(raw: Any) -> list[str]:
+    if raw is None:
+        return []
+    if isinstance(raw, list):
+        return [str(x).strip() for x in raw if str(x).strip()]
+    text = str(raw).strip()
+    if not text:
+        return []
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return [str(x).strip() for x in parsed if str(x).strip()]
+
+
+def _read_staff_spheres_sync(vk_id: int, server_id: int) -> list[str]:
+    db_path = panel_db_path()
+    if not db_path:
+        return []
+    try:
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        try:
+            row = conn.execute(
+                """
+                SELECT spheres
+                FROM staff_notes
+                WHERE vk_id = ? AND server_id = ?
+                """,
+                (vk_id, server_id),
+            ).fetchone()
+        finally:
+            conn.close()
+    except Exception as exc:
+        logger.debug("panel staff_notes spheres read failed vk_id=%s: %s", vk_id, exc)
+        return []
+    if not row:
+        return []
+    return _parse_spheres_json(row[0])
+
+
+async def read_staff_spheres(vk_id: int, server_id: int) -> list[str]:
+    if is_postgres_url(PANEL_DATABASE_URL):
+        try:
+            row = await _pg_fetchrow(
+                """
+                SELECT spheres
+                FROM staff_notes
+                WHERE vk_id = $1 AND server_id = $2
+                """,
+                vk_id,
+                server_id,
+            )
+        except Exception as exc:
+            logger.debug("panel staff_notes spheres pg read failed vk_id=%s: %s", vk_id, exc)
+            return []
+        if not row:
+            return []
+        return _parse_spheres_json(row["spheres"])
+    return await asyncio.to_thread(_read_staff_spheres_sync, vk_id, server_id)
 
 
 async def read_staff_note(vk_id: int, server_id: int) -> dict[str, str] | None:

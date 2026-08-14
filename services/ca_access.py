@@ -95,7 +95,7 @@ async def handle_sled_ca_leave(peer_id: int, user_id: int, api: API) -> str | No
     if not changed:
         return None
 
-    if "доступ ЦА" in detail or "ур." in detail:
+    if detail == "ур. 1 и доступ ЦА":
         await sync_staff_spheres(user_id, grant_central_apparatus=False, server_id=server_id)
 
     link = await DisplayNameService(api, server_id).link_user(user_id, server_id)

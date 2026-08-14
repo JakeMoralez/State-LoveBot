@@ -121,7 +121,6 @@ async def sync_staff_spheres(
     grant_central_apparatus: bool,
     server_id: int | None = None,
 ) -> tuple[bool, str]:
-    """Синхронизация сферы «Центральный аппарат» с panel.db."""
     if not panel_api_configured():
         return True, ""
     url = f"{PANEL_INTERNAL_URL}/internal/staff-spheres/{vk_id}"
@@ -145,4 +144,50 @@ async def sync_staff_spheres(
                 return False, str(detail or resp.reason or "Ошибка панели")
     except Exception as exc:
         logger.warning("sync_staff_spheres vk=%s: %s", vk_id, exc)
+        return False, "Не удалось связаться с панелью."
+
+
+async def assign_staff_via_panel(
+    *,
+    actor_vk_id: int,
+    server_id: int,
+    vk_id: int,
+    nickname: str,
+    access_level: int,
+    spheres: list[str],
+    forum_account: str,
+    discord_id: str,
+) -> tuple[bool, dict | str]:
+    """POST /internal/staff-assign — назначение следящего с сайта."""
+    if not panel_api_configured():
+        return False, "Панель не настроена"
+
+    url = f"{PANEL_INTERNAL_URL}/internal/staff-assign"
+    payload = {
+        "actor_vk_id": actor_vk_id,
+        "vk_id": vk_id,
+        "nickname": nickname.strip(),
+        "access_level": access_level,
+        "spheres": spheres,
+        "forum_account": forum_account.strip(),
+        "discord_id": discord_id.strip(),
+    }
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                url,
+                json=payload,
+                params={"server_id": server_id},
+                headers=_headers(),
+                timeout=aiohttp.ClientTimeout(total=15),
+            ) as resp:
+                data = await resp.json(content_type=None)
+                if resp.status == 200 and isinstance(data, dict):
+                    return True, data
+                detail = data.get("detail") if isinstance(data, dict) else None
+                if isinstance(detail, list):
+                    detail = detail[0].get("msg") if detail else None
+                return False, str(detail or resp.reason or "Ошибка панели")
+    except Exception as exc:
+        logger.warning("assign_staff_via_panel vk=%s: %s", vk_id, exc)
         return False, "Не удалось связаться с панелью."

@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 from config.settings import MAIN_ADMIN_ID
 from database.models.server import Server
 from database.models.user import AccessLevel, User, UserServerAccess
+from database.spheres import CENTRAL_APPARATUS
+from services.panel_db import read_staff_spheres
 
 
 class UserRepository:
@@ -234,13 +236,33 @@ class UserRepository:
 
     @staticmethod
     async def can_use_ca_scope(vk_id: int, server_id: int) -> bool:
-        """Ур. 5+ (следящий структуры и выше) — без флага ЦА; иначе — флаг has_ca_access."""
+        """ЗГС+ (3+), ур. 5+ или флаг has_ca_access — доступ к общим беседам следящих."""
         if await UserRepository.is_developer(vk_id):
             return True
         level = await UserRepository.get_access_level(vk_id, server_id)
-        if level >= AccessLevel.STRUCTURE_SUPERVISOR:
+        if level >= AccessLevel.ZGS:
             return True
         return await UserRepository.has_ca_access(vk_id, server_id)
+
+    @staticmethod
+    async def _sled_ca_leave_preserves_access(
+        access: UserServerAccess,
+        spheres: list[str],
+    ) -> bool:
+        """Не снимать уровень/ЦА, если есть официальное назначение или вторая сфера."""
+        level = access.access_level
+        if level >= AccessLevel.ZGS_GOS:
+            return True
+        if level > AccessLevel.PGS:
+            return True
+        if access.granted_by is not None and access.granted_by > 0:
+            return True
+        non_ca = [s for s in spheres if s != CENTRAL_APPARATUS]
+        if len(non_ca) > 0:
+            return True
+        if len(spheres) > 1:
+            return True
+        return False
 
     @staticmethod
     async def can_use_portal(vk_id: int, server_id: int) -> bool:
@@ -287,20 +309,25 @@ class UserRepository:
         server_id: int,
         peer_id: int,
     ) -> tuple[bool, str]:
-        """Выход/кик из беседы след. ЦА: снять авто-уровень и ЦА (если выдано этой беседой)."""
+        """Выход/кик из беседы след. ЦА: снять только авто-выдачу этой беседы."""
         access = await UserServerAccess.get_or_none(user_id=vk_id, server_id=server_id)
         if not access:
             return False, ""
 
-        level = access.access_level
-        if level >= AccessLevel.ZGS_GOS:
+        if access.access_level >= AccessLevel.ZGS_GOS:
+            return False, ""
+
+        spheres = await read_staff_spheres(vk_id, server_id)
+        preserve = await UserRepository._sled_ca_leave_preserves_access(access, spheres)
+
+        if preserve:
+            if access.ca_auto_peer_id == peer_id:
+                access.ca_auto_peer_id = None
+                await access.save()
+                return True, "привязка к беседе след. ЦА"
             return False, ""
 
         if access.ca_auto_peer_id != peer_id:
-            if access.has_ca_access and level <= AccessLevel.PGS:
-                access.has_ca_access = False
-                await access.save()
-                return True, "доступ ЦА"
             return False, ""
 
         access.access_level = 0
@@ -334,7 +361,22 @@ class UserRepository:
             return None
         if not access.has_ca_access and not access.ca_auto_peer_id:
             return None
+
+        spheres = await read_staff_spheres(vk_id, server_id)
+        preserve = await UserRepository._sled_ca_leave_preserves_access(access, spheres)
         from_sled = bool(access.ca_auto_peer_id)
+
+        if preserve:
+            if access.ca_auto_peer_id:
+                access.ca_auto_peer_id = None
+                await access.save()
+                return "привязка к беседе след. ЦА"
+            if access.has_ca_access and CENTRAL_APPARATUS not in spheres:
+                access.has_ca_access = False
+                await access.save()
+                return "доступ ЦА"
+            return None
+
         access.has_ca_access = False
         if access.ca_auto_peer_id:
             access.access_level = 0

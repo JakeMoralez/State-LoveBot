@@ -72,7 +72,7 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
             ),
             HelpEntry("/getid", "ID беседы", public=True),
             HelpEntry("/find", "Поиск по нику или VK", public=True),
-            HelpEntry("/reg", "Дата регистрации VK", public=True),
+            HelpEntry("/regdate", "Дата регистрации VK", public=True),
             HelpEntry("/online", "Кто онлайн в беседе", public=True),
             HelpEntry("/help", "Список команд", public=True),
             HelpEntry("/ping", "Проверка бота и время работы", public=True),
@@ -122,6 +122,11 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
             HelpEntry("/regchat", "Привязать беседу к пулу", AccessLevel.ZGS_GOS),
             HelpEntry("/unregchat", "Отвязать беседу от пула", AccessLevel.ZGS_GOS),
             HelpEntry("/setlevel", f"Уровень [@user] [0–{AccessLevel.GA}]", AccessLevel.ZGS),
+            HelpEntry(
+                "/reg",
+                "Назначить следящего [@user] [ур.] [сферы] [имя] [forum] [discord]",
+                AccessLevel.ZGS,
+            ),
         ),
     ),
     HelpCategory(

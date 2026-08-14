@@ -14,6 +14,7 @@ from modules.congress.handlers import register_congress
 from modules.forum.handlers import register_forum
 from modules.forum_roles.handlers import register_forum_roles
 from modules.pools.handlers import register_pools
+from modules.profile.staff_reg import register_staff_reg
 from modules.profile.handlers import register_profile
 from modules.system.handlers import register_system
 from services.forum_api import ForumService
@@ -30,6 +31,7 @@ def register_all_modules(
     register_chat_admin(bot, api, action_logger)
     register_pools(bot, api, action_logger)
     register_profile(bot, api, action_logger)
+    register_staff_reg(bot, api, action_logger)
     register_administration(bot, api, action_logger)
     register_forum_roles(bot, api, action_logger)
     register_ca(bot, api, action_logger)

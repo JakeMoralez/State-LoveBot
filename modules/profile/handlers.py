@@ -433,6 +433,18 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             granted_by=message.from_id,
         )
 
+        nick_note = ""
+        if new_level > 0 and old_level > 0:
+            from services.staff_nickname_sync import sync_staff_nickname_tag
+
+            updated_nick = await sync_staff_nickname_tag(
+                resolved.vk_id,
+                server_id,
+                new_level,
+            )
+            if updated_nick:
+                nick_note = f"\n🏷 Ник: {updated_nick}"
+
         def level_label(lvl: int) -> str:
             if lvl <= 0:
                 return "нет доступа"
@@ -447,7 +459,7 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         )
         log_detail = "Снят" if new_level == 0 else "Выдан"
         await message.answer(
-            f"✅ {result_text}",
+            f"✅ {result_text}{nick_note}",
             disable_mentions=1,
         )
         await action_logger.log_user(

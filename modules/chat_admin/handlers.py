@@ -74,25 +74,25 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
         text = await admin.format_online_list(message.peer_id)
         await message.answer(text, disable_mentions=1)
 
-    @bot.on.message(text=dual("reg"))
+    @bot.on.message(text=dual("regdate"))
     @requires_public
-    async def reg_cmd(message: Message, server_id: int = 0, access_level: int = 0) -> None:
+    async def regdate_cmd(message: Message, server_id: int = 0, access_level: int = 0) -> None:
         if message.reply_message and message.reply_message.from_id > 0:
             target_id = message.reply_message.from_id
         elif message.from_id and message.from_id > 0:
             target_id = message.from_id
         else:
             await message.answer(
-                "❌ /reg [@user|vk.com|vk.ru]\n"
+                "❌ /regdate [@user|vk.com|vk.ru]\n"
                 "Или ответом на сообщение."
             )
             return
         text = await admin.format_registration_date(target_id)
         await message.answer(text, disable_mentions=1)
 
-    @bot.on.message(text=dual_with_args("reg", "<target>"))
+    @bot.on.message(text=dual_with_args("regdate", "<target>"))
     @requires_public
-    async def reg_date(
+    async def regdate_for_target(
         message: Message,
         target: str,
         server_id: int = 0,
