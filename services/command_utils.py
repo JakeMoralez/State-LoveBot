@@ -27,6 +27,7 @@ COMMAND_ALIASES: dict[str, tuple[str, ...]] = {
     "pools": ("pool",),
     "regdate": ("vkreg", "regvk"),
     "reg": ("regstaff", "regsled"),
+    "setsphere": ("sphere", "sph"),
     "regrole": ("regcourt", "regsledco", "regsledca"),
     "raccess": ("rrole",),
     "fclose": ("fclosed",),

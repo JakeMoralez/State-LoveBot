@@ -147,6 +147,46 @@ async def sync_staff_spheres(
         return False, "Не удалось связаться с панелью."
 
 
+async def set_staff_spheres_via_panel(
+    *,
+    actor_vk_id: int,
+    server_id: int,
+    vk_id: int,
+    spheres: list[str],
+    is_senior: bool | None = None,
+    senior_spheres: list[str] | None = None,
+) -> tuple[bool, dict | str]:
+    """PUT /internal/staff-spheres/{vk_id} — обновление сфер и старшего статуса."""
+    if not panel_api_configured():
+        return False, "Панель не настроена"
+
+    url = f"{PANEL_INTERNAL_URL}/internal/staff-spheres/{vk_id}"
+    payload: dict[str, object] = {"spheres": spheres}
+    if is_senior is not None:
+        payload["is_senior"] = is_senior
+    if senior_spheres is not None:
+        payload["senior_spheres"] = senior_spheres
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.put(
+                url,
+                json=payload,
+                params={"server_id": server_id},
+                headers=_headers(),
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                data = await resp.json(content_type=None)
+                if resp.status == 200 and isinstance(data, dict):
+                    return True, data
+                detail = data.get("detail") if isinstance(data, dict) else None
+                if isinstance(detail, list):
+                    detail = detail[0].get("msg") if detail else None
+                return False, str(detail or resp.reason or "Ошибка панели")
+    except Exception as exc:
+        logger.warning("set_staff_spheres_via_panel vk=%s: %s", vk_id, exc)
+        return False, "Не удалось связаться с панелью."
+
+
 async def assign_staff_via_panel(
     *,
     actor_vk_id: int,

@@ -26,8 +26,14 @@ from services.command_utils import (
 )
 from services.display_name import DisplayNameService
 from services.nickname import NicknameValidator
+from services.panel_client import set_staff_spheres_via_panel
 from services.profile_card import format_user_profile_card
 from services.staff_display import format_staff_list
+from services.staff_spheres import (
+    format_spheres_display,
+    parse_sphere_tokens,
+    validate_spheres,
+)
 from services.vk_resolver import VKResolver
 
 logger = logging.getLogger(__name__)
@@ -67,6 +73,28 @@ _VK_REF_ONLY = re.compile(
     rf"^(?:\[id(\d+)\|[^\]]+\]|@(\S+)|({_VK_REF}))$",
     re.IGNORECASE,
 )
+
+_SETSPHERE_USAGE = (
+    "❌ Использование: /setsphere [@user|vk.ru|id|ответ] [сферы] [+старший сферы]\n"
+    "Сферы: ца, мю, мо, мз, гос, нелег, server\n"
+    "Пример: /setsphere @id123 ца,мю +старший мю"
+)
+
+
+def _split_setsphere_payload(raw: str) -> tuple[str, str | None]:
+    text = (raw or "").strip()
+    if not text:
+        return "", None
+    for pattern in (
+        r"\s+\+старший\s*",
+        r"\s+\+сеньор\s*",
+        r"\s+(?:--senior|senior|сеньор)(?::|-)?\s*",
+        r"(?:\s+\|\s*|\|\s*)",
+    ):
+        parts = re.split(pattern, text, maxsplit=1, flags=re.IGNORECASE)
+        if len(parts) == 2:
+            return parts[0].strip(), parts[1].strip()
+    return text, None
 
 
 async def _parse_setnick(message: Message, api: API) -> tuple[int | None, str | None, str | None]:
@@ -467,6 +495,84 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             message.from_id,
             f"id{resolved.vk_id} → ур. {new_level}",
             log_detail,
+            source_peer_id=message.peer_id,
+        )
+
+    @bot.on.message(text=dual("setsphere"))
+    @requires_level(AccessLevel.ZGS)
+    async def setsphere_usage(
+        message: Message,
+        server_id: int = 0,
+        access_level: int = 0,
+    ) -> None:
+        await message.answer(_SETSPHERE_USAGE)
+
+    @bot.on.message(text=dual_with_args("setsphere", "<target> <spheres>"))
+    @requires_level(AccessLevel.ZGS)
+    async def set_sphere(
+        message: Message,
+        target: str,
+        spheres_text: str,
+        server_id: int = 0,
+        access_level: int = 0,
+    ) -> None:
+        main_text, senior_text = _split_setsphere_payload(spheres_text or "")
+        if not main_text:
+            await message.answer(_SETSPHERE_USAGE)
+            return
+
+        try:
+            spheres = validate_spheres(parse_sphere_tokens(main_text), access_level=access_level)
+        except ValueError as exc:
+            await message.answer(f"❌ {exc}")
+            return
+
+        senior_spheres: list[str] | None = None
+        is_senior = False
+        if senior_text:
+            try:
+                senior_spheres = validate_spheres(parse_sphere_tokens(senior_text), access_level=access_level)
+            except ValueError as exc:
+                await message.answer(f"❌ {exc}")
+                return
+            is_senior = True
+
+        resolver = VKResolver(api, server_id)
+        resolved, hint = await resolver.resolve_with_hint(target.strip(), server_id)
+        if hint:
+            await message.answer(hint, disable_mentions=1)
+            return
+        if not resolved:
+            await message.answer(
+                "❌ Пользователь не найден.\n"
+                "Укажите VK-ссылку, id или ник из /setnick."
+            )
+            return
+
+        ok, result = await set_staff_spheres_via_panel(
+            actor_vk_id=message.from_id or 0,
+            server_id=server_id,
+            vk_id=resolved.vk_id,
+            spheres=spheres,
+            is_senior=is_senior,
+            senior_spheres=senior_spheres,
+        )
+        if not ok:
+            await message.answer(f"❌ {result}")
+            return
+
+        granter = await names.link_user(message.from_id or 0, server_id)
+        target_link = await names.link_user(resolved.vk_id, server_id)
+        sphere_text = format_spheres_display(spheres)
+        msg = f"✅ {granter} обновил сферы у {target_link}: {sphere_text}"
+        if is_senior and senior_spheres:
+            msg += f"\n👑 Старший: {format_spheres_display(senior_spheres)}"
+        await message.answer(msg, disable_mentions=1)
+        await action_logger.log_user(
+            "set_sphere",
+            message.from_id,
+            f"id{resolved.vk_id} → сферы {sphere_text}{' | ' + format_spheres_display(senior_spheres) if senior_spheres else ''}",
+            "Обновлены сферы",
             source_peer_id=message.peer_id,
         )
 

@@ -86,6 +86,7 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
             HelpEntry("/who", "Карточка пользователя", public=True),
             HelpEntry("/members", "Участники беседы", public=True),
             HelpEntry("/staff", "Список доступов и ролей", 1),
+            HelpEntry("/setsphere", "Смена сфер [@user] [сферы] [senior: сферы]", AccessLevel.ZGS),
             HelpEntry(
                 "/editmydiscord",
                 "Привязать Discord ID для входа на сайт",
