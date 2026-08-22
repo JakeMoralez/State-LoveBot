@@ -9,6 +9,7 @@ from vkbottle.bot import Bot, Message
 
 from database.models.user import AccessLevel
 from database.repository.chat_repo import ChatRepository
+from database.repository.user_repo import UserRepository
 from middlewares.access import requires_level
 from middlewares.congress_access import requires_chat_kick
 from middlewares.action_logger import ActionLogger
@@ -16,6 +17,7 @@ from services.command_utils import dual, dual_with_args
 from services.display_name import DisplayNameService
 from services.moderation import ModerationService
 from services.role_chat_leave import revoke_judge_on_court_kick
+from services.staff_spheres import pool_alias_to_sphere
 from services.vk_resolver import VKResolver
 
 logger = logging.getLogger(__name__)
@@ -55,6 +57,42 @@ def _strip_all_chats_flag(text: str) -> tuple[str | None, bool]:
         reason = " ".join(parts[:-1]).strip() or None
         return reason, True
     return text.strip() or None, False
+
+
+async def _senior_poolkick_allowed(
+    actor_vk_id: int,
+    server_id: int,
+    chat: object | None,
+    *,
+    access_level: int,
+    all_chats: bool,
+) -> tuple[bool, str | None]:
+    if access_level >= AccessLevel.ZGS:
+        return True, None
+
+    if all_chats:
+        return False, "⛔ Старший следящий может /poolkick только в пределах своей сферы."
+
+    if not chat:
+        return False, "⛔ Беседа не привязана к пулу."
+
+    access = await UserRepository.get_server_access(actor_vk_id, server_id)
+    if not access or not getattr(access, "is_senior", False):
+        return False, "⛔ Только старший следящий может /poolkick в своей сфере."
+
+    senior_spheres = list(getattr(access, "senior_spheres", []) or [])
+    if not senior_spheres:
+        return False, "⛔ У вас нет назначенной senior-сферы для /poolkick."
+
+    pool_sphere = pool_alias_to_sphere(chat.alias, getattr(chat.pool, "name", None))
+    if pool_sphere is None:
+        return False, "⛔ Для этой беседы нельзя определить сферу пула."
+    if pool_sphere not in senior_spheres:
+        return False, (
+            "⛔ Вы старший только в своей сфере. "
+            f"Эта беседа относится к {pool_sphere}."
+        )
+    return True, None
 
 
 def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> None:
@@ -189,7 +227,7 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
             )
 
     @bot.on.message(text=dual("poolkick"))
-    @requires_level(AccessLevel.ZGS)
+    @requires_level(AccessLevel.PGS)
     async def poolkick_usage(
         message: Message,
         server_id: int = 0,
@@ -202,7 +240,7 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
         )
 
     @bot.on.message(text=dual_with_args("poolkick", "<args>"))
-    @requires_level(AccessLevel.ZGS)
+    @requires_level(AccessLevel.PGS)
     async def poolkick(
         message: Message,
         args: str,
@@ -229,6 +267,18 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
             await message.answer("❌ Беседа не привязана к пулу (/regchat).")
             return
 
+        await chat.fetch_related("pool")
+        allowed, err = await _senior_poolkick_allowed(
+            message.from_id,
+            server_id,
+            chat,
+            access_level=access_level,
+            all_chats=all_chats,
+        )
+        if not allowed:
+            await message.answer(err or "⛔ /poolkick недоступен в этом контексте.")
+            return
+
         resolved = await VKResolver(api, server_id).resolve_from_message(
             target_raw,
             reply_from_id=reply_id,
@@ -238,7 +288,6 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
             await message.answer("❌ Пользователь не найден.")
             return
 
-        await chat.fetch_related("pool")
         pool_name = chat.pool.name if chat.pool else str(chat.pool_id or "—")
         report = await moderation.pullkick(
             server_id=server_id,

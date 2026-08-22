@@ -499,7 +499,7 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         )
 
     @bot.on.message(FuncRule(lambda m: matches_cmd(m.text or "", "setsphere")))
-    @requires_level(AccessLevel.ZGS)
+    @requires_level(AccessLevel.PGS)
     async def set_sphere(
         message: Message,
         server_id: int = 0,
@@ -548,6 +548,10 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             )
             return
 
+        if resolved.vk_id != message.from_id and access_level < AccessLevel.ZGS:
+            await message.answer("❌ Сменить сферу другому можно только с уровня ЗГС.")
+            return
+
         ok, result = await set_staff_spheres_via_panel(
             actor_vk_id=message.from_id or 0,
             server_id=server_id,
@@ -560,10 +564,24 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             await message.answer(f"❌ {result}")
             return
 
+        nick_note = ""
+        try:
+            from services.staff_nickname_sync import sync_staff_nickname_tag
+
+            updated_nick = await sync_staff_nickname_tag(
+                resolved.vk_id,
+                server_id,
+                await UserRepository.get_access_level(resolved.vk_id, server_id),
+            )
+            if updated_nick:
+                nick_note = f"\n🏷 Ник: {updated_nick}"
+        except Exception:
+            logger.debug("sync_staff_nickname_tag after set_sphere failed", exc_info=True)
+
         granter = await names.link_user(message.from_id or 0, server_id)
         target_link = await names.link_user(resolved.vk_id, server_id)
         sphere_text = format_spheres_display(spheres)
-        msg = f"✅ {granter} обновил сферы у {target_link}: {sphere_text}"
+        msg = f"✅ {granter} обновил сферы у {target_link}: {sphere_text}{nick_note}"
         if is_senior and senior_spheres:
             msg += f"\n👑 Старший: {format_spheres_display(senior_spheres)}"
         await message.answer(msg, disable_mentions=1)

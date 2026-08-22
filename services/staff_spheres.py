@@ -42,14 +42,27 @@ _SPHERE_ALIASES: dict[str, str] = {
     "сервер": SERVER,
 }
 
+_POOL_TO_SPHERE: dict[str, str] = {
+    "cab_min": CENTRAL_APPARATUS,
+    "congress": CENTRAL_APPARATUS,
+    "court": CENTRAL_APPARATUS,
+    "info_court": CENTRAL_APPARATUS,
+    "lead_co": CENTRAL_APPARATUS,
+    "sled_co": CENTRAL_APPARATUS,
+    "lead_md": DEFENSE,
+    "sled_md": DEFENSE,
+    "lead_gos": GOV_STRUCTURES,
+    "sled_gos": GOV_STRUCTURES,
+    "ruk_gos": GOV_STRUCTURES,
+    "lead_mj": JUSTICE,
+    "sled_mj": JUSTICE,
+    "lead_mh": HEALTH,
+    "sled_mh": HEALTH,
+}
+
 
 def allowed_sphere_keys_for_level(level: int) -> tuple[str, ...]:
-    # Разработчик и роли уровня ЗГС+ должны иметь полный доступ к назначению сфер.
-    # Раньше проверка шла по ">= CURATOR" раньше остальных условий, и из-за этого
-    # высокие роли фактически попадали в ветку "только сервер".
-    if level >= AccessLevel.DEVELOPER:
-        return ALL_SPHERE_KEYS
-    if level >= AccessLevel.ZGS:
+    if level >= AccessLevel.DEVELOPER or level >= AccessLevel.ZGS:
         return ALL_SPHERE_KEYS
     if level >= AccessLevel.STRUCTURE_SUPERVISOR:
         return (
@@ -61,6 +74,28 @@ def allowed_sphere_keys_for_level(level: int) -> tuple[str, ...]:
             ILLEGAL_STRUCTURES,
         )
     return (CENTRAL_APPARATUS, JUSTICE, DEFENSE, HEALTH)
+
+
+def pool_alias_to_sphere(alias: str | None, pool_name: str | None = None) -> str | None:
+    text = " ".join(part for part in (alias or "", pool_name or "") if part).lower()
+    if not text:
+        return None
+    for alias_key, sphere in _POOL_TO_SPHERE.items():
+        if alias_key in text:
+            return sphere
+    if "ц" in text or "central" in text or "аппарат" in text:
+        return CENTRAL_APPARATUS
+    if "мю" in text or "justice" in text:
+        return JUSTICE
+    if "мо" in text or "defense" in text or "обор" in text:
+        return DEFENSE
+    if "мз" in text or "health" in text or "здрав" in text:
+        return HEALTH
+    if "гос" in text or "gov" in text or "государ" in text:
+        return GOV_STRUCTURES
+    if "нелег" in text or "illegal" in text:
+        return ILLEGAL_STRUCTURES
+    return None
 
 
 def parse_sphere_tokens(raw: str) -> list[str]:
@@ -119,7 +154,9 @@ def validate_spheres(spheres: list[str], access_level: int | None = None) -> lis
 
 
 __all__ = [
+    "allowed_sphere_keys_for_level",
     "format_spheres_display",
     "parse_sphere_tokens",
+    "pool_alias_to_sphere",
     "validate_spheres",
 ]
