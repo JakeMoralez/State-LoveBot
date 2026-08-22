@@ -44,10 +44,22 @@ _SPHERE_ALIASES: dict[str, str] = {
 
 
 def allowed_sphere_keys_for_level(level: int) -> tuple[str, ...]:
-    if level >= AccessLevel.CURATOR:
-        return (SERVER,)
+    # Разработчик и роли уровня ЗГС+ должны иметь полный доступ к назначению сфер.
+    # Раньше проверка шла по ">= CURATOR" раньше остальных условий, и из-за этого
+    # высокие роли фактически попадали в ветку "только сервер".
+    if level >= AccessLevel.DEVELOPER:
+        return ALL_SPHERE_KEYS
+    if level >= AccessLevel.ZGS:
+        return ALL_SPHERE_KEYS
     if level >= AccessLevel.STRUCTURE_SUPERVISOR:
-        return (GOV_STRUCTURES, ILLEGAL_STRUCTURES)
+        return (
+            CENTRAL_APPARATUS,
+            JUSTICE,
+            DEFENSE,
+            HEALTH,
+            GOV_STRUCTURES,
+            ILLEGAL_STRUCTURES,
+        )
     return (CENTRAL_APPARATUS, JUSTICE, DEFENSE, HEALTH)
 
 
