@@ -53,7 +53,7 @@ _WHO_EMOJIS = (
 
 _VK_REF = r"(?:https?://)?(?:m\.)?(?:vk\.com|vk\.ru)/(?:id\d+|[\w.]+)"
 _SETNICK_LEAD = re.compile(
-    rf"^(?:\[id(\d+)\|[^\]]+\]|@(\S+)|({_VK_REF}))(?:\s+)(.+)$",
+    rf"^(?:\[id(\d+)\|[^\]]+\]|@(\S+)|\[[^\]]+\]\((?:https?://)?(?:m\.)?(?:vk\.com|vk\.ru)/(?:id\d+|[\w.]+)\)|({_VK_REF}))(?:\s+)(.+)$",
     re.DOTALL | re.IGNORECASE,
 )
 
@@ -70,7 +70,7 @@ _NICK_TARGET_ERR = (
 )
 
 _VK_REF_ONLY = re.compile(
-    rf"^(?:\[id(\d+)\|[^\]]+\]|@(\S+)|({_VK_REF}))$",
+    rf"^(?:\[id(\d+)\|[^\]]+\]|@(\S+)|\[[^\]]+\]\((?:https?://)?(?:m\.)?(?:vk\.com|vk\.ru)/(?:id\d+|[\w.]+)\)|({_VK_REF}))$",
     re.IGNORECASE,
 )
 

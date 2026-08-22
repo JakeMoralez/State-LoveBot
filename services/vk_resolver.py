@@ -9,11 +9,13 @@ from vkbottle import API
 
 from database.repository.user_repo import UserRepository
 
-# [id123|name], @user, https://vk.com/... https://vk.ru/..., id123, 123456
+# [id123|name], @user, https://vk.com/... https://vk.ru/..., markdown-links
+# like [@user](https://vk.ru/user) or [id123|name](https://vk.ru/id123)
 VK_MENTION_RE = re.compile(
     r"(?:"
     r"\[id(\d+)\|[^\]]+\]"
     r"|@([a-zA-Z0-9_.]+)"
+    r"|\[[^\]]+\]\((?:https?://)?(?:m\.)?(?:vk\.com|vk\.ru)/(?:id(\d+)|([a-zA-Z0-9_.]+))\)"
     r"|(?:https?://)?(?:m\.)?(?:vk\.com|vk\.ru)/(?:id(\d+)|([a-zA-Z0-9_.]+))"
     r"|^id(\d+)$"
     r"|^(\d+)$"
@@ -36,8 +38,23 @@ class VKResolver:
 
     @staticmethod
     def parse_reference(raw: str) -> tuple[int | None, str | None]:
-        """Извлекает vk_id или screen_name из строки (в т.ч. vk.com / vk.ru)."""
+        """Извлекает vk_id или screen_name из строки (в т.ч. vk.com / vk.ru и markdown-ссылок)."""
         raw = raw.strip()
+        if not raw:
+            return None, None
+
+        markdown_match = re.search(
+            r"\[[^\]]+\]\((?:https?://)?(?:m\.)?(?:vk\.com|vk\.ru)/(?:id(\d+)|([a-zA-Z0-9_.]+))\)",
+            raw,
+            re.IGNORECASE,
+        )
+        if markdown_match:
+            url_id, url_screen = markdown_match.groups()
+            if url_id:
+                return int(url_id), None
+            if url_screen:
+                return None, url_screen
+
         match = VK_MENTION_RE.search(raw)
         if not match:
             if raw.isdigit():
@@ -46,7 +63,7 @@ class VKResolver:
                 return None, raw[1:]
             return None, raw
 
-        vk_id, screen, url_id, url_screen, id_prefix, digits = match.groups()
+        vk_id, screen, url_id, url_screen, md_url_id, md_url_screen, id_prefix, digits = match.groups()
         if vk_id:
             return int(vk_id), None
         if screen:
@@ -55,6 +72,10 @@ class VKResolver:
             return int(url_id), None
         if url_screen:
             return None, url_screen
+        if md_url_id:
+            return int(md_url_id), None
+        if md_url_screen:
+            return None, md_url_screen
         if id_prefix:
             return int(id_prefix), None
         if digits:
@@ -67,6 +88,15 @@ class VKResolver:
         raw = (raw or "").strip()
         if not raw:
             return ""
+
+        markdown_match = re.search(
+            r"\[[^\]]+\]\((?:https?://)?(?:m\.)?(?:vk\.com|vk\.ru)/(?:id\d+|[a-zA-Z0-9_.]+)\)",
+            raw,
+            re.IGNORECASE,
+        )
+        if markdown_match:
+            return markdown_match.group(0)
+
         match = VK_MENTION_RE.search(raw)
         if match:
             return match.group(0)

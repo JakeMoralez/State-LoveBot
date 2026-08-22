@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from database.models.user import AccessLevel
 from database.spheres import (
     ALL_SPHERE_KEYS,
@@ -50,16 +52,16 @@ def allowed_sphere_keys_for_level(level: int) -> tuple[str, ...]:
 
 
 def parse_sphere_tokens(raw: str) -> list[str]:
-    """'гос,нелег' или 'ца+мю' → ключи сфер."""
+    """Поддерживает 'ца, мю', 'ца мз', 'ца+мю', 'гос нелег' → ключи сфер."""
     text = (raw or "").strip()
     if not text:
-        raise ValueError("Укажите сферы через запятую (ца, мю, гос, …)")
-    parts = [p.strip().lower().replace(" ", "") for p in text.replace("+", ",").split(",")]
+        raise ValueError("Укажите сферы через запятую или пробел (ца, мю, гос, …)")
+
+    tokens = re.split(r"[,+\s]+", text.replace(";", ","))
+    parts = [p.strip().lower() for p in tokens if p and p.strip()]
     result: list[str] = []
     seen: set[str] = set()
     for part in parts:
-        if not part:
-            continue
         key = _SPHERE_ALIASES.get(part)
         if not key:
             if part in ALL_SPHERE_KEYS:
