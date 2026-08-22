@@ -498,24 +498,23 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             source_peer_id=message.peer_id,
         )
 
-    @bot.on.message(text=dual("setsphere"))
-    @requires_level(AccessLevel.ZGS)
-    async def setsphere_usage(
-        message: Message,
-        server_id: int = 0,
-        access_level: int = 0,
-    ) -> None:
-        await message.answer(_SETSPHERE_USAGE)
-
-    @bot.on.message(text=dual_with_args("setsphere", "<target> <spheres>"))
+    @bot.on.message(FuncRule(lambda m: matches_cmd(m.text or "", "setsphere")))
     @requires_level(AccessLevel.ZGS)
     async def set_sphere(
         message: Message,
-        target: str,
-        spheres_text: str,
         server_id: int = 0,
         access_level: int = 0,
     ) -> None:
+        args = strip_cmd(message.text or "", "setsphere")
+        if not args:
+            await message.answer(_SETSPHERE_USAGE)
+            return
+
+        target, _, spheres_text = args.partition(" ")
+        if not target or not spheres_text.strip():
+            await message.answer(_SETSPHERE_USAGE)
+            return
+
         main_text, senior_text = _split_setsphere_payload(spheres_text or "")
         if not main_text:
             await message.answer(_SETSPHERE_USAGE)
