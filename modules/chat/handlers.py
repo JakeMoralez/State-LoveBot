@@ -235,11 +235,7 @@ def register_chat(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             if not ok:
                 await asyncio.sleep(3)
                 ok, err = await chat_admin.mute_member(peer_id, member_id, seconds=None)
-            if ok:
-                server_id = await AccessChecker.resolve_server_id(peer_id)
-                link = await DisplayNameService(api, server_id).link_user(member_id)
-                await _send_text(peer_id, f"🔇 {link} — автомут при входе.")
-            else:
+            if not ok:
                 logger.warning(
                     "auto_mute_on_join failed peer=%s user=%s: %s",
                     peer_id,
