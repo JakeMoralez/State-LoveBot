@@ -86,7 +86,8 @@ async def handle_voluntary_leave(
     user_id: int,
 ) -> list[ChatNotice]:
     settings = await ChatSettingsRepository.get(peer_id)
-    if settings.rejoin_kick == GuardMode.OFF:
+    leave_mode = ChatSettingsRepository.effective_kick_on_leave(settings)
+    if leave_mode == GuardMode.OFF:
         return []
 
     names = DisplayNameService(api)
@@ -94,7 +95,7 @@ async def handle_voluntary_leave(
     link = await names.link_user(user_id)
     notices: list[ChatNotice] = []
 
-    if settings.rejoin_kick == GuardMode.ASK:
+    if leave_mode == GuardMode.ASK:
         notices.append(
             await build_rejoinkick_ask_leave(api, peer_id=peer_id, target_id=user_id)
         )
@@ -115,7 +116,8 @@ async def handle_member_joined(
         return []
 
     settings = await ChatSettingsRepository.get(peer_id)
-    if settings.rejoin_kick == GuardMode.OFF:
+    rejoin_mode = ChatSettingsRepository.effective_kick_on_rejoin(settings)
+    if rejoin_mode == GuardMode.OFF:
         await ChatSettingsRepository.clear_left_record(peer_id, invited_id)
         return []
 
@@ -126,14 +128,6 @@ async def handle_member_joined(
     moderation = ModerationService(api)
     invited_link = await names.link_user(invited_id)
     notices: list[ChatNotice] = []
-
-    if settings.rejoin_kick == GuardMode.ASK:
-        notices.append(
-            await build_rejoinkick_ask_rejoin(
-                api, peer_id=peer_id, target_id=invited_id
-            )
-        )
-        return notices
 
     result = await moderation.kick_from_chat(peer_id, invited_id)
     if result.success:

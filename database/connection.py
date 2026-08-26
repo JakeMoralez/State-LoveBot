@@ -336,9 +336,46 @@ async def _ensure_court_form_batch_column() -> None:
         pass
 
 
+async def _ensure_chat_settings_columns() -> None:
+    conn = Tortoise.get_connection("default")
+    for ddl in (
+        "ALTER TABLE chat_peer_settings ADD COLUMN kick_on_leave VARCHAR(8) NOT NULL DEFAULT 'off'",
+        "ALTER TABLE chat_peer_settings ADD COLUMN kick_on_rejoin VARCHAR(8) NOT NULL DEFAULT 'off'",
+        "ALTER TABLE chat_peer_settings ADD COLUMN auto_mute_on_join VARCHAR(8) NOT NULL DEFAULT 'off'",
+    ):
+        try:
+            await conn.execute_query(ddl)
+            logger.info("Миграция chat_peer_settings: %s", ddl.split("ADD COLUMN ")[1].split()[0])
+        except Exception:
+            pass
+    try:
+        await conn.execute_query(
+            """
+            UPDATE chat_peer_settings
+            SET kick_on_leave = rejoin_kick
+            WHERE (kick_on_leave IS NULL OR kick_on_leave = 'off')
+              AND rejoin_kick IS NOT NULL AND rejoin_kick != 'off'
+            """
+        )
+        await conn.execute_query(
+            """
+            UPDATE chat_peer_settings
+            SET kick_on_rejoin = CASE
+                WHEN rejoin_kick = 'ask' THEN 'on'
+                ELSE rejoin_kick
+            END
+            WHERE (kick_on_rejoin IS NULL OR kick_on_rejoin = 'off')
+              AND rejoin_kick IS NOT NULL AND rejoin_kick != 'off'
+            """
+        )
+    except Exception:
+        pass
+
+
 async def init_db() -> None:
     await Tortoise.init(config=TORTOISE_ORM)
     await Tortoise.generate_schemas(safe=True)
+    await _ensure_chat_settings_columns()
     sqlite = is_sqlite_url(DATABASE_URL)
     if sqlite:
         await _ensure_chat_alias_column()

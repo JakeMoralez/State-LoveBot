@@ -101,7 +101,7 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
             HelpEntry("/unpin", "Открепить сообщение", 2),
             HelpEntry("/del", "Удалить сообщение", 2),
             HelpEntry("/msg", "Оповещение в беседу", 1),
-            HelpEntry("/chatsettings", "Настройки беседы", 3),
+            HelpEntry("/chatsettings", "Настройки беседы (кик, автомут)", 3),
             HelpEntry("/rejoinkick", "Автокик при повторном входе", 3),
         ),
     ),

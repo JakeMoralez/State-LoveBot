@@ -188,7 +188,8 @@ def register_chat(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             target_link = await names.link_user(user_id)
 
             if voluntary:
-                if settings.rejoin_kick == GuardMode.OFF:
+                leave_mode = ChatSettingsRepository.effective_kick_on_leave(settings)
+                if leave_mode == GuardMode.OFF:
                     notices.append(f"➖ {target_link} покинул(а) беседу.")
             elif actor_id and actor_id > 0 and actor_id != user_id:
                 actor_link = await names.link_user(actor_id)
@@ -245,6 +246,24 @@ def register_chat(bot: Bot, api: API, action_logger: ActionLogger) -> None:
                 return
         except Exception as exc:
             logger.warning("invite guard failed peer=%s: %s", peer_id, exc)
+
+        try:
+            settings = await ChatSettingsRepository.get(peer_id)
+            if settings.auto_mute_on_join == GuardMode.ON:
+                ok, err = await moderation.mute_member(peer_id, member_id, seconds=0)
+                if ok:
+                    server_id = await AccessChecker.resolve_server_id(peer_id)
+                    link = await DisplayNameService(api, server_id).link_user(member_id)
+                    await _send_text(peer_id, f"🔇 {link} — автомут при входе.")
+                else:
+                    logger.warning(
+                        "auto_mute_on_join failed peer=%s user=%s: %s",
+                        peer_id,
+                        member_id,
+                        err,
+                    )
+        except Exception as exc:
+            logger.warning("auto_mute_on_join peer=%s member=%s: %s", peer_id, member_id, exc)
 
         try:
             sled_notice = await handle_sled_ca_join(peer_id, member_id, api)

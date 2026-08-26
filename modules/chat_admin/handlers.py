@@ -2,18 +2,33 @@
 
 from __future__ import annotations
 
+import json
 import logging
 
-from vkbottle import API
-from vkbottle.bot import Bot, Message
+from vkbottle import API, GroupEventType
+from vkbottle.bot import Bot, Message, MessageEvent
+from vkbottle.dispatch.rules.base import FuncRule
 
+from database.models.chat_settings import GuardMode
 from database.models.user import AccessLevel
 from database.repository.chat_repo import ChatRepository
 from database.repository.chat_settings_repo import ChatSettingsRepository
 from middlewares.access import requires_level, requires_public
 from middlewares.action_logger import ActionLogger
 from services.chat_admin import ChatAdminService
-from services.command_utils import dual, dual_with_args
+from services.chat_settings_keyboard import create_open_edit_keyboard, create_value_keyboard
+from services.chat_settings_pending import clear as clear_chat_settings_session
+from services.chat_settings_pending import get as get_chat_settings_session
+from services.chat_settings_pending import start_pick_setting
+from services.chat_settings_ui import (
+    CHAT_SETTINGS,
+    CHAT_SETTINGS_BY_NUMBER,
+    apply_setting,
+    format_setting_updated,
+    format_settings_edit_panel,
+    format_settings_overview,
+)
+from services.command_utils import dual, dual_with_args, strip_cmd
 from services.display_name import DisplayNameService
 from services.staff_hierarchy import can_act_on_target
 from services.vk_resolver import VKResolver
@@ -302,15 +317,104 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
         if not _require_chat(message):
             await message.answer("❌ Команда только в беседах.")
             return
-        s = await ChatSettingsRepository.get(message.peer_id)
-        repo = ChatSettingsRepository
+        clear_chat_settings_session(message.peer_id, message.from_id or 0)
+        text = await format_settings_overview(api, message.peer_id)
         await message.answer(
-            "⚙️ Настройки беседы:\n\n"
-            f"🔁 Выход из беседы: {repo.mode_label(s.rejoin_kick)}\n"
-            f"   on — кик при выходе\n"
-            f"   ask — кликабельный ник + кнопка «Кикнуть»\n"
-            f"   /rejoinkick on|off|ask"
+            text,
+            keyboard=create_open_edit_keyboard(),
+            disable_mentions=1,
         )
+
+    def _chat_settings_pick_rule(message: Message) -> bool:
+        if not _require_chat(message):
+            return False
+        user_id = message.from_id or 0
+        session = get_chat_settings_session(message.peer_id, user_id)
+        if not session or session.phase != "pick_setting":
+            return False
+        return (message.text or "").strip() in {"1", "2", "3"}
+
+    @bot.on.message(FuncRule(_chat_settings_pick_rule), blocking=True)
+    @requires_level(AccessLevel.ZGS)
+    async def chat_settings_pick_number(
+        message: Message,
+        server_id: int = 0,
+        access_level: int = 0,
+    ) -> None:
+        number = int((message.text or "").strip())
+        setting = CHAT_SETTINGS_BY_NUMBER.get(number)
+        if not setting:
+            await message.answer("❌ Нет такого пункта. Укажите 1, 2 или 3.")
+            return
+        await message.answer(
+            f"⚙ {setting.title}\nВыберите значение:",
+            keyboard=create_value_keyboard(setting.key),
+            disable_mentions=1,
+        )
+
+    @bot.on.raw_event(GroupEventType.MESSAGE_EVENT, MessageEvent, blocking=False)
+    async def chat_settings_callback(event: MessageEvent) -> None:
+        payload = event.payload
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except json.JSONDecodeError:
+                return
+        if not isinstance(payload, dict) or payload.get("cmd") != "chat_cfg":
+            return
+
+        if event.peer_id < 2_000_000_000:
+            await event.show_snackbar("❌ Только в беседах.")
+            return
+
+        from middlewares.access import AccessChecker
+
+        server_id = await AccessChecker.resolve_server_id(event.peer_id, event.user_id)
+        if await AccessChecker.get_level(event.user_id, server_id) < AccessLevel.ZGS:
+            await event.show_snackbar("⛔ Недостаточно прав.")
+            return
+
+        action = payload.get("action")
+        peer_id = event.peer_id
+
+        if action == "edit":
+            start_pick_setting(peer_id, event.user_id)
+            panel = await format_settings_edit_panel(api, peer_id)
+            await event.send_message(panel, disable_mentions=1)
+            await event.send_empty_answer()
+            return
+
+        if action == "set":
+            field = payload.get("key")
+            value = payload.get("value")
+            setting = CHAT_SETTINGS.get(str(field or ""))
+            if not setting or not value:
+                await event.show_snackbar("❌ Некорректный запрос.")
+                return
+            try:
+                await apply_setting(
+                    peer_id,
+                    setting.field,
+                    str(value),
+                    updated_by=event.user_id,
+                )
+            except ValueError as exc:
+                await event.show_snackbar(f"❌ {exc}")
+                return
+            clear_chat_settings_session(peer_id, event.user_id)
+            await event.send_message(
+                format_setting_updated(setting.field, str(value)),
+                disable_mentions=1,
+            )
+            await action_logger.log_user(
+                "chatsettings",
+                event.user_id,
+                f"{setting.slug}={value}",
+                "Изменено",
+                source_peer_id=peer_id,
+            )
+            await event.send_empty_answer()
+            return
 
     def _register_rejoin(cmd: str, field: str) -> None:
         @bot.on.message(text=dual(cmd))
@@ -347,9 +451,17 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
                 _field,
                 normalized,
                 updated_by=message.from_id,
+                allow_ask=_field == "kick_on_leave",
             )
-            await message.answer(
-                f"✅ /{_cmd} → {ChatSettingsRepository.mode_label(normalized)}"
+            if _field == "kick_on_leave":
+                settings = await ChatSettingsRepository.get(message.peer_id)
+                settings.rejoin_kick = normalized
+                await settings.save()
+            label = (
+                ChatSettingsRepository.leave_mode_label(normalized)
+                if _field == "kick_on_leave"
+                else ChatSettingsRepository.mode_label(normalized)
             )
+            await message.answer(f"✅ /{_cmd} → {label}")
 
-    _register_rejoin("rejoinkick", "rejoin_kick")
+    _register_rejoin("rejoinkick", "kick_on_leave")
