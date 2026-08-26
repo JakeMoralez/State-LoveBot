@@ -82,6 +82,8 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
             HelpEntry("/who", "Карточка пользователя", public=True),
             HelpEntry("/members", "Участники беседы", public=True),
             HelpEntry("/staff", "Список доступов и ролей", 1),
+            HelpEntry("/panelcheck", "Кто не зарегистрирован на сайте", AccessLevel.ZGS),
+            HelpEntry("/panelcheck chat", "Проверка только этой беседы", AccessLevel.ZGS),
             HelpEntry("/setsphere", "Назначить сферы", AccessLevel.ZGS),
             HelpEntry("/editmydiscord", "Привязать Discord", public=True),
             HelpEntry("/editmyforum", "Привязать форум", public=True),

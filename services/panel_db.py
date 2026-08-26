@@ -216,6 +216,72 @@ def _get_discord_link_sync(vk_id: int) -> tuple[str | None, str | None, str | No
     )
 
 
+def _discord_links_for_vk_ids_sync(vk_ids: list[int]) -> dict[int, str]:
+    if not vk_ids:
+        return {}
+    db_path = panel_db_path()
+    if not db_path:
+        return {}
+    placeholders = ",".join("?" for _ in vk_ids)
+    try:
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        try:
+            rows = conn.execute(
+                f"""
+                SELECT vk_id, discord_id
+                FROM discord_links
+                WHERE vk_id IN ({placeholders}) AND discord_id IS NOT NULL
+                """,
+                vk_ids,
+            ).fetchall()
+        finally:
+            conn.close()
+    except Exception as exc:
+        logger.debug("panel discord bulk read failed: %s", exc)
+        return {}
+    result: dict[int, str] = {}
+    for vk_id, discord_id in rows:
+        if discord_id:
+            result[int(vk_id)] = str(discord_id).strip()
+    return result
+
+
+async def _pg_fetch(query: str, *args: Any) -> list[Any]:
+    import asyncpg
+
+    conn = await asyncpg.connect(_postgres_dsn(PANEL_DATABASE_URL))
+    try:
+        return await conn.fetch(query, *args)
+    finally:
+        await conn.close()
+
+
+async def discord_links_for_vk_ids(vk_ids: list[int]) -> dict[int, str]:
+    """vk_id → discord_id для проверки регистрации на сайте."""
+    unique = sorted({int(v) for v in vk_ids if v})
+    if not unique:
+        return {}
+    if is_postgres_url(PANEL_DATABASE_URL):
+        try:
+            rows = await _pg_fetch(
+                """
+                SELECT vk_id, discord_id
+                FROM discord_links
+                WHERE vk_id = ANY($1::bigint[]) AND discord_id IS NOT NULL
+                """,
+                unique,
+            )
+        except Exception as exc:
+            logger.debug("panel discord bulk pg read failed: %s", exc)
+            return {}
+        return {
+            int(row["vk_id"]): str(row["discord_id"]).strip()
+            for row in rows
+            if row["discord_id"]
+        }
+    return await asyncio.to_thread(_discord_links_for_vk_ids_sync, unique)
+
+
 async def get_discord_link_row(
     vk_id: int,
 ) -> tuple[str | None, str | None, str | None]:

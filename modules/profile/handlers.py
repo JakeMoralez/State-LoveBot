@@ -26,8 +26,10 @@ from services.command_utils import (
 )
 from services.display_name import DisplayNameService
 from services.nickname import NicknameValidator
+from services.panel_audit import format_portal_registration_audit, split_vk_message
 from services.panel_client import set_staff_spheres_via_panel
 from services.panel_db import read_staff_spheres
+from services.messaging import MessagingService
 from services.profile_card import format_user_profile_card
 from services.staff_display import format_staff_list
 from services.staff_spheres import (
@@ -364,6 +366,35 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
     ) -> None:
         text = await format_staff_list(server_id, api)
         await message.answer(text, disable_mentions=1)
+
+    _PANELCHECK_CHAT_ARGS = frozenset({"chat", "беседа", "here", "здесь"})
+
+    @bot.on.message(text=dual_args("panelcheck"))
+    @requires_level(AccessLevel.ZGS, require_registered=True)
+    async def panelcheck(
+        message: Message,
+        server_id: int = 0,
+        access_level: int = 0,
+    ) -> None:
+        args = strip_cmd(message.text or "", "panelcheck").strip().lower()
+        chat_only = args in _PANELCHECK_CHAT_ARGS
+
+        member_ids: set[int] | None = None
+        if chat_only:
+            if message.peer_id < 2_000_000_000:
+                await message.answer("❌ Режим chat — только в беседе.")
+                return
+            messaging = MessagingService(api)
+            member_ids = set(await messaging.get_member_ids(message.peer_id))
+
+        text = await format_portal_registration_audit(
+            server_id,
+            api,
+            chat_only=chat_only,
+            member_ids=member_ids,
+        )
+        for chunk in split_vk_message(text):
+            await message.answer(chunk, disable_mentions=1)
 
     @bot.on.message(FuncRule(lambda m: matches_who(m.text or "")))
     @requires_public
