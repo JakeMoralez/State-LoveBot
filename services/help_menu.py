@@ -77,7 +77,7 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
     HelpCategory(
         "👤 Профиль",
         (
-            HelpEntry("/setnick", "Установить ник", 1),
+            HelpEntry("/setnick", "[фракция] [9|10] Name_Surname", 1),
             HelpEntry("/rnick", "Снять ник", 1),
             HelpEntry("/who", "Карточка пользователя", public=True),
             HelpEntry("/members", "Участники беседы", public=True),
@@ -156,14 +156,6 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
         "⚖️ Судьи",
         (
             HelpEntry("/court", "Список судей", public=True),
-        ),
-    ),
-    HelpCategory(
-        "🛡 Лидеры",
-        (
-            HelpEntry("/addleader", "Добавить лидера", 2, ca=True),
-            HelpEntry("/removeleader", "Снять лидера", 2, ca=True),
-            HelpEntry("/leaders", "Список лидеров", public=True),
         ),
     ),
 )

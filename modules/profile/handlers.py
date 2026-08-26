@@ -61,9 +61,11 @@ _SETNICK_LEAD = re.compile(
 
 
 _SETNICK_FORMAT_ERR = (
-    "❌ Неверный формат.\n"
-    "Сначала пинг: @user, [id|имя] или vk.ru/…, затем ник.\n"
-    "Или ответом на сообщение."
+    "❌ /snick [@user] [тег] [ранг] Name_Surname\n"
+    "Фракция: [GOV] [9] Land_Sanchez\n"
+    "Роль: [Speaker] Name_Surname или [Speaker | LSPD][10] Name_Surname\n"
+    "Министр: [Pr.Min] Name_Surname\n"
+    "Пинг / ссылка / ответ на сообщение. Ник следящего — только с сайта."
 )
 
 _NICK_TARGET_ERR = (
@@ -267,9 +269,9 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             await message.answer(blocked, disable_mentions=1)
             return
 
-        ok, val_err = NicknameValidator.validate(nickname)
-        if not ok:
-            await message.answer(f"❌ {val_err}")
+        nickname, val_err = NicknameValidator.normalize(nickname)
+        if val_err or not nickname:
+            await message.answer(f"❌ {val_err or 'Неверный никнейм.'}")
             return
 
         if await UserRepository.has_nickname(target_id, server_id):
