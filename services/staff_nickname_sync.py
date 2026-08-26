@@ -39,6 +39,9 @@ async def sync_staff_nickname_tag(
         return None
 
     spheres = await read_staff_spheres(vk_id, server_id)
+    access = await UserRepository.get_server_access(vk_id, server_id)
+    is_senior = bool(access and getattr(access, "is_senior", False))
+    senior_spheres = list(getattr(access, "senior_spheres", []) or []) if access else []
 
     custom_tag: str | None = None
     if access_level >= AccessLevel.DEVELOPER:
@@ -50,6 +53,8 @@ async def sync_staff_nickname_tag(
             access_level,
             spheres,
             custom_tag=custom_tag,
+            is_senior=is_senior,
+            senior_spheres=senior_spheres if is_senior else None,
         )
     except ValueError as exc:
         logger.warning("sync_staff_nickname_tag vk=%s: %s", vk_id, exc)

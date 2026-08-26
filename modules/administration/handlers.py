@@ -17,7 +17,7 @@ from services.command_utils import dual, dual_with_args
 from services.display_name import DisplayNameService
 from services.moderation import ModerationService
 from services.role_chat_leave import revoke_judge_on_court_kick
-from services.staff_spheres import pool_alias_to_sphere
+from services.staff_spheres import format_spheres_display, pool_alias_to_sphere
 from services.vk_resolver import VKResolver
 
 logger = logging.getLogger(__name__)
@@ -70,27 +70,41 @@ async def _senior_poolkick_allowed(
     if access_level >= AccessLevel.ZGS:
         return True, None
 
+    if access_level < AccessLevel.SUPERVISOR:
+        return False, "⛔ /poolkick с уровня Следящий (2)+. Старший — только в своей сфере."
+
     if all_chats:
-        return False, "⛔ Старший следящий может /poolkick только в пределах своей сферы."
+        return False, "⛔ Старший следящий может /poolkick только в пределах своей сферы (без флага 1)."
 
     if not chat:
         return False, "⛔ Беседа не привязана к пулу."
 
-    access = await UserRepository.get_server_access(actor_vk_id, server_id)
-    if not access or not getattr(access, "is_senior", False):
-        return False, "⛔ Только старший следящий может /poolkick в своей сфере."
-
-    senior_spheres = list(getattr(access, "senior_spheres", []) or [])
+    is_senior, senior_spheres = await UserRepository.get_senior_status(actor_vk_id, server_id)
+    if not is_senior:
+        return False, (
+            "⛔ Нужен ЗГС+ или статус старшего следящего.\n"
+            "Выдать: /setsphere @user ца ст мю"
+        )
     if not senior_spheres:
-        return False, "⛔ У вас нет назначенной senior-сферы для /poolkick."
+        return False, (
+            "⛔ У вас нет сферы старшего для /poolkick.\n"
+            "Назначьте: /setsphere @вы ца ст мю"
+        )
 
-    pool_sphere = pool_alias_to_sphere(chat.alias, getattr(chat.pool, "name", None))
+    pool = getattr(chat, "pool", None)
+    pool_name = getattr(pool, "name", None) if pool else None
+    alias = getattr(chat, "alias", None)
+    pool_sphere = pool_alias_to_sphere(alias, pool_name)
     if pool_sphere is None:
-        return False, "⛔ Для этой беседы нельзя определить сферу пула."
+        return False, (
+            "⛔ Не удалось определить сферу этой беседы "
+            f"(alias={alias or '—'}, пул={pool_name or '—'})."
+        )
     if pool_sphere not in senior_spheres:
         return False, (
-            "⛔ Вы старший только в своей сфере. "
-            f"Эта беседа относится к {pool_sphere}."
+            "⛔ Вы старший только в: "
+            f"{format_spheres_display(senior_spheres)}. "
+            f"Эта беседа — {format_spheres_display([pool_sphere])}."
         )
     return True, None
 
@@ -227,7 +241,7 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
             )
 
     @bot.on.message(text=dual("poolkick"))
-    @requires_level(AccessLevel.PGS)
+    @requires_level(AccessLevel.SUPERVISOR)
     async def poolkick_usage(
         message: Message,
         server_id: int = 0,
@@ -235,12 +249,13 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
     ) -> None:
         await message.answer(
             "❌ /poolkick (/pkick) [ссылка|ID|@user] [причина] [1]\n"
-            "Без 1 — пул + *_gos. С 1 в конце — все зарегистрированные беседы сервера.\n"
-            "Ответом: /poolkick причина 1"
+            "ЗГС+ — любой пул. Старший следящий — только пул своей ст. сферы.\n"
+            "Без 1 — пул + *_gos. С 1 — все беседы сервера (только ЗГС+).\n"
+            "Ответом: /poolkick причина"
         )
 
     @bot.on.message(text=dual_with_args("poolkick", "<args>"))
-    @requires_level(AccessLevel.PGS)
+    @requires_level(AccessLevel.SUPERVISOR)
     async def poolkick(
         message: Message,
         args: str,

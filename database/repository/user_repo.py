@@ -192,6 +192,37 @@ class UserRepository:
         return await UserServerAccess.get_or_none(user_id=vk_id, server_id=server_id)
 
     @staticmethod
+    async def get_senior_status(vk_id: int, server_id: int) -> tuple[bool, list[str]]:
+        """(is_senior, senior_spheres) — безопасно, если колонок ещё нет."""
+        access = await UserRepository.get_server_access(vk_id, server_id)
+        if not access:
+            return False, []
+        try:
+            is_senior = bool(getattr(access, "is_senior", False))
+        except Exception:
+            return False, []
+        raw = getattr(access, "senior_spheres", None)
+        spheres: list[str] = []
+        if isinstance(raw, list):
+            spheres = [str(x).strip() for x in raw if str(x).strip()]
+        elif isinstance(raw, str) and raw.strip():
+            import json
+
+            try:
+                parsed = json.loads(raw)
+                if isinstance(parsed, list):
+                    spheres = [str(x).strip() for x in parsed if str(x).strip()]
+            except Exception:
+                spheres = []
+        if is_senior and not spheres:
+            # fallback: основные сферы из панели, если ст. сферы не записаны
+            try:
+                spheres = list(await read_staff_spheres(vk_id, server_id))
+            except Exception:
+                spheres = []
+        return is_senior, spheres
+
+    @staticmethod
     async def set_access_level(
         vk_id: int,
         server_id: int,

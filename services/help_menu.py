@@ -86,7 +86,7 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
             HelpEntry("/who", "Карточка пользователя", public=True),
             HelpEntry("/members", "Участники беседы", public=True),
             HelpEntry("/staff", "Список доступов и ролей", 1),
-            HelpEntry("/setsphere", "Смена сфер [@user] [сферы] [senior: сферы]", AccessLevel.ZGS),
+            HelpEntry("/setsphere", "Сферы [@user|ответ] ца мю [ст мю]", AccessLevel.ZGS),
             HelpEntry(
                 "/editmydiscord",
                 "Привязать Discord ID для входа на сайт",
@@ -103,7 +103,7 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
         "🛡 Модерация",
         (
             HelpEntry("/kick", "Исключить из беседы", 3),
-            HelpEntry("/poolkick", "Исключить из пула+*_gos; +1 — все беседы сервера", 3),
+            HelpEntry("/poolkick", "Пул+*_gos; старший — своя ст.сфера; +1 все беседы (ЗГС+)", AccessLevel.SUPERVISOR),
             HelpEntry("/mute", "Мут [@user] [время] [причина]", 2),
             HelpEntry("/unmute", "Снять мут", 2),
             HelpEntry("/stitle", "Название беседы", 3),

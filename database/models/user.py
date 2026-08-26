@@ -91,6 +91,8 @@ class UserServerAccess(Model):
     granted_at = fields.DatetimeField(auto_now_add=True)
     has_ca_access = fields.BooleanField(default=False)
     ca_auto_peer_id = fields.BigIntField(null=True)
+    is_senior = fields.BooleanField(default=False)
+    senior_spheres = fields.JSONField(default=list)
 
     class Meta:
         table = "user_server_access"

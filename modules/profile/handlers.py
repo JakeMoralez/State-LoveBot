@@ -75,26 +75,36 @@ _VK_REF_ONLY = re.compile(
 )
 
 _SETSPHERE_USAGE = (
-    "❌ Использование: /setsphere [@user|vk.ru|id|ответ] [сферы] [+старший сферы]\n"
-    "Сферы: ца, мю, мо, мз, гос, нелег, server\n"
-    "Пример: /setsphere @id123 ца,мю +старший мю"
+    "❌ /setsphere [пинг|ответ] сферы [ст сферы]\n"
+    "Сферы: ца мю мо мз гос нелег сервер\n"
+    "• /setsphere @user ца\n"
+    "• /setsphere @user ца мю\n"
+    "• /setsphere @user ца ст мю     — старший/совмещение\n"
+    "• /setsphere @user ца ст -      — снять старшего\n"
+    "• ответом: /setsphere ца ст мю"
+)
+
+# Разделитель: ст / старший / след (+старший для совместимости)
+_SENIOR_SPLIT_RE = re.compile(
+    r"(?:"
+    r"\s+(?:ст|старший|сеньор|след|следящий)(?:\s*[:＝=]|\s+)"
+    r"|\s+\+(?:старший|сеньор|след(?:ящий)?)\s*"
+    r"|\s+(?:--senior|senior)(?::|-)?\s*"
+    r"|\s+\|\s*"
+    r")",
+    re.IGNORECASE,
 )
 
 
 def _split_setsphere_payload(raw: str) -> tuple[str, str | None]:
+    """'ца мю ст мз' → ('ца мю', 'мз'); без ст → (весь текст, None)."""
     text = (raw or "").strip()
     if not text:
         return "", None
-    for pattern in (
-        r"\s+\+старший\s*",
-        r"\s+\+сеньор\s*",
-        r"\s+(?:--senior|senior|сеньор)(?::|-)?\s*",
-        r"(?:\s+\|\s*|\|\s*)",
-    ):
-        parts = re.split(pattern, text, maxsplit=1, flags=re.IGNORECASE)
-        if len(parts) == 2:
-            return parts[0].strip(), parts[1].strip()
-    return text, None
+    match = _SENIOR_SPLIT_RE.search(text)
+    if not match:
+        return text, None
+    return text[: match.start()].strip(), text[match.end() :].strip()
 
 
 async def _parse_setnick(message: Message, api: API) -> tuple[int | None, str | None, str | None]:
@@ -506,16 +516,26 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         access_level: int = 0,
     ) -> None:
         args = strip_cmd(message.text or "", "setsphere")
-        if not args:
+        reply_id = (
+            message.reply_message.from_id
+            if message.reply_message and message.reply_message.from_id > 0
+            else None
+        )
+        if reply_id:
+            payload = (args or "").strip()
+            target_ref = str(reply_id)
+        else:
+            if not args.strip():
+                await message.answer(_SETSPHERE_USAGE)
+                return
+            resolver_tmp = VKResolver(api, server_id)
+            target_ref = resolver_tmp.extract_reference(args)
+            payload = args.replace(target_ref, "", 1).strip() if target_ref else ""
+        if not payload:
             await message.answer(_SETSPHERE_USAGE)
             return
 
-        target, _, spheres_text = args.partition(" ")
-        if not target or not spheres_text.strip():
-            await message.answer(_SETSPHERE_USAGE)
-            return
-
-        main_text, senior_text = _split_setsphere_payload(spheres_text or "")
+        main_text, senior_text = _split_setsphere_payload(payload)
         if not main_text:
             await message.answer(_SETSPHERE_USAGE)
             return
@@ -527,24 +547,32 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             return
 
         senior_spheres: list[str] | None = None
-        is_senior = False
-        if senior_text:
-            try:
-                senior_spheres = validate_spheres(parse_sphere_tokens(senior_text), access_level=access_level)
-            except ValueError as exc:
-                await message.answer(f"❌ {exc}")
-                return
-            is_senior = True
+        is_senior: bool | None = None
+        if senior_text is not None:
+            cleared = senior_text.strip().lower() in ("", "-", "нет", "0", "off")
+            if cleared:
+                is_senior = False
+                senior_spheres = []
+            else:
+                try:
+                    senior_spheres = validate_spheres(
+                        parse_sphere_tokens(senior_text),
+                        access_level=AccessLevel.SUPERVISOR,
+                    )
+                except ValueError as exc:
+                    await message.answer(f"❌ {exc}")
+                    return
+                is_senior = True
 
         resolver = VKResolver(api, server_id)
-        resolved, hint = await resolver.resolve_with_hint(target.strip(), server_id)
+        resolved, hint = await resolver.resolve_with_hint(target_ref.strip(), server_id)
         if hint:
             await message.answer(hint, disable_mentions=1)
             return
         if not resolved:
             await message.answer(
                 "❌ Пользователь не найден.\n"
-                "Укажите VK-ссылку, id или ник из /setnick."
+                "Укажите VK-ссылку, id, ник из /setnick или ответьте на сообщение."
             )
             return
 
@@ -583,7 +611,9 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         sphere_text = format_spheres_display(spheres)
         msg = f"✅ {granter} обновил сферы у {target_link}: {sphere_text}{nick_note}"
         if is_senior and senior_spheres:
-            msg += f"\n👑 Старший: {format_spheres_display(senior_spheres)}"
+            msg += f"\n👑 Старший / совмещение: {format_spheres_display(senior_spheres)}"
+        elif is_senior is False:
+            msg += "\n👑 Старший / совмещение снято"
         await message.answer(msg, disable_mentions=1)
         await action_logger.log_user(
             "set_sphere",

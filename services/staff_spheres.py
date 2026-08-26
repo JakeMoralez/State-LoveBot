@@ -83,17 +83,18 @@ def pool_alias_to_sphere(alias: str | None, pool_name: str | None = None) -> str
     for alias_key, sphere in _POOL_TO_SPHERE.items():
         if alias_key in text:
             return sphere
-    if "ц" in text or "central" in text or "аппарат" in text:
+    compact = re.sub(r"[\s_\-]+", "", text)
+    if any(token in text or token in compact for token in ("ца", "ca", "central", "аппарат", "cab")):
         return CENTRAL_APPARATUS
-    if "мю" in text or "justice" in text:
+    if any(token in text or token in compact for token in ("мю", "mj", "justice", "юстиц")):
         return JUSTICE
-    if "мо" in text or "defense" in text or "обор" in text:
+    if any(token in text or token in compact for token in ("мо", "md", "defense", "обор", "минобор")):
         return DEFENSE
-    if "мз" in text or "health" in text or "здрав" in text:
+    if any(token in text or token in compact for token in ("мз", "mh", "health", "здрав")):
         return HEALTH
-    if "гос" in text or "gov" in text or "государ" in text:
+    if any(token in text or token in compact for token in ("гос", "gos", "gov", "государ")):
         return GOV_STRUCTURES
-    if "нелег" in text or "illegal" in text:
+    if any(token in text or token in compact for token in ("нелег", "illegal", "нелегал")):
         return ILLEGAL_STRUCTURES
     return None
 
