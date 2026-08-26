@@ -7,7 +7,7 @@ import re
 from dataclasses import dataclass
 from vkbottle import API
 
-from config.settings import VK_GROUP_ID
+from config.settings import VK_GROUP_ID, VK_USER_TOKEN
 from database.repository.user_repo import UserRepository
 from services.display_name import DisplayNameService
 from services.vk_resolver import VKResolver
@@ -117,25 +117,41 @@ class ChatAdminService:
         peer_id: int,
         target_id: int,
         *,
-        seconds: int,
+        seconds: int | None,
     ) -> tuple[bool, str]:
-        params = {
+        params: dict[str, object] = {
             "peer_id": peer_id,
             "member_ids": str(target_id),
             "action": "ro",
-            "for": seconds,
         }
-        if VK_GROUP_ID:
-            params["group_id"] = VK_GROUP_ID
-        try:
-            await self.api.request(
-                "messages.changeConversationMemberRestrictions",
-                params,
-            )
-            return True, ""
-        except Exception as exc:
-            logger.warning("mute failed peer=%s target=%s: %s", peer_id, target_id, exc)
-            return False, str(exc)
+        if seconds is not None and seconds > 0:
+            params["for"] = seconds
+
+        apis: list[tuple[API, bool]] = [(self.api, True)]
+        if VK_USER_TOKEN:
+            apis.append((API(token=VK_USER_TOKEN), False))
+
+        last_err = ""
+        for api, use_group_id in apis:
+            call_params = dict(params)
+            if use_group_id and VK_GROUP_ID:
+                call_params["group_id"] = VK_GROUP_ID
+            try:
+                await api.request(
+                    "messages.changeConversationMemberRestrictions",
+                    call_params,
+                )
+                return True, ""
+            except Exception as exc:
+                last_err = str(exc)
+                logger.warning(
+                    "mute failed peer=%s target=%s group=%s: %s",
+                    peer_id,
+                    target_id,
+                    use_group_id,
+                    exc,
+                )
+        return False, last_err or "Нет прав у бота на мут"
 
     async def unmute_member(self, peer_id: int, target_id: int) -> tuple[bool, str]:
         params = {

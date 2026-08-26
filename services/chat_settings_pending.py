@@ -33,6 +33,16 @@ def _key(peer_id: int, user_id: int) -> tuple[int, int]:
     return peer_id, user_id
 
 
+def register_owner(peer_id: int, user_id: int) -> None:
+    _cleanup()
+    _sessions[_key(peer_id, user_id)] = ChatSettingsSession(
+        peer_id=peer_id,
+        user_id=user_id,
+        phase="owner",
+        created_at=time.time(),
+    )
+
+
 def start_pick_setting(peer_id: int, user_id: int) -> None:
     _cleanup()
     _sessions[_key(peer_id, user_id)] = ChatSettingsSession(
@@ -50,3 +60,12 @@ def get(peer_id: int, user_id: int) -> ChatSettingsSession | None:
 
 def clear(peer_id: int, user_id: int) -> None:
     _sessions.pop(_key(peer_id, user_id), None)
+
+
+def is_callback_owner(actor_id: int, owner_id: object | None) -> bool:
+    if owner_id is None:
+        return False
+    try:
+        return int(owner_id) == actor_id
+    except (TypeError, ValueError):
+        return False

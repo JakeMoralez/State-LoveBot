@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 
@@ -25,6 +26,7 @@ from services.display_name import DisplayNameService
 from services.messaging import MessagingService
 from services.moderation import ModerationService
 from services.ca_access import handle_sled_ca_join, handle_sled_ca_leave
+from services.chat_admin import ChatAdminService
 from services.leader_access import handle_leader_chat_join
 from services.random_reactions import maybe_add_reaction
 from services.role_chat_leave import handle_role_chat_leave
@@ -35,6 +37,7 @@ logger = logging.getLogger(__name__)
 def register_chat(bot: Bot, api: API, action_logger: ActionLogger) -> None:
     messaging = MessagingService(api)
     moderation = ModerationService(api)
+    chat_admin = ChatAdminService(api)
 
     async def _send_notice(peer_id: int, notice: ChatNotice) -> None:
         kwargs: dict = {
@@ -222,6 +225,32 @@ def register_chat(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         except Exception as exc:
             logger.warning("role leave notice failed peer=%s user=%s: %s", peer_id, user_id, exc)
 
+    async def _apply_auto_mute_on_join(peer_id: int, member_id: int) -> None:
+        try:
+            settings = await ChatSettingsRepository.get(peer_id)
+            if settings.auto_mute_on_join != GuardMode.ON:
+                return
+            await asyncio.sleep(2)
+            ok, err = await chat_admin.mute_member(peer_id, member_id, seconds=None)
+            if not ok:
+                await asyncio.sleep(3)
+                ok, err = await chat_admin.mute_member(peer_id, member_id, seconds=None)
+            if ok:
+                server_id = await AccessChecker.resolve_server_id(peer_id)
+                link = await DisplayNameService(api, server_id).link_user(member_id)
+                await _send_text(peer_id, f"🔇 {link} — автомут при входе.")
+            else:
+                logger.warning(
+                    "auto_mute_on_join failed peer=%s user=%s: %s",
+                    peer_id,
+                    member_id,
+                    err,
+                )
+        except Exception as exc:
+            logger.warning(
+                "auto_mute_on_join peer=%s member=%s: %s", peer_id, member_id, exc
+            )
+
     async def _welcome_member(
         peer_id: int,
         member_id: int,
@@ -247,23 +276,7 @@ def register_chat(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         except Exception as exc:
             logger.warning("invite guard failed peer=%s: %s", peer_id, exc)
 
-        try:
-            settings = await ChatSettingsRepository.get(peer_id)
-            if settings.auto_mute_on_join == GuardMode.ON:
-                ok, err = await moderation.mute_member(peer_id, member_id, seconds=0)
-                if ok:
-                    server_id = await AccessChecker.resolve_server_id(peer_id)
-                    link = await DisplayNameService(api, server_id).link_user(member_id)
-                    await _send_text(peer_id, f"🔇 {link} — автомут при входе.")
-                else:
-                    logger.warning(
-                        "auto_mute_on_join failed peer=%s user=%s: %s",
-                        peer_id,
-                        member_id,
-                        err,
-                    )
-        except Exception as exc:
-            logger.warning("auto_mute_on_join peer=%s member=%s: %s", peer_id, member_id, exc)
+        asyncio.create_task(_apply_auto_mute_on_join(peer_id, member_id))
 
         try:
             sled_notice = await handle_sled_ca_join(peer_id, member_id, api)

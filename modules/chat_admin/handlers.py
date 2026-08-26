@@ -19,6 +19,8 @@ from services.chat_admin import ChatAdminService
 from services.chat_settings_keyboard import create_open_edit_keyboard, create_value_keyboard
 from services.chat_settings_pending import clear as clear_chat_settings_session
 from services.chat_settings_pending import get as get_chat_settings_session
+from services.chat_settings_pending import is_callback_owner
+from services.chat_settings_pending import register_owner
 from services.chat_settings_pending import start_pick_setting
 from services.chat_settings_ui import (
     CHAT_SETTINGS,
@@ -317,11 +319,12 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
         if not _require_chat(message):
             await message.answer("❌ Команда только в беседах.")
             return
-        clear_chat_settings_session(message.peer_id, message.from_id or 0)
+        owner_id = message.from_id or 0
+        register_owner(message.peer_id, owner_id)
         text = await format_settings_overview(api, message.peer_id)
         await message.answer(
             text,
-            keyboard=create_open_edit_keyboard(),
+            keyboard=create_open_edit_keyboard(owner_id),
             disable_mentions=1,
         )
 
@@ -346,9 +349,10 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
         if not setting:
             await message.answer("❌ Нет такого пункта. Укажите 1, 2 или 3.")
             return
+        owner_id = message.from_id or 0
         await message.answer(
             f"⚙ {setting.title}\nВыберите значение:",
-            keyboard=create_value_keyboard(setting.key),
+            keyboard=create_value_keyboard(setting.key, owner_id),
             disable_mentions=1,
         )
 
@@ -376,6 +380,12 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
 
         action = payload.get("action")
         peer_id = event.peer_id
+        owner_id = payload.get("owner")
+
+        if action in ("edit", "set") and not is_callback_owner(event.user_id, owner_id):
+            await event.show_snackbar("⛔ Только автор команды.")
+            await event.send_empty_answer()
+            return
 
         if action == "edit":
             start_pick_setting(peer_id, event.user_id)
