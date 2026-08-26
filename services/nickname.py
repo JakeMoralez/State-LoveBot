@@ -42,6 +42,8 @@ CONGRESS_ROLES: frozenset[str] = frozenset(
     }
 )
 
+JUDGE_ROLE = "Judge"
+
 MINISTER_TAGS: frozenset[str] = frozenset(
     {
         "Pr.Min",
@@ -62,6 +64,7 @@ _RANK_RE = re.compile(r"^\[(9|10)\]\s*")
 _FORMAT_HINT = (
     "Формат: [фракция] [9|10] Name_Surname\n"
     "Или: [Speaker] / [Speaker | LSPD][10] Name_Surname\n"
+    "Или: [Judge] Name_Surname\n"
     "Или: [Pr.Min] Name_Surname"
 )
 
@@ -98,6 +101,8 @@ def _canon_faction(raw: str) -> str | None:
 
 def _canon_congress_role(raw: str) -> str | None:
     cleaned = raw.strip()
+    if cleaned.casefold() == JUDGE_ROLE.casefold():
+        return JUDGE_ROLE
     for role in CONGRESS_ROLES:
         if cleaned.casefold() == role.casefold():
             return role
@@ -159,6 +164,8 @@ class NicknameValidator:
             faction = _canon_faction(right.strip())
             if role is None:
                 return None, "Роль: Speaker, Vice-Speaker или Congressman."
+            if role == JUDGE_ROLE:
+                return None, "Judge — только [Judge] Name_Surname, без фракции и ранга."
             if faction is None:
                 return None, "После | укажите фракцию из списка (GOV, LSPD, …)."
             rank_m = _RANK_RE.match(rest_after_first)
@@ -187,7 +194,7 @@ class NicknameValidator:
         if faction is None:
             return None, (
                 "Неизвестный тег. Используйте фракцию, Speaker/Vice-Speaker/"
-                f"Congressman или тег министра.\n{_FORMAT_HINT}"
+                f"Congressman/Judge или тег министра.\n{_FORMAT_HINT}"
             )
 
         rank_m = _RANK_RE.match(rest_after_first)

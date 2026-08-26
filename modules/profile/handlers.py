@@ -64,6 +64,7 @@ _SETNICK_FORMAT_ERR = (
     "❌ /snick [@user] [тег] [ранг] Name_Surname\n"
     "Фракция: [GOV] [9] Land_Sanchez\n"
     "Роль: [Speaker] Name_Surname или [Speaker | LSPD][10] Name_Surname\n"
+    "Судья: [Judge] Name_Surname\n"
     "Министр: [Pr.Min] Name_Surname\n"
     "Пинг / ссылка / ответ на сообщение. Ник следящего — только с сайта."
 )
