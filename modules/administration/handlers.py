@@ -5,9 +5,8 @@ from __future__ import annotations
 import json
 import logging
 
-from vkbottle import API
+from vkbottle import API, GroupEventType
 from vkbottle.bot import Bot, Message, MessageEvent
-from vkbottle.tools.dev.mini_types.base.message import GroupEventType
 
 from database.models.user import AccessLevel
 from database.repository.chat_repo import ChatRepository
