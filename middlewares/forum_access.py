@@ -75,7 +75,7 @@ def requires_court_manager(
         server_id = await AccessChecker.resolve_server_id(message.peer_id, user_id)
         if not await ForumAccessChecker.can_manage_court_roles(user_id, server_id):
             await message.answer(
-                "⛔ Требуется ЗГС (3+) и доступ ЦА (ур. 1–4) или ур. 5+."
+                "⛔ Нужен уровень ЗГС и доступ ЦА."
             )
             return None
 

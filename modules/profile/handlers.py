@@ -27,9 +27,11 @@ from services.command_utils import (
 from services.display_name import DisplayNameService
 from services.nickname import NicknameValidator
 from services.panel_client import set_staff_spheres_via_panel
+from services.panel_db import read_staff_spheres
 from services.profile_card import format_user_profile_card
 from services.staff_display import format_staff_list
 from services.staff_spheres import (
+    constrain_spheres_for_actor,
     format_spheres_display,
     parse_sphere_tokens,
     validate_spheres,
@@ -75,12 +77,11 @@ _VK_REF_ONLY = re.compile(
 )
 
 _SETSPHERE_USAGE = (
-    "❌ /setsphere [пинг|ответ] сферы [ст сферы]\n"
-    "Сферы: ца мю мо мз гос нелег сервер\n"
-    "• /setsphere @user ца\n"
+    "❌ /setsphere [@user] сферы [ст сферы]\n"
+    "Сферы: ца, мю, мо, мз, гос, нелег, сервер\n"
     "• /setsphere @user ца мю\n"
-    "• /setsphere @user ца ст мю     — старший/совмещение\n"
-    "• /setsphere @user ца ст -      — снять старшего\n"
+    "• /setsphere @user ца ст мю — старший\n"
+    "• /setsphere @user ца ст - — снять старшего\n"
     "• ответом: /setsphere ца ст мю"
 )
 
@@ -390,8 +391,8 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
     ) -> None:
         max_lvl = AccessLevel.GA if await UserRepository.is_developer(message.from_id or 0) else AccessLevel.ZGA
         await message.answer(
-            f"❌ Использование: /setlevel [vk.ru|ID|@user|ник] [0–{max_lvl}]\n"
-            "Нельзя выдать другому уровень равный или выше своего; себя понизить нельзя."
+            f"❌ /setlevel [@user] [0–{max_lvl}]\n"
+            "Нельзя выдать уровень равный или выше своего."
         )
 
     @bot.on.message(text=dual_with_args("setlevel", "<target> <level>"))
@@ -430,7 +431,7 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         if not resolved:
             await message.answer(
                 "❌ Пользователь не найден.\n"
-                "Укажите VK-ссылку, id или ник из /setnick."
+                "Укажите ссылку, @user или ник."
             )
             return
 
@@ -443,6 +444,19 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             return
 
         old_level = await UserRepository.get_access_level(resolved.vk_id, server_id)
+
+        if (
+            resolved.vk_id != message.from_id
+            and not is_dev
+            and old_level > 0
+            and old_level >= granter_level
+        ):
+            await message.answer(
+                "❌ Нельзя изменять уровень пользователя своего уровня или выше.\n"
+                f"Ваш уровень: {AccessChecker.level_name(granter_level)}, "
+                f"у цели: {AccessChecker.level_name(old_level)}."
+            )
+            return
 
         if old_level <= 0 and new_level > 0:
             from services.panel_login import PANEL_BASE_URL
@@ -509,12 +523,16 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         )
 
     @bot.on.message(FuncRule(lambda m: matches_cmd(m.text or "", "setsphere")))
-    @requires_level(AccessLevel.PGS)
+    @requires_level(AccessLevel.ZGS)
     async def set_sphere(
         message: Message,
         server_id: int = 0,
         access_level: int = 0,
     ) -> None:
+        actor_id = message.from_id or 0
+        if actor_id <= 0:
+            return
+
         args = strip_cmd(message.text or "", "setsphere")
         reply_id = (
             message.reply_message.from_id
@@ -530,9 +548,47 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
                 return
             resolver_tmp = VKResolver(api, server_id)
             target_ref = resolver_tmp.extract_reference(args)
-            payload = args.replace(target_ref, "", 1).strip() if target_ref else ""
+            if not target_ref:
+                await message.answer(_SETSPHERE_USAGE)
+                return
+            # Убираем только первое вхождение цели, чтобы не ломать payload
+            payload = args.strip()
+            if payload.startswith(target_ref):
+                payload = payload[len(target_ref) :].strip()
+            else:
+                payload = args.replace(target_ref, "", 1).strip()
         if not payload:
             await message.answer(_SETSPHERE_USAGE)
+            return
+
+        resolver = VKResolver(api, server_id)
+        resolved, hint = await resolver.resolve_with_hint(target_ref.strip(), server_id)
+        if hint:
+            await message.answer(hint, disable_mentions=1)
+            return
+        if not resolved:
+            await message.answer(
+                "❌ Пользователь не найден.\n"
+                "Укажите ссылку, @user, ник или ответьте на сообщение."
+            )
+            return
+
+        target_id = resolved.vk_id
+        is_self = target_id == actor_id
+        is_dev = await UserRepository.is_developer(actor_id)
+        actor_level = AccessLevel.DEVELOPER if is_dev else access_level
+        target_level = await UserRepository.get_access_level(target_id, server_id)
+
+        if not is_self and not is_dev and target_level >= actor_level:
+            await message.answer(
+                "❌ Нельзя менять сферы пользователя своего уровня или выше.\n"
+                f"Ваш уровень: {AccessChecker.level_name(actor_level)}, "
+                f"у цели: {AccessChecker.level_name(target_level)}."
+            )
+            return
+
+        if target_level < AccessLevel.PGS:
+            await message.answer("❌ У пользователя нет доступа следящего.")
             return
 
         main_text, senior_text = _split_setsphere_payload(payload)
@@ -541,7 +597,10 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             return
 
         try:
-            spheres = validate_spheres(parse_sphere_tokens(main_text), access_level=access_level)
+            # Сначала нормализация без tier-ограничения цели
+            spheres = validate_spheres(parse_sphere_tokens(main_text))
+            # Затем — что можно повесить на уровень цели
+            spheres = validate_spheres(spheres, access_level=target_level)
         except ValueError as exc:
             await message.answer(f"❌ {exc}")
             return
@@ -564,26 +623,38 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
                     return
                 is_senior = True
 
-        resolver = VKResolver(api, server_id)
-        resolved, hint = await resolver.resolve_with_hint(target_ref.strip(), server_id)
-        if hint:
-            await message.answer(hint, disable_mentions=1)
-            return
-        if not resolved:
-            await message.answer(
-                "❌ Пользователь не найден.\n"
-                "Укажите VK-ссылку, id, ник из /setnick или ответьте на сообщение."
-            )
-            return
+        if not is_dev:
+            try:
+                actor_spheres = await read_staff_spheres(actor_id, server_id)
+                target_current = await read_staff_spheres(target_id, server_id)
+                spheres = constrain_spheres_for_actor(
+                    actor_level,
+                    actor_spheres,
+                    target_current,
+                    spheres,
+                    target_level,
+                )
+                if is_senior and senior_spheres:
+                    from services.staff_spheres import effective_grantable_sphere_keys
 
-        if resolved.vk_id != message.from_id and access_level < AccessLevel.ZGS:
-            await message.answer("❌ Сменить сферу другому можно только с уровня ЗГС.")
-            return
+                    grantable = effective_grantable_sphere_keys(
+                        actor_level, actor_spheres
+                    )
+                    bad_senior = [s for s in senior_spheres if s not in grantable]
+                    if bad_senior:
+                        await message.answer(
+                            "❌ Старшие сферы можно ставить только из своих: "
+                            f"{format_spheres_display(bad_senior)}."
+                        )
+                        return
+            except ValueError as exc:
+                await message.answer(f"❌ {exc}")
+                return
 
         ok, result = await set_staff_spheres_via_panel(
-            actor_vk_id=message.from_id or 0,
+            actor_vk_id=actor_id,
             server_id=server_id,
-            vk_id=resolved.vk_id,
+            vk_id=target_id,
             spheres=spheres,
             is_senior=is_senior,
             senior_spheres=senior_spheres,
@@ -597,17 +668,17 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             from services.staff_nickname_sync import sync_staff_nickname_tag
 
             updated_nick = await sync_staff_nickname_tag(
-                resolved.vk_id,
+                target_id,
                 server_id,
-                await UserRepository.get_access_level(resolved.vk_id, server_id),
+                target_level,
             )
             if updated_nick:
                 nick_note = f"\n🏷 Ник: {updated_nick}"
         except Exception:
             logger.debug("sync_staff_nickname_tag after set_sphere failed", exc_info=True)
 
-        granter = await names.link_user(message.from_id or 0, server_id)
-        target_link = await names.link_user(resolved.vk_id, server_id)
+        granter = await names.link_user(actor_id, server_id)
+        target_link = await names.link_user(target_id, server_id)
         sphere_text = format_spheres_display(spheres)
         msg = f"✅ {granter} обновил сферы у {target_link}: {sphere_text}{nick_note}"
         if is_senior and senior_spheres:
@@ -617,8 +688,13 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         await message.answer(msg, disable_mentions=1)
         await action_logger.log_user(
             "set_sphere",
-            message.from_id,
-            f"id{resolved.vk_id} → сферы {sphere_text}{' | ' + format_spheres_display(senior_spheres) if senior_spheres else ''}",
+            actor_id,
+            f"id{target_id} → сферы {sphere_text}"
+            + (
+                f" | {format_spheres_display(senior_spheres)}"
+                if senior_spheres
+                else ""
+            ),
             "Обновлены сферы",
             source_peer_id=message.peer_id,
         )

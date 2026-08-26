@@ -62,18 +62,24 @@ _POOL_TO_SPHERE: dict[str, str] = {
 
 
 def allowed_sphere_keys_for_level(level: int) -> tuple[str, ...]:
-    if level >= AccessLevel.DEVELOPER or level >= AccessLevel.ZGS:
-        return ALL_SPHERE_KEYS
+    """1–4: министерства; 5–7: структуры; 8+: сервер. Как в панели."""
+    if level >= AccessLevel.CURATOR:
+        return (SERVER,)
     if level >= AccessLevel.STRUCTURE_SUPERVISOR:
-        return (
-            CENTRAL_APPARATUS,
-            JUSTICE,
-            DEFENSE,
-            HEALTH,
-            GOV_STRUCTURES,
-            ILLEGAL_STRUCTURES,
-        )
+        return (GOV_STRUCTURES, ILLEGAL_STRUCTURES)
     return (CENTRAL_APPARATUS, JUSTICE, DEFENSE, HEALTH)
+
+
+def effective_grantable_sphere_keys(actor_level: int, actor_spheres: list[str]) -> set[str]:
+    grantable = set(actor_spheres or [])
+    if actor_level >= AccessLevel.CURATOR:
+        grantable |= set(allowed_sphere_keys_for_level(AccessLevel.CURATOR))
+    elif actor_level >= AccessLevel.STRUCTURE_SUPERVISOR:
+        grantable |= {GOV_STRUCTURES, ILLEGAL_STRUCTURES}
+    elif actor_level >= AccessLevel.ZGS:
+        # ЗГС/ГС могут править свои сферы + tier министерств, которые у них есть
+        grantable |= set(actor_spheres or [])
+    return grantable
 
 
 def pool_alias_to_sphere(alias: str | None, pool_name: str | None = None) -> str | None:
@@ -103,20 +109,20 @@ def parse_sphere_tokens(raw: str) -> list[str]:
     """Поддерживает 'ца, мю', 'ца мз', 'ца+мю', 'гос нелег' → ключи сфер."""
     text = (raw or "").strip()
     if not text:
-        raise ValueError("Укажите сферы через запятую или пробел (ца, мю, гос, …)")
+        raise ValueError("Укажите сферы: ца, мю, мо, мз, гос, нелег, сервер")
 
     tokens = re.split(r"[,+\s]+", text.replace(";", ","))
     parts = [p.strip().lower() for p in tokens if p and p.strip()]
     result: list[str] = []
     seen: set[str] = set()
+    friendly = "ца, мю, мо, мз, гос, нелег, сервер"
     for part in parts:
         key = _SPHERE_ALIASES.get(part)
         if not key:
             if part in ALL_SPHERE_KEYS:
                 key = part
             else:
-                allowed = ", ".join(sorted(set(_SPHERE_ALIASES.keys())))
-                raise ValueError(f"Неизвестная сфера «{part}». Доступны: {allowed}")
+                raise ValueError(f"Неизвестная сфера «{part}». Доступны: {friendly}")
         if key not in seen:
             seen.add(key)
             result.append(key)
@@ -154,8 +160,46 @@ def validate_spheres(spheres: list[str], access_level: int | None = None) -> lis
     return result
 
 
+def constrain_spheres_for_actor(
+    actor_level: int,
+    actor_spheres: list[str],
+    target_current: list[str],
+    requested: list[str],
+    access_level: int,
+) -> list[str]:
+    """ЗГС/ГС меняет только свои сферы; выше — по tier."""
+    grantable = effective_grantable_sphere_keys(actor_level, actor_spheres)
+    current = set(target_current or [])
+    requested_set = set(requested or [])
+
+    locked = current - grantable
+    if not locked.issubset(requested_set):
+        missing = locked - requested_set
+        raise ValueError(
+            f"Нельзя снять сферу без прав: {format_spheres_display(sorted(missing))}"
+        )
+
+    added = requested_set - current
+    illegal_add = added - grantable
+    if illegal_add:
+        raise ValueError(
+            f"Можно выдавать только свои сферы: {format_spheres_display(sorted(illegal_add))}"
+        )
+
+    removed = current - requested_set
+    illegal_remove = removed - grantable
+    if illegal_remove:
+        raise ValueError(
+            f"Нельзя снять сферу без прав: {format_spheres_display(sorted(illegal_remove))}"
+        )
+
+    return validate_spheres(list(requested_set), access_level)
+
+
 __all__ = [
     "allowed_sphere_keys_for_level",
+    "constrain_spheres_for_actor",
+    "effective_grantable_sphere_keys",
     "format_spheres_display",
     "parse_sphere_tokens",
     "pool_alias_to_sphere",

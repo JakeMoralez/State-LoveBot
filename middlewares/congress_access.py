@@ -47,8 +47,8 @@ def requires_setnick(
         level = await AccessChecker.get_level(user_id, server_id)
         if level < AccessLevel.PGS:
             await message.answer(
-                f"⛔ Недостаточно прав.\n"
-                f"Требуется: ПГС (ур. {AccessLevel.PGS})\n"
+                "⛔ Недостаточно прав.\n"
+                f"Нужен уровень: ПГС\n"
                 f"Ваш уровень: {AccessChecker.level_name(level) if level else 'нет доступа'}"
             )
             return None
@@ -102,11 +102,11 @@ def requires_chat_kick(
             )
             if is_senior and senior_spheres:
                 if message.peer_id < 2_000_000_000:
-                    await message.answer("❌ /kick только в беседах.")
+                    await message.answer("❌ Команда только в беседах.")
                     return None
                 chat = await ChatRepository.get_by_peer_id(message.peer_id)
                 if not chat:
-                    await message.answer("❌ Беседа не зарегистрирована (/regchat).")
+                    await message.answer("❌ Беседа не зарегистрирована.")
                     return None
                 pool = getattr(chat, "pool", None)
                 pool_name = getattr(pool, "name", None) if pool else None
@@ -116,16 +116,14 @@ def requires_chat_kick(
                     kwargs["access_level"] = level
                     return await func(message, *args, **kwargs)
                 await message.answer(
-                    "⛔ Старший следящий может /kick только в беседах своей ст. сферы: "
-                    f"{format_spheres_display(senior_spheres)}.\n"
-                    f"Эта беседа: "
-                    f"{format_spheres_display([pool_sphere]) if pool_sphere else 'сфера не определена'}."
+                    "⛔ Можно кикать только в беседах своей сферы старшего.\n"
+                    f"Ваши сферы: {format_spheres_display(senior_spheres)}."
                 )
                 return None
 
         await message.answer(
-            f"⛔ Недостаточно прав.\n"
-            f"Нужен ЗГС (ур. {AccessLevel.ZGS}) или статус старшего следящего в этой сфере.\n"
+            "⛔ Недостаточно прав.\n"
+            "Нужен уровень ЗГС или статус старшего следящего в этой сфере.\n"
             f"Ваш уровень: {AccessChecker.level_name(level) if level else 'нет доступа'}"
         )
         return None
@@ -163,8 +161,8 @@ def requires_msg(
         level = await AccessChecker.get_level(user_id, server_id)
         if level < AccessLevel.PGS and not await UserRepository.is_developer(user_id):
             await message.answer(
-                f"⛔ Недостаточно прав.\n"
-                f"Требуется: ПГС (ур. {AccessLevel.PGS})\n"
+                "⛔ Недостаточно прав.\n"
+                f"Нужен уровень: ПГС\n"
                 f"Ваш уровень: {AccessChecker.level_name(level) if level else 'нет доступа'}"
             )
             return None

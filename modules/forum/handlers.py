@@ -90,8 +90,7 @@ def _parse_iski_arg(arg: str) -> tuple[str, object] | str:
     if parts[0].lower() in ("дни", "дней", "дня", "days", "day", "d"):
         if len(parts) < 2:
             return (
-                "Использование: /иски [страницы] · /иски 30д · "
-                "/иски 21.07.2026 · /иски 19.07.2026 21.07.2026"
+                "❌ /иски [страницы] · /иски 30д · /иски дата · /иски дата дата"
             )
         try:
             days = int(parts[1])
@@ -129,8 +128,7 @@ def _parse_iski_arg(arg: str) -> tuple[str, object] | str:
         pages = int(parts[0])
     except ValueError:
         return (
-            "Использование: /иски [1–20] · /иски 30д · "
-            "/иски 21.07.2026 · /иски 19.07.2026 21.07.2026"
+            "❌ /иски [страницы] · /иски 30д · /иски дата · /иски дата дата"
         )
     if pages < 1 or pages > 20:
         return "Укажите число страниц от 1 до 20."
@@ -234,7 +232,7 @@ def register_forum(
         thread_id = parse_forum_thread(message.text or "", ("info", "edit"))
         if not thread_id:
             await message.answer(
-                "❌ Использование: /info или /edit [ссылка/id темы]\n"
+                "❌ /info [@ссылка темы]\n"
                 "Пример: /info https://forum.arizona-rp.com/threads/11103806/"
             )
             return
@@ -452,8 +450,7 @@ def register_forum(
         if isinstance(parsed, str):
             await message.answer(
                 f"❌ {parsed}\n"
-                "Примеры: /иски 5 · /иски 30д · /иски 21.07.2026 · "
-                "/иски 19.07.2026 21.07.2026"
+                "Примеры: /иски 5 · /иски 30д · /иски 21.07.2026"
             )
             return
 

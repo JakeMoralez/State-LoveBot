@@ -15,16 +15,22 @@ from middlewares.action_logger import ActionLogger
 from services.command_utils import dual, dual_args, strip_cmd
 from services.display_name import DisplayNameService
 from services.panel_client import assign_staff_via_panel, panel_api_configured
-from services.staff_spheres import format_spheres_display, parse_sphere_tokens
+from services.panel_db import read_staff_spheres
+from services.staff_spheres import (
+    constrain_spheres_for_actor,
+    format_spheres_display,
+    parse_sphere_tokens,
+    validate_spheres,
+)
 from services.vk_resolver import VKResolver
 
 logger = logging.getLogger(__name__)
 
 _REG_USAGE = (
-    "❌ Использование: /reg [@user|vk.ru|id] [ур.] [сферы] [имя] [forum] [discord]\n"
-    "Сферы через запятую: ца, мю, мо, мз, гос, нелег, server\n"
-    "Пример: /reg @id123 5 гос Makoto 655354 987654321012345678\n"
-    "Имя в кавычках, если несколько слов: /reg @id123 1 ца,мю \"Иван Петров\" …"
+    "❌ /reg [@user] [уровень] [сферы] [имя] [forum] [discord]\n"
+    "Сферы: ца, мю, мо, мз, гос, нелег, сервер\n"
+    "Пример: /reg @user 2 ца Иван 655354 987654321012345678\n"
+    "Имя в кавычках, если несколько слов"
 )
 
 
@@ -150,6 +156,23 @@ def register_staff_reg(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             return
         if level >= granter_level:
             await message.answer("❌ Нельзя выдать уровень равный или выше своего.")
+            return
+
+        try:
+            spheres = validate_spheres(spheres, access_level=level)
+            if not is_dev:
+                actor_spheres = await read_staff_spheres(
+                    message.from_id or 0, server_id
+                )
+                spheres = constrain_spheres_for_actor(
+                    granter_level,
+                    actor_spheres,
+                    [],
+                    spheres,
+                    level,
+                )
+        except ValueError as exc:
+            await message.answer(f"❌ {exc}")
             return
 
         old_level = await UserRepository.get_access_level(resolved.vk_id, server_id)

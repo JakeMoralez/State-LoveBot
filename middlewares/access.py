@@ -109,9 +109,9 @@ def requires_level(
                 required = AccessChecker.level_name(min_level)
                 current = AccessChecker.level_name(level) if level else "нет доступа"
                 await message.answer(
-                    f"⛔ Недостаточно прав.\n"
-                    f"Требуется: {required} (ур. {min_level})\n"
-                    f"Ваш уровень: {current} (ур. {level})"
+                    "⛔ Недостаточно прав.\n"
+                    f"Нужен уровень: {required}\n"
+                    f"Ваш уровень: {current}"
                 )
                 logger.warning(
                     "Отказ в доступе: user=%s server=%s need=%s have=%s cmd=%s",
@@ -191,7 +191,7 @@ def requires_developer(
         if not user_id or user_id <= 0:
             return None
         if not await UserRepository.is_developer(user_id):
-            await message.answer(f"⛔ Только разработчик (ур. {AccessLevel.DEVELOPER}).")
+            await message.answer("⛔ Только для разработчика.")
             return None
         kwargs["server_id"] = await AccessChecker.resolve_server_id(
             message.peer_id,

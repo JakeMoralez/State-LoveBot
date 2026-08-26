@@ -10,11 +10,12 @@ from vkbottle.bot import Bot, Message
 from database.models.user import AccessLevel
 from database.repository.chat_repo import ChatRepository
 from database.repository.chat_settings_repo import ChatSettingsRepository
-from middlewares.access import AccessChecker, requires_level, requires_public
+from middlewares.access import requires_level, requires_public
 from middlewares.action_logger import ActionLogger
 from services.chat_admin import ChatAdminService
 from services.command_utils import dual, dual_with_args
 from services.display_name import DisplayNameService
+from services.staff_hierarchy import can_act_on_target
 from services.vk_resolver import VKResolver
 
 logger = logging.getLogger(__name__)
@@ -46,7 +47,7 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
     @requires_public
     async def find_usage(message: Message, server_id: int = 0, access_level: int = 0) -> None:
         await message.answer(
-            "❌ /find [ник / @user / vk.com|vk.ru / id]\n"
+            "❌ /find [ник / @user / ссылка]\n"
             "Пример: /find rp123"
         )
 
@@ -83,7 +84,7 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
             target_id = message.from_id
         else:
             await message.answer(
-                "❌ /regdate [@user|vk.com|vk.ru]\n"
+                "❌ /regdate [@user]\n"
                 "Или ответом на сообщение."
             )
             return
@@ -114,7 +115,7 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
     ) -> None:
         await message.answer(
             "❌ /mute [@user] [время] [причина]\n"
-            "Время: 30m, 1h, 2d или секунды.\n"
+            "Время: 30m, 1h, 2d\n"
             "Или ответом: /mute 30m спам"
         )
 
@@ -153,7 +154,25 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
                 return
 
         if not seconds or seconds < 1:
-            await message.answer("❌ Укажите время: 30m, 1h, 2d или секунды.")
+            await message.answer("❌ Укажите время: 30m, 1h, 2d.")
+            return
+
+        actor_id = message.from_id or 0
+        if target_id == actor_id:
+            await message.answer("❌ Нельзя выдать мут самому себе.")
+            return
+        allowed, hier_err = await can_act_on_target(
+            actor_id,
+            access_level,
+            target_id,
+            server_id,
+            on_equal_or_higher=(
+                "❌ Нельзя выдать мут пользователю своего уровня или выше."
+            ),
+            on_developer="❌ Нельзя выдать мут разработчику.",
+        )
+        if not allowed:
+            await message.answer(hier_err or "❌ Недостаточно прав.")
             return
 
         ok, err = await admin.mute_member(
@@ -201,6 +220,24 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
         target_id = await _resolve_target(message, target, server_id)
         if not target_id:
             await message.answer("❌ Пользователь не найден.")
+            return
+
+        actor_id = message.from_id or 0
+        if target_id == actor_id:
+            await message.answer("❌ Нельзя снять мут с самого себя этой командой.")
+            return
+        allowed, hier_err = await can_act_on_target(
+            actor_id,
+            access_level,
+            target_id,
+            server_id,
+            on_equal_or_higher=(
+                "❌ Нельзя снять мут с пользователя своего уровня или выше."
+            ),
+            on_developer="❌ Нельзя снять мут с разработчика.",
+        )
+        if not allowed:
+            await message.answer(hier_err or "❌ Недостаточно прав.")
             return
 
         ok, err = await admin.unmute_member(message.peer_id, target_id)

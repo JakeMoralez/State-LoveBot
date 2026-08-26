@@ -34,8 +34,7 @@ def requires_ca_scope(
         if not await UserRepository.can_use_ca_scope(user_id, server_id):
             await message.answer(
                 "⛔ Нужен доступ ЦА.\n"
-                "Ур. 1–4: беседа след. ЦА или панель State Love.\n"
-                "Ур. 5+ — без ограничения."
+                "Получите его в беседе след. ЦА или на сайте."
             )
             return None
 
@@ -72,9 +71,7 @@ def requires_ca_form_reviewer(
         )
         if not await can_review_court_forms(user_id, server_id):
             await message.answer(
-                "⛔ Модерация форм: нужен доступ ЦА и уровень 2+ (Следящий).\n"
-                "ЦА: беседа след. ЦА или панель State Love.\n"
-                "Ур. 5+ — доступ ЦА без отдельного флага."
+                "⛔ Модерация форм: нужен доступ ЦА и уровень Следящий."
             )
             return None
 

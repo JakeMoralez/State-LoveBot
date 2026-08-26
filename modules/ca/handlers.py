@@ -25,6 +25,7 @@ from services.panel_login import (
     panel_login_configured,
 )
 from services.self_access import revoke_accesses
+from services.staff_hierarchy import can_act_on_target
 
 _RACCESS_LABELS = {
     "судья": "⚖️ Судья",
@@ -122,11 +123,9 @@ async def _send_panel_login(
         level = await UserRepository.get_access_level(user_id, server_id)
         level_label = AccessChecker.level_name(level) if level else "нет доступа"
         await message.answer(
-            "⛔ Вход на портал недоступен.\n\n"
-            f"Ваш уровень: {level_label} ({level}).\n\n"
-            "Нужен уровень ПГС (1) или выше.\n"
-            "Если доступ должен быть — обратитесь к руководству вашей структуры.\n\n"
-            "Список команд бота: /help"
+            "⛔ Вход на сайт недоступен.\n"
+            f"Ваш уровень: {level_label}.\n"
+            "Нужен уровень ПГС или выше."
         )
         return
 
@@ -193,9 +192,9 @@ def register_ca(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         )
         if not reply_id and not (target_args and target_args.strip()):
             await message.answer(
-                "❌ /raccess [@user|ник] — снять роли с пользователя.\n"
-                "Или ответом на его сообщение.\n"
-                "Не с себя; нельзя снимать с уровня своего и выше."
+                "❌ /raccess [@user] — снять роли.\n"
+                "Или ответом на сообщение.\n"
+                "Нельзя снимать с себя и с равных/выше по уровню."
             )
             return
 
@@ -213,26 +212,26 @@ def register_ca(bot: Bot, api: API, action_logger: ActionLogger) -> None:
 
         target_id = resolved.vk_id
         if target_id == actor_id:
-            await message.answer("❌ /raccess — только с другого пользователя, не с себя.")
+            await message.answer("❌ Нельзя снять роли с себя.")
             return
 
         actor_level = access_level or await UserRepository.get_access_level(
             actor_id, server_id
         )
-        if not await UserRepository.is_developer(actor_id):
-            if await UserRepository.is_developer(target_id):
-                await message.answer("❌ Нельзя снять роли с разработчика.")
-                return
-            target_level = await UserRepository.get_access_level(target_id, server_id)
-            if target_level >= actor_level:
-                from middlewares.access import AccessChecker
-
-                await message.answer(
-                    "❌ Нельзя снять роли с пользователя своего уровня или выше.\n"
-                    f"Ваш: {AccessChecker.level_name(actor_level)} ({actor_level}), "
-                    f"у цели: {AccessChecker.level_name(target_level)} ({target_level})."
-                )
-                return
+        allowed, hier_err = await can_act_on_target(
+            actor_id,
+            actor_level,
+            target_id,
+            server_id,
+            on_equal_or_higher=(
+                "❌ Нельзя снять роли с пользователя своего уровня или выше."
+            ),
+            on_developer="❌ Нельзя снять роли с разработчика.",
+            skip_if_target_no_access=False,
+        )
+        if not allowed:
+            await message.answer(hier_err or "❌ Недостаточно прав.")
+            return
 
         removed = await revoke_accesses(target_id, server_id)
         if not removed:
@@ -291,13 +290,11 @@ def register_ca(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         access_level: int = 0,
     ) -> None:
         await message.answer(
-            "❌ Использование: /regrole [court|congress|sledca|leader]\n"
-            "Примеры:\n"
-            "• /regrole court — беседа судей\n"
-            "• /regrole congress — конгресс (алиас /msg: /regcongress имя)\n"
-            "• /regrole sledca — беседа след. ЦА (авто ур. 1 при входе)\n"
-            "• /regrole leader — беседа руководства ЦА (лидеры)\n"
-            "Алиасы: /regcourt, /regcongress, /regsledco"
+            "❌ /regrole [court|congress|sledca|leader]\n"
+            "• court — судьи\n"
+            "• congress — конгресс\n"
+            "• sledca — след. ЦА\n"
+            "• leader — руководство ЦА"
         )
 
     @bot.on.message(text=dual_with_args("regrole", "<role_type>"))

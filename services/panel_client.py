@@ -161,7 +161,10 @@ async def set_staff_spheres_via_panel(
         return False, "Панель не настроена"
 
     url = f"{PANEL_INTERNAL_URL}/internal/staff-spheres/{vk_id}"
-    payload: dict[str, object] = {"spheres": spheres}
+    payload: dict[str, object] = {
+        "actor_vk_id": actor_vk_id,
+        "spheres": spheres,
+    }
     if is_senior is not None:
         payload["is_senior"] = is_senior
     if senior_spheres is not None:

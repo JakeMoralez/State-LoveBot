@@ -10,13 +10,14 @@ from vkbottle.bot import Bot, Message
 from database.models.user import AccessLevel
 from database.repository.chat_repo import ChatRepository
 from database.repository.user_repo import UserRepository
-from middlewares.access import AccessChecker, requires_level
+from middlewares.access import requires_level
 from middlewares.congress_access import requires_chat_kick
 from middlewares.action_logger import ActionLogger
 from services.command_utils import dual, dual_with_args
 from services.display_name import DisplayNameService
 from services.moderation import ModerationService
 from services.role_chat_leave import revoke_judge_on_court_kick
+from services.staff_hierarchy import can_act_on_target
 from services.staff_spheres import format_spheres_display, pool_alias_to_sphere
 from services.vk_resolver import VKResolver
 
@@ -55,21 +56,14 @@ async def _can_kick_by_access(
     server_id: int,
 ) -> tuple[bool, str | None]:
     """Нельзя кикать равных/выше по уровню и разработчиков (кроме разработчика)."""
-    if await UserRepository.is_developer(actor_vk_id):
-        return True, None
-    if await UserRepository.is_developer(target_vk_id):
-        return False, "❌ Нельзя исключить разработчика."
-
-    target_level = await UserRepository.get_access_level(target_vk_id, server_id)
-    if target_level <= 0:
-        return True, None
-    if target_level >= actor_level:
-        return False, (
-            "❌ Нельзя исключить пользователя своего уровня или выше.\n"
-            f"Ваш: {AccessChecker.level_name(actor_level)} ({actor_level}), "
-            f"у цели: {AccessChecker.level_name(target_level)} ({target_level})."
-        )
-    return True, None
+    return await can_act_on_target(
+        actor_vk_id,
+        actor_level,
+        target_vk_id,
+        server_id,
+        on_equal_or_higher="❌ Нельзя исключить пользователя своего уровня или выше.",
+        on_developer="❌ Нельзя исключить разработчика.",
+    )
 
 
 def _strip_all_chats_flag(text: str) -> tuple[str | None, bool]:
@@ -95,40 +89,30 @@ async def _senior_poolkick_allowed(
         return True, None
 
     if access_level < AccessLevel.SUPERVISOR:
-        return False, "⛔ /poolkick с уровня Следящий (2)+. Старший — только в своей сфере."
+        return False, "⛔ Недостаточно прав."
 
     if all_chats:
-        return False, "⛔ Старший следящий может /poolkick только в пределах своей сферы (без флага 1)."
+        return False, "⛔ Старший следящий может кикать только в своей сфере."
 
     if not chat:
         return False, "⛔ Беседа не привязана к пулу."
 
     is_senior, senior_spheres = await UserRepository.get_senior_status(actor_vk_id, server_id)
     if not is_senior:
-        return False, (
-            "⛔ Нужен ЗГС+ или статус старшего следящего.\n"
-            "Выдать: /setsphere @user ца ст мю"
-        )
+        return False, "⛔ Нужен уровень ЗГС или статус старшего следящего."
     if not senior_spheres:
-        return False, (
-            "⛔ У вас нет сферы старшего для /poolkick.\n"
-            "Назначьте: /setsphere @вы ца ст мю"
-        )
+        return False, "⛔ У вас не назначена сфера старшего."
 
     pool = getattr(chat, "pool", None)
     pool_name = getattr(pool, "name", None) if pool else None
     alias = getattr(chat, "alias", None)
     pool_sphere = pool_alias_to_sphere(alias, pool_name)
     if pool_sphere is None:
-        return False, (
-            "⛔ Не удалось определить сферу этой беседы "
-            f"(alias={alias or '—'}, пул={pool_name or '—'})."
-        )
+        return False, "⛔ Не удалось определить сферу этой беседы."
     if pool_sphere not in senior_spheres:
         return False, (
-            "⛔ Вы старший только в: "
-            f"{format_spheres_display(senior_spheres)}. "
-            f"Эта беседа — {format_spheres_display([pool_sphere])}."
+            "⛔ Эта беседа не в вашей сфере старшего.\n"
+            f"Ваши сферы: {format_spheres_display(senior_spheres)}."
         )
     return True, None
 
@@ -170,9 +154,8 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
         access_level: int = 0,
     ) -> None:
         await message.answer(
-            "❌ /kick (/k) [ссылка vk.com/vk.ru|ID|@user] [причина]\n"
-            "ЗГС+ — любая беседа. Старший следящий — только беседы своей ст. сферы.\n"
-            "Ответом: /kick причина"
+            "❌ /kick [@user] [причина]\n"
+            "Или ответом: /kick причина"
         )
 
     @bot.on.message(text=dual_with_args("kick", "<args>"))
@@ -184,7 +167,7 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
         access_level: int = 0,
     ) -> None:
         if message.peer_id < 2_000_000_000:
-            await message.answer("❌ /kick только в беседах.")
+            await message.answer("❌ Команда только в беседах.")
             return
 
         reply_id = (
@@ -286,10 +269,9 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
         access_level: int = 0,
     ) -> None:
         await message.answer(
-            "❌ /poolkick (/pkick) [ссылка|ID|@user] [причина] [1]\n"
-            "ЗГС+ — любой пул. Старший следящий — только пул своей ст. сферы.\n"
-            "Без 1 — пул + *_gos. С 1 — все беседы сервера (только ЗГС+).\n"
-            "Ответом: /poolkick причина"
+            "❌ /poolkick [@user] [причина]\n"
+            "Или ответом: /poolkick причина\n"
+            "В конце «1» — все беседы сервера (только ЗГС)"
         )
 
     @bot.on.message(text=dual_with_args("poolkick", "<args>"))
@@ -302,7 +284,7 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
     ) -> None:
         chat = await ChatRepository.get_by_peer_id(message.peer_id)
         if not chat:
-            await message.answer("❌ Беседа не зарегистрирована (/regchat).")
+            await message.answer("❌ Беседа не зарегистрирована.")
             return
 
         reply_id = (
@@ -317,7 +299,7 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
             target_raw, reason, all_chats = _parse_poolkick_args(args)
 
         if not all_chats and not chat.pool_id:
-            await message.answer("❌ Беседа не привязана к пулу (/regchat).")
+            await message.answer("❌ Беседа не привязана к пулу.")
             return
 
         await chat.fetch_related("pool")
@@ -329,7 +311,7 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
             all_chats=all_chats,
         )
         if not allowed:
-            await message.answer(err or "⛔ /poolkick недоступен в этом контексте.")
+            await message.answer(err or "⛔ Недостаточно прав.")
             return
 
         resolved = await VKResolver(api, server_id).resolve_from_message(

@@ -271,10 +271,8 @@ def register_pools(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         access_level: int = 0,
     ) -> None:
         await message.answer(
-            "❌ Использование: /regchat [ID/название пула] [алиас]\n"
-            "Пример: /regchat 1 court\n"
-            "Алиасы: court, lead_co, lead_gos, ruk_gos и т.д.\n"
-            "Ур. 10: /devhelp — /regchat logs"
+            "❌ /regchat [пул] [алиас]\n"
+            "Пример: /regchat 1 court"
         )
 
     @bot.on.message(text=dual_with_args("regchat", "logs off"))
@@ -296,7 +294,7 @@ def register_pools(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         await ServerRepository.set_log_peer(server_id, None)
         await message.answer(
             "✅ Беседа логов отвязана.\n"
-            "Логи снова уходят в ЛС (MAIN_ADMIN_ID / LOG_CHAT_ID)."
+            "Логи снова уходят в личные сообщения."
         )
         await action_logger.log_user(
             "regchat_logs",
@@ -448,14 +446,14 @@ def register_pools(bot: Bot, api: API, action_logger: ActionLogger) -> None:
                 await message.answer(
                     await _format_congress_msg_help(
                         server_id,
-                        header="❌ Использование: /msg [алиас] [текст]",
+                        header="❌ /msg [алиас] [текст]",
                     )
                 )
             else:
                 await message.answer(
                     await _format_aliases_message(
                         server_id,
-                        header="❌ Использование: /msg [алиас] [текст]",
+                        header="❌ /msg [алиас] [текст]",
                     )
                 )
             return

@@ -64,47 +64,35 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
         "🌐 Общие",
         (
             HelpEntry("/me", "Ваш профиль", public=True),
-            HelpEntry("/info", "Профиль [@user] или ответом", public=True),
-            HelpEntry(
-                "/panel",
-                "Вход на сайт (запасной способ, если нет Discord)",
-                1,
-            ),
+            HelpEntry("/info", "Профиль пользователя", public=True),
+            HelpEntry("/panel", "Вход на сайт", 1),
             HelpEntry("/getid", "ID беседы", public=True),
             HelpEntry("/find", "Поиск по нику или VK", public=True),
             HelpEntry("/regdate", "Дата регистрации VK", public=True),
             HelpEntry("/online", "Кто онлайн в беседе", public=True),
             HelpEntry("/help", "Список команд", public=True),
-            HelpEntry("/ping", "Проверка бота и время работы", public=True),
+            HelpEntry("/ping", "Проверка бота", public=True),
         ),
     ),
     HelpCategory(
         "👤 Профиль",
         (
-            HelpEntry("/setnick", "Установить ник [@user] [ник]", 1),
-            HelpEntry("/rnick", "Снять ник [@user]", 1),
+            HelpEntry("/setnick", "Установить ник", 1),
+            HelpEntry("/rnick", "Снять ник", 1),
             HelpEntry("/who", "Карточка пользователя", public=True),
             HelpEntry("/members", "Участники беседы", public=True),
             HelpEntry("/staff", "Список доступов и ролей", 1),
-            HelpEntry("/setsphere", "Сферы [@user|ответ] ца мю [ст мю]", AccessLevel.ZGS),
-            HelpEntry(
-                "/editmydiscord",
-                "Привязать Discord ID для входа на сайт",
-                public=True,
-            ),
-            HelpEntry(
-                "/editmyforum",
-                "Привязать профиль forum.arizona-rp.com",
-                public=True,
-            ),
+            HelpEntry("/setsphere", "Назначить сферы", AccessLevel.ZGS),
+            HelpEntry("/editmydiscord", "Привязать Discord", public=True),
+            HelpEntry("/editmyforum", "Привязать форум", public=True),
         ),
     ),
     HelpCategory(
         "🛡 Модерация",
         (
-            HelpEntry("/kick", "Кик из беседы; старший — только ст.сфера", AccessLevel.SUPERVISOR),
-            HelpEntry("/poolkick", "Пул+*_gos; старший — своя ст.сфера; +1 все беседы (ЗГС+)", AccessLevel.SUPERVISOR),
-            HelpEntry("/mute", "Мут [@user] [время] [причина]", 2),
+            HelpEntry("/kick", "Исключить из беседы", AccessLevel.SUPERVISOR),
+            HelpEntry("/poolkick", "Исключить из бесед пула", AccessLevel.SUPERVISOR),
+            HelpEntry("/mute", "Выдать мут", 2),
             HelpEntry("/unmute", "Снять мут", 2),
             HelpEntry("/stitle", "Название беседы", 3),
             HelpEntry("/pin", "Закрепить сообщение", 2),
@@ -112,7 +100,7 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
             HelpEntry("/del", "Удалить сообщение", 2),
             HelpEntry("/msg", "Оповещение в беседу", 1),
             HelpEntry("/chatsettings", "Настройки беседы", 3),
-            HelpEntry("/rejoinkick", "Автокик при выходе: on / ask", 3),
+            HelpEntry("/rejoinkick", "Автокик при повторном входе", 3),
         ),
     ),
     HelpCategory(
@@ -122,29 +110,25 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
             HelpEntry("/createpool", "Создать пул", AccessLevel.ZGS_GOS),
             HelpEntry("/regchat", "Привязать беседу к пулу", AccessLevel.ZGS_GOS),
             HelpEntry("/unregchat", "Отвязать беседу от пула", AccessLevel.ZGS_GOS),
-            HelpEntry("/setlevel", f"Уровень [@user] [0–{AccessLevel.GA}]", AccessLevel.ZGS),
-            HelpEntry(
-                "/reg",
-                "Назначить следящего [@user] [ур.] [сферы] [имя] [forum] [discord]",
-                AccessLevel.ZGS,
-            ),
+            HelpEntry("/setlevel", "Изменить уровень доступа", AccessLevel.ZGS),
+            HelpEntry("/reg", "Назначить следящего", AccessLevel.ZGS),
         ),
     ),
     HelpCategory(
-        "📄 Форум — раздел судебных исков сервера",
+        "📄 Форум — судебные иски",
         (
-            HelpEntry("/info · /edit", "Тема форума: инфо и кнопки действий", "forum"),
-            HelpEntry("/fclose · /fopen", "Закрыть / открыть тему (алиасы: fclosed, fopened)", "forum"),
+            HelpEntry("/info · /edit", "Инфо и действия по теме", "forum"),
+            HelpEntry("/fclose · /fopen", "Закрыть / открыть тему", "forum"),
             HelpEntry("/fpin · /funpin", "Закрепить / открепить тему", "forum"),
-            HelpEntry("/fresolve", "Закрыть тему и открепить (алиас: resolve)", "forum"),
-            HelpEntry("/иски", "Статистика закрытий: стр. / дни / дата / период", "forum"),
-            HelpEntry("/form", "Отправить игровые формы (судья)", "forum", judge_only=True),
-            HelpEntry("/myform", "Ваши формы и статусы", "forum", judge_only=True),
-            HelpEntry("/forms", "Команды для игры (без #id)", 2, ca=True, ca_forms=True),
-            HelpEntry("/forms id · /formsid", "С #id каждой формы", 2, ca=True, ca_forms=True),
+            HelpEntry("/fresolve", "Закрыть и открепить тему", "forum"),
+            HelpEntry("/иски", "Статистика закрытий", "forum"),
+            HelpEntry("/form", "Отправить игровые формы", "forum", judge_only=True),
+            HelpEntry("/myform", "Ваши формы", "forum", judge_only=True),
+            HelpEntry("/forms", "Список форм", 2, ca=True, ca_forms=True),
+            HelpEntry("/forms id", "Список форм с id", 2, ca=True, ca_forms=True),
             HelpEntry(
                 "/acceptform · /rejectform",
-                "Принять / отклонить [id|all]",
+                "Принять / отклонить форму",
                 2,
                 ca=True,
                 ca_forms=True,
@@ -154,13 +138,8 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
     HelpCategory(
         "🏛 ЦА",
         (
-            HelpEntry("/raccess", "Снять роли с пользователя [@user]", 2, ca=True),
-            HelpEntry(
-                "/regrole",
-                "Привязать беседу: court, congress, sledca, leader",
-                3,
-                ca=True,
-            ),
+            HelpEntry("/raccess", "Снять роли с пользователя", 2, ca=True),
+            HelpEntry("/regrole", "Привязать роль к беседе", 3, ca=True),
         ),
     ),
     HelpCategory(
@@ -182,9 +161,9 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
     HelpCategory(
         "🛡 Лидеры",
         (
-            HelpEntry("/addleader", "Лидер для панели [@user] [фракция]", 2, ca=True),
-            HelpEntry("/removeleader", "Снять лидера [@user]", 2, ca=True),
-            HelpEntry("/leaders", "Список лидеров (панель)", public=True),
+            HelpEntry("/addleader", "Добавить лидера", 2, ca=True),
+            HelpEntry("/removeleader", "Снять лидера", 2, ca=True),
+            HelpEntry("/leaders", "Список лидеров", public=True),
         ),
     ),
 )
@@ -193,30 +172,18 @@ DEV_HELP_CATEGORIES: tuple[HelpCategory, ...] = (
     HelpCategory(
         "🔟 Разработчик",
         (
-            HelpEntry("/devhelp", f"Справка для ур. {AccessLevel.DEVELOPER}"),
-            HelpEntry("/meserver", "Переключить активный server_id", AccessLevel.DEVELOPER),
-            HelpEntry("/setserver", "Тег, раздел исков, имя сервера", AccessLevel.DEVELOPER),
-            HelpEntry("/regchat logs", "Беседа для логов бота", AccessLevel.DEVELOPER),
+            HelpEntry("/devhelp", "Справка разработчика"),
+            HelpEntry("/meserver", "Переключить сервер", AccessLevel.DEVELOPER),
+            HelpEntry("/setserver", "Настройки сервера", AccessLevel.DEVELOPER),
+            HelpEntry("/regchat logs", "Беседа для логов", AccessLevel.DEVELOPER),
             HelpEntry("/regchat logs off", "Отвязать беседу логов", AccessLevel.DEVELOPER),
-            HelpEntry("/deluser", "Удалить пользователя из БД", AccessLevel.DEVELOPER),
+            HelpEntry("/deluser", "Удалить пользователя", AccessLevel.DEVELOPER),
             HelpEntry("/forumcheck", "Проверка сессии форума", AccessLevel.DEVELOPER),
-            HelpEntry("/forumcheck reconnect", "Переподключить форум (.env)", AccessLevel.DEVELOPER),
-            HelpEntry("/syncjudges · /courtupdate", "Обновить форумный список судей", AccessLevel.DEVELOPER),
-            HelpEntry(
-                "/claimfill",
-                "Дозаписать закрытые иски в БД [страницы / дни]",
-                AccessLevel.DEVELOPER,
-            ),
-            HelpEntry(
-                "/claimwatch · /checkclaims",
-                "Сейчас проверить новые иски → беседа судей",
-                AccessLevel.DEVELOPER,
-            ),
-            HelpEntry(
-                "/complaintwatch · /checkcomplaints",
-                "Сейчас проверить жалобы на лидеров → ruk_gos",
-                AccessLevel.DEVELOPER,
-            ),
+            HelpEntry("/forumcheck reconnect", "Переподключить форум", AccessLevel.DEVELOPER),
+            HelpEntry("/syncjudges", "Обновить список судей", AccessLevel.DEVELOPER),
+            HelpEntry("/claimfill", "Дозаписать закрытые иски", AccessLevel.DEVELOPER),
+            HelpEntry("/claimwatch", "Проверить новые иски", AccessLevel.DEVELOPER),
+            HelpEntry("/complaintwatch", "Проверить жалобы на лидеров", AccessLevel.DEVELOPER),
         ),
     ),
 )
@@ -317,27 +284,24 @@ async def build_help_text_for_user(user_id: int, server_id: int) -> str:
         if ctx.access_level
         else "нет доступа"
     )
-    header = (
-        "📗 Команды State-LoveBot\n"
-        f"👤 Ваш уровень: {level_name} ({ctx.access_level or 0})"
-    )
+    header = f"📗 Команды\n👤 Уровень: {level_name}"
     body = _format_categories(HELP_CATEGORIES, header=header, visible=visible)
     if not visible:
         body = (
             f"{header}\n\n"
             "⛔ Нет доступных команд.\n"
-            "Обратитесь к администратору за доступом к боту."
+            "Обратитесь к администратору."
         )
     return (
         f"{body}"
-        "🌐 — всем  ·  1️⃣–9️⃣ / 🅰️ — мин. уровень  ·  🏛 — доступ ЦА (ур. 1–4)\n"
-        "⚖️ — судебный доступ к форуму  ·  / и !"
+        "🌐 — всем  ·  1️⃣–9️⃣ — мин. уровень  ·  🏛 — ЦА  ·  ⚖️ — форум\n"
+        "Префикс: / или !"
     )
 
 
 def build_dev_help_text() -> str:
     body = _format_categories(
         DEV_HELP_CATEGORIES,
-        header=f"🛠 Dev-команды (ур. {AccessLevel.DEVELOPER})",
+        header="🛠 Команды разработчика",
     )
-    return f"{body}🔟 — только разработчик  ·  / и !"
+    return f"{body}🔟 — только разработчик"
