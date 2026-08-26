@@ -2,20 +2,24 @@
 
 from __future__ import annotations
 
+import json
 import logging
 
 from vkbottle import API
-from vkbottle.bot import Bot, Message
+from vkbottle.bot import Bot, Message, MessageEvent
+from vkbottle.tools.dev.mini_types.base.message import GroupEventType
 
 from database.models.user import AccessLevel
 from database.repository.chat_repo import ChatRepository
 from database.repository.user_repo import UserRepository
-from middlewares.access import requires_level
+from middlewares.access import AccessChecker, requires_level
 from middlewares.congress_access import requires_chat_kick
 from middlewares.action_logger import ActionLogger
 from services.command_utils import dual, dual_with_args
 from services.display_name import DisplayNameService
 from services.moderation import ModerationService
+from services.poolkick_sphere_pending import pop as pop_poolkick_sphere_pending
+from services.poolkick_sphere_revoke import apply_poolkick_sphere_choice, handle_poolkick_sphere_after_kick
 from services.role_chat_leave import revoke_judge_on_court_kick
 from services.staff_hierarchy import can_act_on_target
 from services.staff_spheres import format_spheres_display, pool_alias_to_sphere
@@ -395,3 +399,67 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
             report.summary(),
             source_peer_id=message.peer_id,
         )
+
+        if report.kicked > 0:
+            await handle_poolkick_sphere_after_kick(
+                api=api,
+                message=message,
+                actor_vk_id=message.from_id,
+                actor_level=access_level,
+                server_id=server_id,
+                target_vk_id=resolved.vk_id,
+                chat=chat,
+                kicked_count=report.kicked,
+            )
+
+    @bot.on.raw_event(GroupEventType.MESSAGE_EVENT, MessageEvent, blocking=False)
+    async def poolkick_sphere_callback(event: MessageEvent) -> None:
+        payload = event.payload
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except json.JSONDecodeError:
+                return
+        if not isinstance(payload, dict) or payload.get("cmd") != "pk_sphere":
+            return
+
+        token = payload.get("token")
+        choice = payload.get("choice")
+        if not token or not choice:
+            await event.show_snackbar("❌ Запрос устарел.")
+            return
+
+        if choice == "skip":
+            pending = pop_poolkick_sphere_pending(token, event.user_id)
+            if not pending:
+                await event.show_snackbar("⏰ Время выбора истекло.")
+                return
+            await event.send_message("ℹ️ Сферы не изменены.")
+            await event.send_empty_answer()
+            return
+
+        pending = pop_poolkick_sphere_pending(token, event.user_id)
+        if not pending:
+            await event.show_snackbar("⏰ Время выбора истекло.")
+            return
+
+        server_id = await AccessChecker.resolve_server_id(
+            event.peer_id, event.user_id
+        )
+        actor_level = await AccessChecker.get_level(event.user_id, server_id)
+
+        ok, detail = await apply_poolkick_sphere_choice(
+            actor_vk_id=event.user_id,
+            actor_level=actor_level,
+            server_id=pending.server_id,
+            target_vk_id=pending.target_vk_id,
+            choice=str(choice),
+        )
+        if ok:
+            target_link = await names.link_user(
+                pending.target_vk_id, pending.server_id
+            )
+            await event.send_message(f"✅ {target_link} — {detail}", disable_mentions=1)
+        else:
+            await event.send_message(f"❌ {detail}")
+        await event.send_empty_answer()

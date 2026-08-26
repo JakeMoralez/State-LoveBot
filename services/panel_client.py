@@ -190,6 +190,71 @@ async def set_staff_spheres_via_panel(
         return False, "Не удалось связаться с панелью."
 
 
+async def revoke_staff_via_panel(
+    *,
+    actor_vk_id: int,
+    server_id: int,
+    vk_id: int,
+) -> tuple[bool, str]:
+    """POST /internal/staff-revoke/{vk_id} — полное снятие доступа следящего."""
+    if not panel_api_configured():
+        return False, "Панель не настроена"
+
+    url = f"{PANEL_INTERNAL_URL}/internal/staff-revoke/{vk_id}"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                url,
+                json={"actor_vk_id": actor_vk_id},
+                params={"server_id": server_id},
+                headers=_headers(),
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                data = await resp.json(content_type=None)
+                if resp.status == 200 and isinstance(data, dict) and data.get("ok"):
+                    return True, "ok"
+                detail = data.get("detail") if isinstance(data, dict) else None
+                if isinstance(detail, list):
+                    detail = detail[0].get("msg") if detail else None
+                return False, str(detail or resp.reason or "Ошибка панели")
+    except Exception as exc:
+        logger.warning("revoke_staff_via_panel vk=%s: %s", vk_id, exc)
+        return False, "Не удалось связаться с панелью."
+
+
+async def remove_sphere_on_poolkick_via_panel(
+    *,
+    actor_vk_id: int,
+    server_id: int,
+    vk_id: int,
+    sphere: str,
+) -> tuple[bool, dict | str]:
+    """POST /internal/staff-sphere-remove/{vk_id} — снять одну сферу после poolkick."""
+    if not panel_api_configured():
+        return False, "Панель не настроена"
+
+    url = f"{PANEL_INTERNAL_URL}/internal/staff-sphere-remove/{vk_id}"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                url,
+                json={"actor_vk_id": actor_vk_id, "sphere": sphere},
+                params={"server_id": server_id},
+                headers=_headers(),
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                data = await resp.json(content_type=None)
+                if resp.status == 200 and isinstance(data, dict) and data.get("ok"):
+                    return True, data
+                detail = data.get("detail") if isinstance(data, dict) else None
+                if isinstance(detail, list):
+                    detail = detail[0].get("msg") if detail else None
+                return False, str(detail or resp.reason or "Ошибка панели")
+    except Exception as exc:
+        logger.warning("remove_sphere_on_poolkick vk=%s: %s", vk_id, exc)
+        return False, "Не удалось связаться с панелью."
+
+
 async def assign_staff_via_panel(
     *,
     actor_vk_id: int,

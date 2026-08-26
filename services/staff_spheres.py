@@ -60,6 +60,10 @@ _POOL_TO_SPHERE: dict[str, str] = {
     "sled_mh": HEALTH,
 }
 
+# Короткие алиасы для подсказок пользователю (без англ. ключей).
+_SPHERE_HINT = "ца, мю, мо, мз, гос, нелег, сервер"
+_CLEAR_TOKENS = frozenset({"-", "—", "–", "нет", "0", "off"})
+
 
 def allowed_sphere_keys_for_level(level: int) -> tuple[str, ...]:
     """1–4: министерства; 5–7: структуры; 8+: сервер. Как в панели."""
@@ -109,31 +113,38 @@ def parse_sphere_tokens(raw: str) -> list[str]:
     """Поддерживает 'ца, мю', 'ца мз', 'ца+мю', 'гос нелег' → ключи сфер."""
     text = (raw or "").strip()
     if not text:
-        raise ValueError("Укажите сферы: ца, мю, мо, мз, гос, нелег, сервер")
+        raise ValueError(f"Укажите сферу: {_SPHERE_HINT}")
 
     tokens = re.split(r"[,+\s]+", text.replace(";", ","))
     parts = [p.strip().lower() for p in tokens if p and p.strip()]
+    # «-» / clear — не сфера; в /setsphere это синтаксис снятия старшего (ст -)
+    if parts and all(p in _CLEAR_TOKENS for p in parts):
+        raise ValueError(f"Укажите сферу: {_SPHERE_HINT}")
+
     result: list[str] = []
     seen: set[str] = set()
-    friendly = "ца, мю, мо, мз, гос, нелег, сервер"
     for part in parts:
+        if part in _CLEAR_TOKENS:
+            raise ValueError(f"Укажите сферу: {_SPHERE_HINT}")
         key = _SPHERE_ALIASES.get(part)
         if not key:
             if part in ALL_SPHERE_KEYS:
                 key = part
             else:
-                raise ValueError(f"Неизвестная сфера «{part}». Доступны: {friendly}")
+                raise ValueError(
+                    f"Неизвестная сфера «{part}». Укажите: {_SPHERE_HINT}"
+                )
         if key not in seen:
             seen.add(key)
             result.append(key)
     if not result:
-        raise ValueError("Укажите хотя бы одну сферу")
+        raise ValueError(f"Укажите сферу: {_SPHERE_HINT}")
     return result
 
 
 def validate_spheres(spheres: list[str], access_level: int | None = None) -> list[str]:
     if not spheres:
-        raise ValueError("Выберите хотя бы одну сферу")
+        raise ValueError(f"Укажите сферу: {_SPHERE_HINT}")
     seen: set[str] = set()
     result: list[str] = []
     for key in spheres:
@@ -141,11 +152,11 @@ def validate_spheres(spheres: list[str], access_level: int | None = None) -> lis
         if not k or k in seen:
             continue
         if k not in ALL_SPHERE_KEYS:
-            raise ValueError(f"Неизвестная сфера: {k}")
+            raise ValueError(f"Неизвестная сфера. Укажите: {_SPHERE_HINT}")
         seen.add(k)
         result.append(k)
     if not result:
-        raise ValueError("Выберите хотя бы одну сферу")
+        raise ValueError(f"Укажите сферу: {_SPHERE_HINT}")
     if access_level is not None:
         allowed = set(allowed_sphere_keys_for_level(access_level))
         bad = [k for k in result if k not in allowed]
