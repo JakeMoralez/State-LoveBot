@@ -10,7 +10,7 @@ from vkbottle.bot import Bot, Message
 from database.models.user import AccessLevel
 from database.repository.chat_repo import ChatRepository
 from database.repository.user_repo import UserRepository
-from middlewares.access import requires_level
+from middlewares.access import AccessChecker, requires_level
 from middlewares.congress_access import requires_chat_kick
 from middlewares.action_logger import ActionLogger
 from services.command_utils import dual, dual_with_args
@@ -46,6 +46,30 @@ def _parse_poolkick_args(args: str) -> tuple[str, str | None, bool]:
     target = VKResolver.extract_reference(parts[0])
     reason = " ".join(parts[1:]).strip() or None
     return target, reason, all_chats
+
+
+async def _can_kick_by_access(
+    actor_vk_id: int,
+    actor_level: int,
+    target_vk_id: int,
+    server_id: int,
+) -> tuple[bool, str | None]:
+    """Нельзя кикать равных/выше по уровню и разработчиков (кроме разработчика)."""
+    if await UserRepository.is_developer(actor_vk_id):
+        return True, None
+    if await UserRepository.is_developer(target_vk_id):
+        return False, "❌ Нельзя исключить разработчика."
+
+    target_level = await UserRepository.get_access_level(target_vk_id, server_id)
+    if target_level <= 0:
+        return True, None
+    if target_level >= actor_level:
+        return False, (
+            "❌ Нельзя исключить пользователя своего уровня или выше.\n"
+            f"Ваш: {AccessChecker.level_name(actor_level)} ({actor_level}), "
+            f"у цели: {AccessChecker.level_name(target_level)} ({target_level})."
+        )
+    return True, None
 
 
 def _strip_all_chats_flag(text: str) -> tuple[str | None, bool]:
@@ -139,7 +163,7 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
             logger.warning("kick announce failed peer=%s: %s", peer_id, exc)
 
     @bot.on.message(text=dual("kick"))
-    @requires_level(AccessLevel.ZGS)
+    @requires_level(AccessLevel.SUPERVISOR)
     async def kick_usage(
         message: Message,
         server_id: int = 0,
@@ -147,7 +171,8 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
     ) -> None:
         await message.answer(
             "❌ /kick (/k) [ссылка vk.com/vk.ru|ID|@user] [причина]\n"
-            "Можно ответом на сообщение: /kick причина"
+            "ЗГС+ — любая беседа. Старший следящий — только беседы своей ст. сферы.\n"
+            "Ответом: /kick причина"
         )
 
     @bot.on.message(text=dual_with_args("kick", "<args>"))
@@ -184,6 +209,19 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
 
         if not resolved:
             await message.answer("❌ Пользователь не найден.")
+            return
+        if resolved.vk_id == message.from_id:
+            await message.answer("❌ Нельзя исключить самого себя.")
+            return
+
+        ok, err = await _can_kick_by_access(
+            message.from_id,
+            access_level,
+            resolved.vk_id,
+            server_id,
+        )
+        if not ok:
+            await message.answer(err or "❌ Недостаточно прав для исключения.")
             return
 
         chat = await ChatRepository.get_by_peer_id(message.peer_id)
@@ -301,6 +339,19 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
         )
         if not resolved:
             await message.answer("❌ Пользователь не найден.")
+            return
+        if resolved.vk_id == message.from_id:
+            await message.answer("❌ Нельзя исключить самого себя.")
+            return
+
+        ok, err = await _can_kick_by_access(
+            message.from_id,
+            access_level,
+            resolved.vk_id,
+            server_id,
+        )
+        if not ok:
+            await message.answer(err or "❌ Недостаточно прав для исключения.")
             return
 
         pool_name = chat.pool.name if chat.pool else str(chat.pool_id or "—")

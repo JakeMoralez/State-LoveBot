@@ -63,7 +63,7 @@ def requires_setnick(
 def requires_chat_kick(
     func: Callable[P, Awaitable[R]],
 ) -> Callable[P, Awaitable[R | None]]:
-    """ЗГС глобально или спикер/вице — /kick только в беседе конгресса."""
+    """ЗГС глобально; старший следящий — только беседы своей ст. сферы; спикер/вице — конгресс."""
 
     @functools.wraps(func)
     async def wrapper(message: Message, *args: P.args, **kwargs: P.kwargs) -> R | None:
@@ -87,17 +87,48 @@ def requires_chat_kick(
             return None
 
         level = await AccessChecker.get_level(user_id, server_id)
-        if level < AccessLevel.ZGS:
-            await message.answer(
-                f"⛔ Недостаточно прав.\n"
-                f"Требуется: ЗГС (ур. {AccessLevel.ZGS})\n"
-                f"Ваш уровень: {AccessChecker.level_name(level) if level else 'нет доступа'}"
-            )
-            return None
+        if level >= AccessLevel.ZGS:
+            kwargs["server_id"] = server_id
+            kwargs["access_level"] = level
+            return await func(message, *args, **kwargs)
 
-        kwargs["server_id"] = server_id
-        kwargs["access_level"] = level
-        return await func(message, *args, **kwargs)
+        # Старший следящий — только беседы своей ст. сферы
+        if level >= AccessLevel.SUPERVISOR:
+            from database.repository.chat_repo import ChatRepository
+            from services.staff_spheres import format_spheres_display, pool_alias_to_sphere
+
+            is_senior, senior_spheres = await UserRepository.get_senior_status(
+                user_id, server_id
+            )
+            if is_senior and senior_spheres:
+                if message.peer_id < 2_000_000_000:
+                    await message.answer("❌ /kick только в беседах.")
+                    return None
+                chat = await ChatRepository.get_by_peer_id(message.peer_id)
+                if not chat:
+                    await message.answer("❌ Беседа не зарегистрирована (/regchat).")
+                    return None
+                pool = getattr(chat, "pool", None)
+                pool_name = getattr(pool, "name", None) if pool else None
+                pool_sphere = pool_alias_to_sphere(getattr(chat, "alias", None), pool_name)
+                if pool_sphere and pool_sphere in senior_spheres:
+                    kwargs["server_id"] = server_id
+                    kwargs["access_level"] = level
+                    return await func(message, *args, **kwargs)
+                await message.answer(
+                    "⛔ Старший следящий может /kick только в беседах своей ст. сферы: "
+                    f"{format_spheres_display(senior_spheres)}.\n"
+                    f"Эта беседа: "
+                    f"{format_spheres_display([pool_sphere]) if pool_sphere else 'сфера не определена'}."
+                )
+                return None
+
+        await message.answer(
+            f"⛔ Недостаточно прав.\n"
+            f"Нужен ЗГС (ур. {AccessLevel.ZGS}) или статус старшего следящего в этой сфере.\n"
+            f"Ваш уровень: {AccessChecker.level_name(level) if level else 'нет доступа'}"
+        )
+        return None
 
     return wrapper
 
