@@ -10,6 +10,8 @@ from database.spheres import SPHERE_LABELS
 def create_poolkick_sphere_keyboard(
     token: str,
     target_spheres: list[str],
+    *,
+    owner_id: int,
 ) -> str:
     kb = Keyboard(inline=True)
     first = True
@@ -24,7 +26,12 @@ def create_poolkick_sphere_keyboard(
         kb.add(
             Callback(
                 f"Снять {short}",
-                payload={"cmd": "pk_sphere", "token": token, "choice": key},
+                payload={
+                    "cmd": "pk_sphere",
+                    "token": token,
+                    "choice": key,
+                    "owner": owner_id,
+                },
             ),
             color=KeyboardButtonColor.SECONDARY,
         )
@@ -33,14 +40,24 @@ def create_poolkick_sphere_keyboard(
     kb.add(
         Callback(
             "Снять полностью",
-            payload={"cmd": "pk_sphere", "token": token, "choice": "full"},
+            payload={
+                "cmd": "pk_sphere",
+                "token": token,
+                "choice": "full",
+                "owner": owner_id,
+            },
         ),
         color=KeyboardButtonColor.NEGATIVE,
     )
     kb.add(
         Callback(
             "Не снимать",
-            payload={"cmd": "pk_sphere", "token": token, "choice": "skip"},
+            payload={
+                "cmd": "pk_sphere",
+                "token": token,
+                "choice": "skip",
+                "owner": owner_id,
+            },
         ),
         color=KeyboardButtonColor.PRIMARY,
     )

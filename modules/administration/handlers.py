@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import random
 
 from vkbottle import API, GroupEventType
 from vkbottle.bot import Bot, Message, MessageEvent
@@ -147,9 +148,51 @@ def _scope_label(scope: str, sphere: str | None) -> str:
     return scope
 
 
+def _payload_owner_ok(payload: dict, user_id: int) -> bool:
+    owner = payload.get("owner")
+    if owner is None:
+        return False
+    try:
+        return int(owner) == int(user_id)
+    except (TypeError, ValueError):
+        return False
+
+
 def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> None:
     moderation = ModerationService(api)
     names = DisplayNameService(api)
+
+    async def _send_chat(
+        peer_id: int,
+        text: str,
+        *,
+        keyboard: str | None = None,
+    ) -> None:
+        kwargs: dict = {
+            "peer_id": peer_id,
+            "message": text,
+            "random_id": random.randint(1, 2_000_000_000),
+            "disable_mentions": 1,
+        }
+        if keyboard:
+            kwargs["keyboard"] = keyboard
+        try:
+            await api.messages.send(**kwargs)
+        except Exception as exc:
+            logger.warning("poolkick send failed peer=%s: %s", peer_id, exc)
+            raise
+
+    class _ChatReply:
+        def __init__(self, peer_id: int) -> None:
+            self.peer_id = peer_id
+
+        async def answer(self, text: str, **kwargs: object) -> None:
+            keyboard = kwargs.get("keyboard")
+            await _send_chat(
+                self.peer_id,
+                text,
+                keyboard=str(keyboard) if keyboard else None,
+            )
 
     async def _kick_announce(
         peer_id: int,
@@ -527,6 +570,7 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
             "\n".join(lines),
             keyboard=create_poolkick_scope_keyboard(
                 token,
+                owner_id=message.from_id or 0,
                 main_spheres=main_spheres,
                 has_this=has_this,
                 has_gos_only=has_gos_only,
@@ -546,6 +590,10 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
         if not isinstance(payload, dict) or payload.get("cmd") != "pk_scope":
             return
 
+        if not _payload_owner_ok(payload, event.user_id):
+            await event.show_snackbar("⛔ Только автор команды.")
+            return
+
         token = payload.get("token")
         scope = payload.get("scope")
         sphere = payload.get("sphere")
@@ -556,6 +604,15 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
         pending = get_poolkick_flow(str(token), event.user_id)
         if not pending or pending.phase != "scope":
             await event.show_snackbar("⏰ Время выбора истекло.")
+            return
+
+        if str(scope) == "cancel":
+            pop_poolkick_flow(str(token), event.user_id)
+            await event.show_snackbar("Отменено.")
+            try:
+                await _ChatReply(pending.peer_id).answer("ℹ️ Poolkick отменён.")
+            except Exception:
+                pass
             return
 
         from services.poolkick_scan import FoundChat
@@ -578,25 +635,11 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
         )
         if not selected:
             await event.show_snackbar("❌ Нет бесед в этом scope.")
-            await event.send_empty_answer()
             return
 
         label = _scope_label(str(scope), str(sphere) if sphere else None)
+        # show_snackbar уже закрывает callback — send_empty_answer не нужен
         await event.show_snackbar(f"Кикаю: {label} ({len(selected)})…")
-        await event.send_empty_answer()
-
-        # Обёртка Message-like для answer
-        class _MsgProxy:
-            peer_id = pending.peer_id
-
-            async def answer(self, text: str, **kwargs: object) -> None:
-                await api.messages.send(
-                    peer_id=pending.peer_id,
-                    message=text,
-                    random_id=0,
-                    disable_mentions=kwargs.get("disable_mentions", 1),
-                    keyboard=kwargs.get("keyboard"),
-                )
 
         selected_data = [
             FoundPeerData(
@@ -610,18 +653,33 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
         actor_level = await AccessChecker.get_level(
             event.user_id, pending.server_id
         )
-        await _run_poolkick_for_peers(
-            message=_MsgProxy(),  # type: ignore[arg-type]
-            actor_id=event.user_id,
-            access_level=actor_level,
-            server_id=pending.server_id,
-            target_vk_id=pending.target_vk_id,
-            reason=pending.reason,
-            peers=selected_data,
-            scope_label=label,
-            pool_id=pending.pool_id,
-            flow_token=str(token),
-        )
+        reply = _ChatReply(pending.peer_id)
+        try:
+            await _run_poolkick_for_peers(
+                message=reply,  # type: ignore[arg-type]
+                actor_id=event.user_id,
+                access_level=actor_level,
+                server_id=pending.server_id,
+                target_vk_id=pending.target_vk_id,
+                reason=pending.reason,
+                peers=selected_data,
+                scope_label=label,
+                pool_id=pending.pool_id,
+                flow_token=str(token),
+            )
+        except Exception as exc:
+            logger.exception(
+                "poolkick scope failed token=%s target=%s: %s",
+                token,
+                pending.target_vk_id,
+                exc,
+            )
+            try:
+                await reply.answer(
+                    f"❌ Ошибка poolkick ({label}): {exc}"
+                )
+            except Exception:
+                pass
 
     @bot.on.raw_event(GroupEventType.MESSAGE_EVENT, MessageEvent, blocking=False)
     async def poolkick_access_callback(event: MessageEvent) -> None:
@@ -632,6 +690,10 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
             except json.JSONDecodeError:
                 return
         if not isinstance(payload, dict) or payload.get("cmd") != "pk_access":
+            return
+
+        if not _payload_owner_ok(payload, event.user_id):
+            await event.show_snackbar("⛔ Только автор команды.")
             return
 
         token = payload.get("token")
@@ -650,44 +712,44 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
         actor_level = await AccessChecker.get_level(
             event.user_id, pending.server_id
         )
+        reply = _ChatReply(pending.peer_id)
 
-        class _MsgProxy:
-            peer_id = pending.peer_id
+        try:
+            ok, detail = await apply_poolkick_access_choice(
+                actor_vk_id=event.user_id,
+                actor_level=actor_level,
+                server_id=pending.server_id,
+                target_vk_id=pending.target_vk_id,
+                choice=str(choice),
+                peer_id=pending.peer_id,
+                message=reply,
+            )
+        except Exception as exc:
+            logger.exception("poolkick access failed: %s", exc)
+            await event.show_snackbar("❌ Ошибка обработки.")
+            try:
+                await reply.answer(f"❌ Ошибка: {exc}")
+            except Exception:
+                pass
+            return
 
-            async def answer(self, text: str, **kwargs: object) -> None:
-                await api.messages.send(
-                    peer_id=pending.peer_id,
-                    message=text,
-                    random_id=0,
-                    disable_mentions=kwargs.get("disable_mentions", 1),
-                    keyboard=kwargs.get("keyboard"),
-                )
-
-        ok, detail = await apply_poolkick_access_choice(
-            actor_vk_id=event.user_id,
-            actor_level=actor_level,
-            server_id=pending.server_id,
-            target_vk_id=pending.target_vk_id,
-            choice=str(choice),
-            peer_id=pending.peer_id,
-            message=_MsgProxy(),
-        )
         if choice == "spheres" and detail == "Выбор сферы.":
             await event.show_snackbar("Выберите сферу.")
-            await event.send_empty_answer()
             return
 
         target_link = await names.link_user(
             pending.target_vk_id, pending.server_id
         )
-        if ok:
-            await event.send_message(
-                f"✅ {target_link} — {detail}",
-                disable_mentions=1,
-            )
-        else:
-            await event.send_message(f"❌ {detail}")
-        await event.send_empty_answer()
+        text = (
+            f"✅ {target_link} — {detail}"
+            if ok
+            else f"❌ {detail}"
+        )
+        try:
+            await reply.answer(text)
+        except Exception as exc:
+            logger.warning("poolkick access reply failed: %s", exc)
+        await event.show_snackbar("Готово." if ok else "Ошибка.")
 
     @bot.on.raw_event(GroupEventType.MESSAGE_EVENT, MessageEvent, blocking=False)
     async def poolkick_sphere_callback(event: MessageEvent) -> None:
@@ -698,6 +760,10 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
             except json.JSONDecodeError:
                 return
         if not isinstance(payload, dict) or payload.get("cmd") != "pk_sphere":
+            return
+
+        if not _payload_owner_ok(payload, event.user_id):
+            await event.show_snackbar("⛔ Только автор команды.")
             return
 
         token = payload.get("token")
@@ -711,8 +777,8 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
             if not pending:
                 await event.show_snackbar("⏰ Время выбора истекло.")
                 return
-            await event.send_message("ℹ️ Сферы не изменены.")
-            await event.send_empty_answer()
+            await _ChatReply(pending.peer_id).answer("ℹ️ Сферы не изменены.")
+            await event.show_snackbar("Ок.")
             return
 
         pending = pop_poolkick_sphere_pending(token, event.user_id)
@@ -720,10 +786,9 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
             await event.show_snackbar("⏰ Время выбора истекло.")
             return
 
-        server_id = await AccessChecker.resolve_server_id(
-            event.peer_id, event.user_id
+        actor_level = await AccessChecker.get_level(
+            event.user_id, pending.server_id
         )
-        actor_level = await AccessChecker.get_level(event.user_id, server_id)
 
         ok, detail = await apply_poolkick_sphere_choice(
             actor_vk_id=event.user_id,
@@ -732,14 +797,13 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
             target_vk_id=pending.target_vk_id,
             choice=str(choice),
         )
+        reply = _ChatReply(pending.peer_id)
         if ok:
             target_link = await names.link_user(
                 pending.target_vk_id, pending.server_id
             )
-            await event.send_message(
-                f"✅ {target_link} — {detail}",
-                disable_mentions=1,
-            )
+            await reply.answer(f"✅ {target_link} — {detail}")
+            await event.show_snackbar("Готово.")
         else:
-            await event.send_message(f"❌ {detail}")
-        await event.send_empty_answer()
+            await reply.answer(f"❌ {detail}")
+            await event.show_snackbar("Ошибка.")

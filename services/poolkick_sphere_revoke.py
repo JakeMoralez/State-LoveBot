@@ -269,7 +269,9 @@ async def apply_poolkick_access_choice(
         await message.answer(
             f"📋 Сферы: {format_spheres_display(spheres)}\n"
             "Снять сферу или доступ полностью?",
-            keyboard=create_poolkick_sphere_keyboard(token, spheres),
+            keyboard=create_poolkick_sphere_keyboard(
+                token, spheres, owner_id=actor_vk_id
+            ),
             disable_mentions=1,
         )
         return True, "Выбор сферы."
@@ -301,6 +303,7 @@ async def prompt_poolkick_access_after_kick(
         "Что сделать?",
         keyboard=create_poolkick_access_keyboard(
             flow_token,
+            owner_id=actor_vk_id,
             has_staff=info.has_staff,
             has_roles=info.has_roles,
         ),

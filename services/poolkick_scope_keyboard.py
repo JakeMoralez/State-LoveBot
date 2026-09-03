@@ -19,6 +19,7 @@ def _short_sphere(sphere: str) -> str:
 def create_poolkick_scope_keyboard(
     token: str,
     *,
+    owner_id: int,
     main_spheres: list[str],
     has_this: bool,
     has_gos_only: bool = False,
@@ -29,7 +30,6 @@ def create_poolkick_scope_keyboard(
         spheres.remove(prefer_sphere)
         spheres.insert(0, prefer_sphere)
 
-    # Лимит inline-кнопок VK — держим разумный набор
     if len(spheres) > 4:
         spheres = spheres[:4]
 
@@ -37,7 +37,12 @@ def create_poolkick_scope_keyboard(
     kb.add(
         Callback(
             "Из всех бесед",
-            payload={"cmd": "pk_scope", "token": token, "scope": "all"},
+            payload={
+                "cmd": "pk_scope",
+                "token": token,
+                "scope": "all",
+                "owner": owner_id,
+            },
         ),
         color=KeyboardButtonColor.NEGATIVE,
     )
@@ -53,6 +58,7 @@ def create_poolkick_scope_keyboard(
                     "token": token,
                     "scope": "sphere_gos",
                     "sphere": sphere,
+                    "owner": owner_id,
                 },
             ),
             color=KeyboardButtonColor.PRIMARY,
@@ -65,6 +71,7 @@ def create_poolkick_scope_keyboard(
                     "token": token,
                     "scope": "sphere",
                     "sphere": sphere,
+                    "owner": owner_id,
                 },
             ),
             color=KeyboardButtonColor.SECONDARY,
@@ -75,7 +82,12 @@ def create_poolkick_scope_keyboard(
         kb.add(
             Callback(
                 "Только гос",
-                payload={"cmd": "pk_scope", "token": token, "scope": "gos_only"},
+                payload={
+                    "cmd": "pk_scope",
+                    "token": token,
+                    "scope": "gos_only",
+                    "owner": owner_id,
+                },
             ),
             color=KeyboardButtonColor.SECONDARY,
         )
@@ -85,9 +97,28 @@ def create_poolkick_scope_keyboard(
         kb.add(
             Callback(
                 "Только из этой",
-                payload={"cmd": "pk_scope", "token": token, "scope": "this"},
+                payload={
+                    "cmd": "pk_scope",
+                    "token": token,
+                    "scope": "this",
+                    "owner": owner_id,
+                },
             ),
             color=KeyboardButtonColor.POSITIVE,
         )
+
+    kb.row()
+    kb.add(
+        Callback(
+            "Отменить",
+            payload={
+                "cmd": "pk_scope",
+                "token": token,
+                "scope": "cancel",
+                "owner": owner_id,
+            },
+        ),
+        color=KeyboardButtonColor.SECONDARY,
+    )
 
     return kb.get_json()

@@ -8,6 +8,7 @@ from vkbottle import Callback, Keyboard, KeyboardButtonColor
 def create_poolkick_access_keyboard(
     token: str,
     *,
+    owner_id: int,
     has_staff: bool,
     has_roles: bool,
 ) -> str:
@@ -15,7 +16,12 @@ def create_poolkick_access_keyboard(
     kb.add(
         Callback(
             "Снять всё",
-            payload={"cmd": "pk_access", "token": token, "choice": "all"},
+            payload={
+                "cmd": "pk_access",
+                "token": token,
+                "choice": "all",
+                "owner": owner_id,
+            },
         ),
         color=KeyboardButtonColor.NEGATIVE,
     )
@@ -24,7 +30,12 @@ def create_poolkick_access_keyboard(
         kb.add(
             Callback(
                 "Только роли",
-                payload={"cmd": "pk_access", "token": token, "choice": "roles"},
+                payload={
+                    "cmd": "pk_access",
+                    "token": token,
+                    "choice": "roles",
+                    "owner": owner_id,
+                },
             ),
             color=KeyboardButtonColor.SECONDARY,
         )
@@ -33,7 +44,12 @@ def create_poolkick_access_keyboard(
         kb.add(
             Callback(
                 "Только сферы",
-                payload={"cmd": "pk_access", "token": token, "choice": "spheres"},
+                payload={
+                    "cmd": "pk_access",
+                    "token": token,
+                    "choice": "spheres",
+                    "owner": owner_id,
+                },
             ),
             color=KeyboardButtonColor.SECONDARY,
         )
@@ -41,7 +57,12 @@ def create_poolkick_access_keyboard(
     kb.add(
         Callback(
             "Не трогать",
-            payload={"cmd": "pk_access", "token": token, "choice": "skip"},
+            payload={
+                "cmd": "pk_access",
+                "token": token,
+                "choice": "skip",
+                "owner": owner_id,
+            },
         ),
         color=KeyboardButtonColor.PRIMARY,
     )
