@@ -27,8 +27,9 @@ BLACKLIST_TABS: tuple[str, ...] = (
     "ЧС МЗ",
 )
 
-_FUZZY_THRESHOLD = 0.72
-_NAME_PART_THRESHOLD = 0.82
+_FUZZY_THRESHOLD = 0.86
+_FIRST_PART_THRESHOLD = 0.78
+_LAST_PART_THRESHOLD = 0.88
 
 _cache_lock = asyncio.Lock()
 _cache_rows: dict[str, list[list[str]]] | None = None
@@ -86,21 +87,32 @@ def _nickname_match_score(query: str, cell: str) -> float:
     q = _normalize_nick(query)
     if not q:
         return 0.0
+    q_parts = [p for p in q.split("_") if p]
     best = 0.0
     for nick in _nick_variants(cell):
         if q == nick:
             return 1.0
-        if q in nick or nick in q:
-            best = max(best, 0.95)
-        ratio = _similarity(q, nick)
-        best = max(best, ratio)
-        q_parts = [p for p in q.split("_") if p]
+
         n_parts = [p for p in nick.split("_") if p]
+
+        # Name_Surname — обе части должны совпасть (не только фамилия)
         if len(q_parts) >= 2 and len(n_parts) >= 2:
             first = _similarity(q_parts[0], n_parts[0])
             last = _similarity(q_parts[-1], n_parts[-1])
-            if first >= _NAME_PART_THRESHOLD and last >= _NAME_PART_THRESHOLD:
-                best = max(best, (first + last) / 2)
+            if first >= _FIRST_PART_THRESHOLD and last >= _LAST_PART_THRESHOLD:
+                best = max(best, first * 0.55 + last * 0.45)
+            continue
+
+        ratio = _similarity(q, nick)
+        if ratio >= _FUZZY_THRESHOLD:
+            best = max(best, ratio)
+
+        # Одно слово в запросе — допускаем вхождение в ник (Daniel + Bradberry)
+        if len(q_parts) == 1 and len(q) >= 4:
+            if q == nick:
+                best = max(best, 1.0)
+            elif nick.endswith(f"_{q}") or nick.startswith(f"{q}_"):
+                best = max(best, 0.95)
     return best
 
 
