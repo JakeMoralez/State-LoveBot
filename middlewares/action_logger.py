@@ -40,7 +40,6 @@ _USER_TARGET_ACTIONS = frozenset({
     "add_leader",
     "deluser",
     "kick",
-    "invite",
     "poolkick",
     "mute",
     "unmute",
@@ -60,7 +59,6 @@ _USER_TARGET_ACTIONS = frozenset({
 
 _ACTION_VERB_SUCCESS: dict[str, str] = {
     "kick": "исключил",
-    "invite": "добавил в беседу",
     "poolkick": "исключил из пула",
     "mute": "выдал мут",
     "unmute": "снял мут",
@@ -118,7 +116,6 @@ _ACTION_VERB_SUCCESS: dict[str, str] = {
 
 _ACTION_VERB_FAIL: dict[str, str] = {
     "kick": "не смог исключить",
-    "invite": "не смог добавить в беседу",
     "poolkick": "не смог исключить из пула",
     "mute": "не смог выдать мут",
     "unmute": "не смог снять мут",
@@ -140,7 +137,6 @@ _ACTION_VERB_FAIL: dict[str, str] = {
 
 _ACTION_TITLES: dict[str, str] = {
     "kick": "исключение из беседы",
-    "invite": "добавление в беседу",
     "poolkick": "исключение из пула",
     "mute": "мут",
     "unmute": "снятие мута",

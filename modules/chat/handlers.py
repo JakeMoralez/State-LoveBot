@@ -107,32 +107,81 @@ def register_chat(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         if message.peer_id < 2_000_000_000:
             await message.answer("❌ Команда доступна только в беседах.")
             return
-        if not message.reply_message:
-            await message.answer("❌ Ответьте на сообщение, которое нужно удалить.")
+
+        target_cmids: list[int] = []
+        seen: set[int] = set()
+
+        def _add_cmid(raw: object) -> None:
+            try:
+                cmid = int(raw)  # type: ignore[arg-type]
+            except (TypeError, ValueError):
+                return
+            if cmid > 0 and cmid not in seen:
+                seen.add(cmid)
+                target_cmids.append(cmid)
+
+        if message.reply_message:
+            _add_cmid(message.reply_message.conversation_message_id)
+
+        for fwd in message.fwd_messages or []:
+            _add_cmid(getattr(fwd, "conversation_message_id", None))
+
+        if not target_cmids:
+            await message.answer(
+                "❌ Ответьте на сообщение(я) или перешлите их с командой /del."
+            )
             return
 
-        cmid = message.reply_message.conversation_message_id
-        if not cmid:
-            await message.answer("❌ Не удалось определить ID сообщения.")
-            return
+        delete_cmids = list(target_cmids)
+        cmd_cmid = message.conversation_message_id
+        if cmd_cmid:
+            try:
+                cmd_cmid_int = int(cmd_cmid)
+            except (TypeError, ValueError):
+                cmd_cmid_int = 0
+            if cmd_cmid_int > 0 and cmd_cmid_int not in seen:
+                delete_cmids.append(cmd_cmid_int)
 
         try:
             await api.messages.delete(
                 peer_id=message.peer_id,
-                cmids=[cmid],
+                cmids=delete_cmids,
                 delete_for_all=True,
             )
-            await action_logger.log_user(
-                "delete_message",
-                message.from_id,
-                f"cmid {cmid}",
-                "Удалено",
-                source_peer_id=message.peer_id,
-            )
         except Exception as exc:
-            logger.error("delete failed peer=%s cmid=%s: %s", message.peer_id, cmid, exc)
+            logger.error(
+                "delete failed peer=%s cmids=%s: %s",
+                message.peer_id,
+                delete_cmids,
+                exc,
+            )
             await message.answer(f"❌ Не удалось удалить: {exc}")
+            return
 
+        n = len(target_cmids)
+        if n % 10 == 1 and n % 100 != 11:
+            word = "сообщение"
+        elif 2 <= n % 10 <= 4 and not (12 <= n % 100 <= 14):
+            word = "сообщения"
+        else:
+            word = "сообщений"
+
+        actor_link = await DisplayNameService(api, server_id).link_user(
+            message.from_id or 0
+        )
+        await api.messages.send(
+            peer_id=message.peer_id,
+            message=f"🗑 {actor_link} удалил(а) {n} {word}.",
+            random_id=messaging.random_id(),
+            disable_mentions=1,
+        )
+        await action_logger.log_user(
+            "delete_message",
+            message.from_id,
+            f"{n} сообщ.",
+            "Удалено",
+            source_peer_id=message.peer_id,
+        )
     @bot.on.message(text=["/unpin", "!unpin"])
     @requires_level(AccessLevel.SUPERVISOR)
     async def unpin_message(

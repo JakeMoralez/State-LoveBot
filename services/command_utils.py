@@ -10,7 +10,6 @@ COMMAND_ALIASES: dict[str, tuple[str, ...]] = {
     "setnick": ("snick", "nick"),
     "rnick": ("removenick", "clearnick"),
     "kick": ("k",),
-    "invite": ("inv",),
     "poolkick": ("pkick", "pullkick"),
     "addleader": ("aleader",),
     "removeleader": ("rleader",),
