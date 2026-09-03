@@ -9,7 +9,7 @@ from database.models.court_form import CourtForm, CourtFormStatus, CourtFormType
 from database.repository.court_form_repo import NewCourtForm
 
 _FORM_CMD_RE = re.compile(
-    r"^[!/]?(uvaloff|apunishoff|unapunishoff|notif)\b",
+    r"^[!/]?(uvaloff|unjail|notif)\b",
     re.IGNORECASE,
 )
 _THREAD_ID_RE = re.compile(
@@ -39,10 +39,8 @@ FORM_HELP_TEXT = (
     "✅ Примеры команд\n\n"
     "♻ Увольнение из организации\n"
     "/uvaloff Nick_Name суд #12345\n\n"
-    "♻ Посадить игрока в ТСР\n"
-    "/apunishoff Nick_Name 3 суд #12345\n\n"
     "♻ Вытащить игрока из ТСР\n"
-    "/unapunishoff Nick_Name суд #12345\n\n"
+    "/unjail Nick_Name суд #12345\n\n"
     "♻ Уведомление игроку\n"
     "/notif Nick_Name Текст сообщения\n\n"
     "💡 Многострочное /notif — одна форма.\n"
@@ -231,51 +229,19 @@ def _parse_uvaloff(block: str) -> ParsedCourtForm | FormParseFailure:
     )
 
 
-def _parse_apunishoff(block: str) -> ParsedCourtForm | FormParseFailure:
-    rest = _strip_form_command(block.splitlines()[0], "apunishoff")
-    parts = rest.split()
-    if len(parts) < 3:
-        return FormParseFailure(
-            "/apunishoff",
-            "формат: /apunishoff Nick_Name 1-6 суд #номер",
-        )
-    nick, stars_raw, *lawsuit_parts = parts
-    err = _validate_nick(nick)
-    if err:
-        return FormParseFailure("/apunishoff", err)
-    try:
-        stars = int(stars_raw)
-    except ValueError:
-        return FormParseFailure("/apunishoff", "звёзды должны быть числом 1–6")
-    if stars < 1 or stars > 6:
-        return FormParseFailure("/apunishoff", "звёзды — от 1 до 6")
-    lawsuit_id = _extract_lawsuit_id(" ".join(lawsuit_parts))
-    if lawsuit_id is None:
-        return FormParseFailure("/apunishoff", "не указан номер иска")
-    return ParsedCourtForm(
-        NewCourtForm(
-            form_type=CourtFormType.APUNISHOFF,
-            target_nickname=nick,
-            lawsuit_id=lawsuit_id,
-            stars=stars,
-            raw_text=block,
-        )
-    )
-
-
-def _parse_unapunishoff(block: str) -> ParsedCourtForm | FormParseFailure:
-    rest = _strip_form_command(block.splitlines()[0], "unapunishoff")
+def _parse_unjail(block: str) -> ParsedCourtForm | FormParseFailure:
+    rest = _strip_form_command(block.splitlines()[0], "unjail")
     parts = rest.split(maxsplit=1)
     if not parts:
-        return FormParseFailure("/unapunishoff", "не указан ник")
+        return FormParseFailure("/unjail", "не указан ник")
     nick = parts[0]
     err = _validate_nick(nick)
     if err:
-        return FormParseFailure("/unapunishoff", err)
+        return FormParseFailure("/unjail", err)
     lawsuit_text = parts[1] if len(parts) > 1 else ""
     lawsuit_id = _extract_lawsuit_id(lawsuit_text)
     if lawsuit_id is None:
-        return FormParseFailure("/unapunishoff", "не указан номер иска")
+        return FormParseFailure("/unjail", "не указан номер иска")
     return ParsedCourtForm(
         NewCourtForm(
             form_type=CourtFormType.UNAPUNISHOFF,
@@ -334,9 +300,17 @@ def _parse_block(block: str) -> ParsedCourtForm | FormParseFailure:
     if first.startswith(("/uvaloff", "!uvaloff")):
         return _parse_uvaloff(block)
     if first.startswith(("/apunishoff", "!apunishoff")):
-        return _parse_apunishoff(block)
+        return FormParseFailure(
+            "/apunishoff",
+            "команда больше не используется",
+        )
     if first.startswith(("/unapunishoff", "!unapunishoff")):
-        return _parse_unapunishoff(block)
+        return FormParseFailure(
+            "/unapunishoff",
+            "команда больше не используется, используйте /unjail",
+        )
+    if first.startswith(("/unjail", "!unjail")):
+        return _parse_unjail(block)
     if first.startswith(("/notif", "!notif")):
         return _parse_notif(block)
     return FormParseFailure(block.splitlines()[0][:40], "неизвестная команда")
