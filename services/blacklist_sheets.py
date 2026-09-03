@@ -299,6 +299,8 @@ def format_blacklist_results(query: str, hits: list[BlacklistHit]) -> str:
         degree = f" ({hit.degree})" if hit.degree else ""
         lines.append(f"\n{_status_emoji(status)} {hit.sheet} — {status}{degree}")
         lines.append(f"Ник: {hit.nickname}")
+        if hit.uuid:
+            lines.append(f"ID аккаунта: {hit.uuid}")
         if hit.sphere:
             lines.append(f"Сфера: {hit.sphere}")
         if hit.reason:
@@ -323,7 +325,7 @@ async def check_blacklist(query: str) -> str:
         return "❌ Таблица чёрных списков не настроена."
     q = (query or "").strip()
     if not q:
-        return "❌ /checkbl [ник / UUID]\nПример: /checkbl Daniel_Bradberry"
+        return "❌ /checkbl [ник / ID аккаунта]\nПример: /checkbl Daniel_Bradberry"
 
     try:
         entries = await _load_all_tabs()

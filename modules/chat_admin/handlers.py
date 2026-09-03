@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 
 from vkbottle import API, GroupEventType
 from vkbottle.bot import Bot, Message, MessageEvent
@@ -85,21 +86,46 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
         query: str,
         server_id: int,
     ) -> str:
+        query = (query or "").strip()
         reply_id = (
             message.reply_message.from_id
             if message.reply_message and message.reply_message.from_id > 0
             else None
         )
-        resolved, _hint = await resolver.resolve_from_message_with_hint(
-            query or "",
-            reply_from_id=reply_id,
-            server_id=server_id,
+        if not query:
+            if not reply_id:
+                return ""
+            resolved, _hint = await resolver.resolve_from_message_with_hint(
+                "",
+                reply_from_id=reply_id,
+                server_id=server_id,
+            )
+            if resolved:
+                for candidate in (resolved.display_name, resolved.username):
+                    if candidate and candidate.strip():
+                        return candidate.strip()
+            return ""
+
+        q_lower = query.lower()
+        is_vk_ref = (
+            query.startswith("@")
+            or "vk.com" in q_lower
+            or "vk.ru" in q_lower
+            or re.match(r"\[id\d+\|", query, re.IGNORECASE)
         )
-        if resolved:
-            for candidate in (resolved.display_name, resolved.username):
-                if candidate and candidate.strip():
-                    return candidate.strip()
-        return (query or "").strip()
+        if is_vk_ref or reply_id:
+            resolved, _hint = await resolver.resolve_from_message_with_hint(
+                query,
+                reply_from_id=reply_id,
+                server_id=server_id,
+            )
+            if resolved:
+                for candidate in (resolved.display_name, resolved.username):
+                    if candidate and candidate.strip():
+                        return candidate.strip()
+
+        # Ник или ID аккаунта на сервере (не VK) — ищем как есть
+        return query
 
     @bot.on.message(text=dual("checkbl"))
     @requires_public
@@ -109,8 +135,9 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
         access_level: int = 0,
     ) -> None:
         await message.answer(
-            "❌ /checkbl [ник / UUID / @user]\n"
-            "Пример: /checkbl Daniel_Bradberry"
+            "❌ /checkbl [ник / ID аккаунта / @user]\n"
+            "Пример: /checkbl Daniel_Bradberry\n"
+            "ID аккаунта — UUID с сервера, не VK."
         )
 
     @bot.on.message(text=dual_with_args("checkbl", "<query>"))
@@ -123,7 +150,9 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
     ) -> None:
         lookup = await _resolve_checkbl_query(message, query, server_id)
         if not lookup:
-            await message.answer("❌ Укажите ник, UUID или пользователя.")
+            await message.answer(
+                "❌ Укажите ник, ID аккаунта на сервере или @user."
+            )
             return
         text = await check_blacklist(lookup)
         await message.answer(text, disable_mentions=1)
