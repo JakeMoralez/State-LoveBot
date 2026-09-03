@@ -38,7 +38,7 @@ from services.poolkick_sphere_revoke import (
     apply_poolkick_sphere_choice,
     prompt_poolkick_access_after_kick,
 )
-from services.role_chat_leave import revoke_judge_on_court_kick
+from services.role_chat_leave import handle_role_chat_leave, revoke_judge_on_court_kick
 from services.staff_hierarchy import can_act_on_target
 from services.staff_nickname import MINISTRY_NICK_TAGS, STRUCTURE_NICK_TAGS
 from services.staff_spheres import format_spheres_display, pool_alias_to_sphere
@@ -276,6 +276,25 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
                                 item.peer_id,
                                 exc,
                             )
+                role_notice = await handle_role_chat_leave(
+                    item.peer_id,
+                    target_vk_id,
+                    api,
+                )
+                if role_notice:
+                    try:
+                        await api.messages.send(
+                            peer_id=item.peer_id,
+                            message=role_notice,
+                            random_id=0,
+                            disable_mentions=1,
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            "role leave notice failed peer=%s: %s",
+                            item.peer_id,
+                            exc,
+                        )
 
         target_link = await names.link_user(target_vk_id, server_id)
         await message.answer(
@@ -707,6 +726,7 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
             await event.show_snackbar("⏰ Время выбора истекло.")
             return
 
+        source_sphere = pending.source_sphere
         pop_poolkick_flow(str(token), event.user_id)
 
         actor_level = await AccessChecker.get_level(
@@ -723,6 +743,7 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
                 choice=str(choice),
                 peer_id=pending.peer_id,
                 message=reply,
+                source_sphere=source_sphere,
             )
         except Exception as exc:
             logger.exception("poolkick access failed: %s", exc)
@@ -790,12 +811,17 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
             event.user_id, pending.server_id
         )
 
+        combo_sphere = payload.get("sphere")
+        if combo_sphere is not None:
+            combo_sphere = str(combo_sphere)
+
         ok, detail = await apply_poolkick_sphere_choice(
             actor_vk_id=event.user_id,
             actor_level=actor_level,
             server_id=pending.server_id,
             target_vk_id=pending.target_vk_id,
             choice=str(choice),
+            combo_sphere=combo_sphere,
         )
         reply = _ChatReply(pending.peer_id)
         if ok:

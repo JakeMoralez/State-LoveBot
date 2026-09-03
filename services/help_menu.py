@@ -68,6 +68,7 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
             HelpEntry("/panel", "Вход на сайт", 1),
             HelpEntry("/getid", "ID беседы", public=True),
             HelpEntry("/find", "Поиск по нику или VK", public=True),
+            HelpEntry("/checkbl", "Проверка в чёрном списке", public=True),
             HelpEntry("/regdate", "Дата регистрации VK", public=True),
             HelpEntry("/online", "Кто онлайн в беседе", public=True),
             HelpEntry("/help", "Список команд", public=True),

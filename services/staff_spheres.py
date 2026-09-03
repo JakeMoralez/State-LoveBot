@@ -109,6 +109,70 @@ def pool_alias_to_sphere(alias: str | None, pool_name: str | None = None) -> str
     return None
 
 
+def _resolve_sphere_part(part: str) -> str:
+    key = _SPHERE_ALIASES.get(part)
+    if not key:
+        if part in ALL_SPHERE_KEYS:
+            key = part
+        else:
+            raise ValueError(
+                f"Неизвестная сфера «{part}». Укажите: {_SPHERE_HINT}"
+            )
+    return key
+
+
+def build_spheres_from_setsphere_input(
+    raw: str,
+    target_current: list[str],
+) -> tuple[list[str], bool]:
+    """Собрать итоговый список сфер.
+
+    Абсолютный режим: «ца мю» → ровно эти сферы.
+    Снятие: «-ца», «-ца -мю» → убрать из текущих (без перечисления чужих сфер).
+    """
+    text = (raw or "").strip()
+    if not text:
+        raise ValueError(f"Укажите сферу: {_SPHERE_HINT}")
+
+    tokens = re.split(r"[,+\s]+", text.replace(";", ","))
+    parts = [p.strip().lower() for p in tokens if p and p.strip()]
+    if not parts:
+        raise ValueError(f"Укажите сферу: {_SPHERE_HINT}")
+
+    removals: list[str] = []
+    additions: list[str] = []
+    delta_mode = False
+
+    for part in parts:
+        if part.startswith("-"):
+            delta_mode = True
+            key_part = part[1:].strip()
+            if not key_part or key_part in _CLEAR_TOKENS:
+                continue
+            removals.append(_resolve_sphere_part(key_part))
+            continue
+        if part in _CLEAR_TOKENS:
+            raise ValueError(f"Укажите сферу: {_SPHERE_HINT}")
+        additions.append(_resolve_sphere_part(part))
+
+    if delta_mode:
+        result = set(target_current or [])
+        result.update(additions)
+        for key in removals:
+            result.discard(key)
+        return sorted(result), True
+
+    if not additions:
+        raise ValueError(f"Укажите сферу: {_SPHERE_HINT}")
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for key in additions:
+        if key not in seen:
+            seen.add(key)
+            ordered.append(key)
+    return ordered, False
+
+
 def parse_sphere_tokens(raw: str) -> list[str]:
     """Поддерживает 'ца, мю', 'ца мз', 'ца+мю', 'гос нелег' → ключи сфер."""
     text = (raw or "").strip()
@@ -126,14 +190,7 @@ def parse_sphere_tokens(raw: str) -> list[str]:
     for part in parts:
         if part in _CLEAR_TOKENS:
             raise ValueError(f"Укажите сферу: {_SPHERE_HINT}")
-        key = _SPHERE_ALIASES.get(part)
-        if not key:
-            if part in ALL_SPHERE_KEYS:
-                key = part
-            else:
-                raise ValueError(
-                    f"Неизвестная сфера «{part}». Укажите: {_SPHERE_HINT}"
-                )
+        key = _resolve_sphere_part(part)
         if key not in seen:
             seen.add(key)
             result.append(key)
@@ -187,7 +244,8 @@ def constrain_spheres_for_actor(
     if not locked.issubset(requested_set):
         missing = locked - requested_set
         raise ValueError(
-            f"Нельзя снять сферу без прав: {format_spheres_display(sorted(missing))}"
+            f"Нельзя снять сферу без прав: {format_spheres_display(sorted(missing))}. "
+            "Чтобы снять только свою сферу — /setsphere @user -ца (или -мю, -мо…)."
         )
 
     added = requested_set - current
@@ -201,7 +259,8 @@ def constrain_spheres_for_actor(
     illegal_remove = removed - grantable
     if illegal_remove:
         raise ValueError(
-            f"Нельзя снять сферу без прав: {format_spheres_display(sorted(illegal_remove))}"
+            f"Нельзя снять сферу без прав: {format_spheres_display(sorted(illegal_remove))}. "
+            "Чтобы снять только свою сферу — /setsphere @user -ца (или -мю, -мо…)."
         )
 
     return validate_spheres(list(requested_set), access_level)
@@ -209,6 +268,7 @@ def constrain_spheres_for_actor(
 
 __all__ = [
     "allowed_sphere_keys_for_level",
+    "build_spheres_from_setsphere_input",
     "constrain_spheres_for_actor",
     "effective_grantable_sphere_keys",
     "format_spheres_display",

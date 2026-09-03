@@ -10,23 +10,27 @@ def create_poolkick_access_keyboard(
     *,
     owner_id: int,
     has_staff: bool,
-    has_roles: bool,
+    has_poolkick_roles: bool,
 ) -> str:
     kb = Keyboard(inline=True)
-    kb.add(
-        Callback(
-            "Снять всё",
-            payload={
-                "cmd": "pk_access",
-                "token": token,
-                "choice": "all",
-                "owner": owner_id,
-            },
-        ),
-        color=KeyboardButtonColor.NEGATIVE,
-    )
-    if has_roles:
-        kb.row()
+    first = True
+    if has_staff or has_poolkick_roles:
+        kb.add(
+            Callback(
+                "Снять всё",
+                payload={
+                    "cmd": "pk_access",
+                    "token": token,
+                    "choice": "all",
+                    "owner": owner_id,
+                },
+            ),
+            color=KeyboardButtonColor.NEGATIVE,
+        )
+        first = False
+    if has_poolkick_roles:
+        if not first:
+            kb.row()
         kb.add(
             Callback(
                 "Только роли",
@@ -39,8 +43,10 @@ def create_poolkick_access_keyboard(
             ),
             color=KeyboardButtonColor.SECONDARY,
         )
+        first = False
     if has_staff:
-        kb.row()
+        if not first:
+            kb.row()
         kb.add(
             Callback(
                 "Только сферы",
@@ -53,7 +59,9 @@ def create_poolkick_access_keyboard(
             ),
             color=KeyboardButtonColor.SECONDARY,
         )
-    kb.row()
+        first = False
+    if not first:
+        kb.row()
     kb.add(
         Callback(
             "Не трогать",

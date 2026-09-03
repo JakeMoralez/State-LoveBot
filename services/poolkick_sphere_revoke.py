@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 from database.models.user import AccessLevel
 from database.repository.user_repo import UserRepository
-from database.spheres import format_spheres_display
+from database.spheres import GOV_STRUCTURES, format_spheres_display
 from middlewares.access import AccessChecker
 from services.panel_client import (
     panel_api_configured,
@@ -18,8 +18,10 @@ from services.panel_db import read_staff_spheres
 from services.poolkick_access_keyboard import create_poolkick_access_keyboard
 from services.poolkick_sphere_keyboard import create_poolkick_sphere_keyboard
 from services.poolkick_sphere_pending import create as create_pending_sphere
-from services.self_access import revoke_accesses
+from services.self_access import revoke_poolkick_roles
+from services.staff_hierarchy import can_act_on_target
 from services.staff_nickname_sync import sync_staff_nickname_tag
+from services.staff_spheres import effective_grantable_sphere_keys
 
 logger = logging.getLogger(__name__)
 
@@ -41,12 +43,11 @@ class TargetAccessInfo:
         return self.level >= AccessLevel.PGS or bool(self.spheres) or self.is_senior
 
     @property
-    def has_roles(self) -> bool:
+    def has_poolkick_roles(self) -> bool:
         return any(
             (
                 self.is_judge,
                 self.is_attorney,
-                self.is_leader,
                 self.is_congress_speaker,
                 self.is_congress_vice,
                 self.has_ca_access,
@@ -54,8 +55,16 @@ class TargetAccessInfo:
         )
 
     @property
+    def has_protected_roles(self) -> bool:
+        return self.is_leader
+
+    @property
+    def has_poolkick_any(self) -> bool:
+        return self.has_staff or self.has_poolkick_roles
+
+    @property
     def has_any(self) -> bool:
-        return self.has_staff or self.has_roles
+        return self.has_poolkick_any or self.has_protected_roles
 
     def labels(self) -> list[str]:
         labels: list[str] = []
@@ -99,6 +108,25 @@ async def collect_target_accesses(
         is_congress_vice=bool(access and access.is_congress_vice),
         has_ca_access=bool(access and access.has_ca_access),
     )
+
+
+async def actor_removable_spheres(actor_vk_id: int, server_id: int) -> set[str]:
+    if await UserRepository.is_developer(actor_vk_id):
+        from database.spheres import ALL_SPHERE_KEYS
+
+        return set(ALL_SPHERE_KEYS)
+
+    level = await UserRepository.get_access_level(actor_vk_id, server_id)
+    actor_spheres = list(await read_staff_spheres(actor_vk_id, server_id))
+    if level >= AccessLevel.ZGS:
+        return effective_grantable_sphere_keys(level, actor_spheres)
+
+    is_senior, senior_spheres = await UserRepository.get_senior_status(
+        actor_vk_id, server_id
+    )
+    if is_senior and senior_spheres:
+        return set(senior_spheres)
+    return set()
 
 
 async def _apply_remove_sphere(
@@ -150,6 +178,17 @@ async def _apply_full_staff_revoke(
     server_id: int,
     target_vk_id: int,
 ) -> tuple[bool, str]:
+    allowed, hier_err = await can_act_on_target(
+        actor_vk_id,
+        actor_level,
+        target_vk_id,
+        server_id,
+        on_equal_or_higher="❌ Нельзя снять доступ пользователя своего уровня или выше.",
+        skip_if_target_no_access=False,
+    )
+    if not allowed:
+        return False, hier_err or "❌ Недостаточно прав."
+
     if not panel_api_configured():
         return False, "Панель не настроена."
 
@@ -180,6 +219,7 @@ async def apply_poolkick_sphere_choice(
     server_id: int,
     target_vk_id: int,
     choice: str,
+    combo_sphere: str | None = None,
 ) -> tuple[bool, str]:
     if choice == "skip":
         return True, "Сферы не изменены."
@@ -192,6 +232,31 @@ async def apply_poolkick_sphere_choice(
             target_vk_id=target_vk_id,
         )
 
+    if choice == "sphere_gos":
+        if not combo_sphere:
+            return False, "Не указана сфера."
+        info = await collect_target_accesses(target_vk_id, server_id)
+        to_remove: list[str] = []
+        if combo_sphere in info.spheres:
+            to_remove.append(combo_sphere)
+        if GOV_STRUCTURES in info.spheres and GOV_STRUCTURES not in to_remove:
+            to_remove.append(GOV_STRUCTURES)
+        if not to_remove:
+            return False, "У пользователя нет сфер для снятия."
+        parts: list[str] = []
+        for sphere in to_remove:
+            ok, detail = await _apply_remove_sphere(
+                actor_vk_id=actor_vk_id,
+                actor_level=actor_level,
+                server_id=server_id,
+                target_vk_id=target_vk_id,
+                sphere=sphere,
+            )
+            if not ok:
+                return False, detail
+            parts.append(detail)
+        return True, "; ".join(parts)
+
     return await _apply_remove_sphere(
         actor_vk_id=actor_vk_id,
         actor_level=actor_level,
@@ -199,11 +264,6 @@ async def apply_poolkick_sphere_choice(
         target_vk_id=target_vk_id,
         sphere=choice,
     )
-
-
-async def revoke_roles_for_target(vk_id: int, server_id: int) -> list[str]:
-    """Снять роли (судья/адвокат/лидер/конгресс/ЦА)."""
-    return await revoke_accesses(vk_id, server_id)
 
 
 async def apply_poolkick_access_choice(
@@ -215,19 +275,20 @@ async def apply_poolkick_access_choice(
     choice: str,
     peer_id: int,
     message,
+    source_sphere: str | None = None,
 ) -> tuple[bool, str]:
     if choice == "skip":
         return True, "Доступы не изменены."
 
     if choice == "roles":
-        removed = await revoke_roles_for_target(target_vk_id, server_id)
+        removed = await revoke_poolkick_roles(target_vk_id, server_id)
         if not removed:
             return True, "Ролей для снятия не найдено."
         return True, "Сняты роли: " + ", ".join(removed)
 
     if choice == "all":
         parts: list[str] = []
-        removed = await revoke_roles_for_target(target_vk_id, server_id)
+        removed = await revoke_poolkick_roles(target_vk_id, server_id)
         if removed:
             parts.append("роли: " + ", ".join(removed))
         info = await collect_target_accesses(target_vk_id, server_id)
@@ -258,19 +319,37 @@ async def apply_poolkick_access_choice(
                 target_vk_id=target_vk_id,
             )
             return ok, detail
+
+        removable = await actor_removable_spheres(actor_vk_id, server_id)
+        can_full, _ = await can_act_on_target(
+            actor_vk_id,
+            actor_level,
+            target_vk_id,
+            server_id,
+            on_equal_or_higher="",
+            skip_if_target_no_access=False,
+        )
+        if not (spheres and removable & set(spheres)) and not can_full:
+            return False, "❌ Недостаточно прав для снятия сфер."
+
         token = create_pending_sphere(
             actor_id=actor_vk_id,
             server_id=server_id,
             target_vk_id=target_vk_id,
             peer_id=peer_id,
             target_spheres=spheres,
-            chat_sphere=None,
+            chat_sphere=source_sphere,
         )
         await message.answer(
             f"📋 Сферы: {format_spheres_display(spheres)}\n"
             "Снять сферу или доступ полностью?",
             keyboard=create_poolkick_sphere_keyboard(
-                token, spheres, owner_id=actor_vk_id
+                token,
+                owner_id=actor_vk_id,
+                target_spheres=spheres,
+                source_sphere=source_sphere,
+                actor_removable=removable,
+                can_full_revoke=can_full,
             ),
             disable_mentions=1,
         )
@@ -290,7 +369,7 @@ async def prompt_poolkick_access_after_kick(
 ) -> bool:
     """Показать вопрос по доступам. False = доступов нет."""
     info = await collect_target_accesses(target_vk_id, server_id)
-    if not info.has_any:
+    if not info.has_poolkick_any:
         return False
 
     from services.display_name import DisplayNameService
@@ -298,14 +377,19 @@ async def prompt_poolkick_access_after_kick(
     names = DisplayNameService(api, server_id)
     target_link = await names.link_user(target_vk_id, server_id)
     labels = ", ".join(info.labels())
+    lines = [f"📋 {target_link} — доступы: {labels}."]
+    if info.has_protected_roles:
+        lines.append(
+            "ℹ️ Роль лидера не снимается через poolkick — используйте /removeleader."
+        )
+    lines.append("Что сделать?")
     await message.answer(
-        f"📋 {target_link} — доступы: {labels}.\n"
-        "Что сделать?",
+        "\n".join(lines),
         keyboard=create_poolkick_access_keyboard(
             flow_token,
             owner_id=actor_vk_id,
             has_staff=info.has_staff,
-            has_roles=info.has_roles,
+            has_poolkick_roles=info.has_poolkick_roles,
         ),
         disable_mentions=1,
     )

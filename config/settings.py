@@ -64,6 +64,13 @@ LEADER_ALLOWED_FORUMS: list[int] = [
 ]
 TECH_CHAT_ID: int = 2000000007
 
+# Чёрные списки (Google Sheets, /checkbl)
+BLACKLIST_SHEET_ID: str = os.getenv(
+    "BLACKLIST_SHEET_ID",
+    "1UEqmplxE3caHnCaVs31Duuofv9N6NbXgOJS19bq1FTc",
+)
+BLACKLIST_CACHE_TTL_SEC: int = int(os.getenv("BLACKLIST_CACHE_TTL_SEC", "300") or "300")
+
 TORTOISE_ORM: dict = {
     "connections": {"default": DATABASE_URL},
     "apps": {

@@ -45,6 +45,7 @@ COMMAND_ALIASES: dict[str, tuple[str, ...]] = {
     "removespeaker": ("rmspeaker",),
     "removevice": ("rmvice",),
     "find": ("search", "f"),
+    "checkbl": ("checkblacklist", "bl"),
     "rejoinkick": ("rjkick",),
     "chatsettings": ("csettings", "chcfg"),
     "forumcheck": ("fcheck", "forumstatus"),

@@ -34,3 +34,29 @@ async def revoke_accesses(vk_id: int, server_id: int) -> list[str]:
         removed.append(ca_label)
 
     return removed
+
+
+async def revoke_poolkick_roles(vk_id: int, server_id: int) -> list[str]:
+    """Снять роли через poolkick (без лидера — только /removeleader)."""
+    removed: list[str] = []
+
+    if await ForumRoleRepository.clear_judge_role(vk_id, server_id):
+        removed.append("судья")
+
+    access = await UserRepository.get_server_access(vk_id, server_id)
+    if access and access.is_attorney:
+        access.is_attorney = False
+        await access.save()
+        removed.append("адвокат")
+
+    if await CongressRepository.clear_speaker_for(vk_id, server_id):
+        removed.append("спикер конгресса")
+
+    if await CongressRepository.clear_vice_for(vk_id, server_id):
+        removed.append("вице-спикер конгресса")
+
+    ca_label = await UserRepository.revoke_self_ca_access(vk_id, server_id)
+    if ca_label:
+        removed.append(ca_label)
+
+    return removed

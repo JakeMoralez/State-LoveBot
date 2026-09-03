@@ -27,12 +27,13 @@ from services.command_utils import (
 from services.display_name import DisplayNameService
 from services.nickname import NicknameValidator
 from services.panel_audit import format_portal_registration_audit, split_vk_message
-from services.panel_client import set_staff_spheres_via_panel
+from services.panel_client import revoke_staff_via_panel, set_staff_spheres_via_panel
 from services.panel_db import read_staff_spheres
 from services.messaging import MessagingService
 from services.profile_card import format_user_profile_card
 from services.staff_display import format_staff_list
 from services.staff_spheres import (
+    build_spheres_from_setsphere_input,
     constrain_spheres_for_actor,
     format_spheres_display,
     parse_sphere_tokens,
@@ -84,10 +85,11 @@ _VK_REF_ONLY = re.compile(
 _SETSPHERE_USAGE = (
     "❌ /setsphere [@user] сферы [ст сферы]\n"
     "Сферы: ца, мю, мо, мз, гос, нелег, сервер\n"
-    "• /setsphere @user ца мю\n"
+    "• /setsphere @user ца мю — задать список\n"
+    "• /setsphere @user -ца — снять одну сферу\n"
     "• /setsphere @user ца ст мю — старший\n"
     "• /setsphere @user ца ст - — снять старшего\n"
-    "• ответом: /setsphere ца ст мю"
+    "• ответом: /setsphere -ца"
 )
 
 # Разделитель: ст / старший / след (+старший для совместимости)
@@ -612,6 +614,7 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         is_dev = await UserRepository.is_developer(actor_id)
         actor_level = AccessLevel.DEVELOPER if is_dev else access_level
         target_level = await UserRepository.get_access_level(target_id, server_id)
+        target_current = await read_staff_spheres(target_id, server_id)
 
         if not is_self and not is_dev and target_level >= actor_level:
             await message.answer(
@@ -631,10 +634,12 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             return
 
         try:
-            # Сначала нормализация без tier-ограничения цели
-            spheres = validate_spheres(parse_sphere_tokens(main_text))
-            # Затем — что можно повесить на уровень цели
-            spheres = validate_spheres(spheres, access_level=target_level)
+            spheres, _is_delta = build_spheres_from_setsphere_input(
+                main_text,
+                target_current,
+            )
+            if spheres:
+                spheres = validate_spheres(spheres, access_level=target_level)
         except ValueError as exc:
             await message.answer(f"❌ {exc}")
             return
@@ -660,14 +665,21 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         if not is_dev:
             try:
                 actor_spheres = await read_staff_spheres(actor_id, server_id)
-                target_current = await read_staff_spheres(target_id, server_id)
-                spheres = constrain_spheres_for_actor(
-                    actor_level,
-                    actor_spheres,
-                    target_current,
-                    spheres,
-                    target_level,
-                )
+                if spheres:
+                    spheres = constrain_spheres_for_actor(
+                        actor_level,
+                        actor_spheres,
+                        target_current,
+                        spheres,
+                        target_level,
+                    )
+                elif target_current:
+                    removable = set(target_current) & set(actor_spheres or [])
+                    if not removable:
+                        await message.answer(
+                            "❌ Недостаточно прав для снятия оставшихся сфер."
+                        )
+                        return
                 if is_senior and senior_spheres:
                     from services.staff_spheres import effective_grantable_sphere_keys
 
@@ -684,6 +696,40 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             except ValueError as exc:
                 await message.answer(f"❌ {exc}")
                 return
+
+        if not spheres:
+            ok, result = await revoke_staff_via_panel(
+                actor_vk_id=actor_id,
+                server_id=server_id,
+                vk_id=target_id,
+            )
+            if not ok:
+                await message.answer(f"❌ {result}")
+                return
+            await UserRepository.set_access_level(
+                target_id, server_id, 0, granted_by=actor_id
+            )
+            access = await UserRepository.get_server_access(target_id, server_id)
+            if access:
+                access.is_senior = False
+                access.senior_spheres = []
+                access.has_ca_access = False
+                access.ca_auto_peer_id = None
+                await access.save()
+            granter = await names.link_user(actor_id, server_id)
+            target_link = await names.link_user(target_id, server_id)
+            await message.answer(
+                f"✅ {granter} снял(а) доступ следящего у {target_link}.",
+                disable_mentions=1,
+            )
+            await action_logger.log_user(
+                "set_sphere",
+                actor_id,
+                f"id{target_id} → доступ снят",
+                "Сняты все сферы",
+                source_peer_id=message.peer_id,
+            )
+            return
 
         ok, result = await set_staff_spheres_via_panel(
             actor_vk_id=actor_id,

@@ -15,6 +15,7 @@ from database.repository.chat_repo import ChatRepository
 from database.repository.chat_settings_repo import ChatSettingsRepository
 from middlewares.access import requires_level, requires_public
 from middlewares.action_logger import ActionLogger
+from services.blacklist_sheets import check_blacklist
 from services.chat_admin import ChatAdminService
 from services.chat_settings_keyboard import create_open_edit_keyboard, create_value_keyboard
 from services.chat_settings_pending import clear as clear_chat_settings_session
@@ -77,6 +78,54 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
         access_level: int = 0,
     ) -> None:
         text = await admin.format_find_results(query, server_id)
+        await message.answer(text, disable_mentions=1)
+
+    async def _resolve_checkbl_query(
+        message: Message,
+        query: str,
+        server_id: int,
+    ) -> str:
+        reply_id = (
+            message.reply_message.from_id
+            if message.reply_message and message.reply_message.from_id > 0
+            else None
+        )
+        resolved, _hint = await resolver.resolve_from_message_with_hint(
+            query or "",
+            reply_from_id=reply_id,
+            server_id=server_id,
+        )
+        if resolved:
+            for candidate in (resolved.display_name, resolved.username):
+                if candidate and candidate.strip():
+                    return candidate.strip()
+        return (query or "").strip()
+
+    @bot.on.message(text=dual("checkbl"))
+    @requires_public
+    async def checkbl_usage(
+        message: Message,
+        server_id: int = 0,
+        access_level: int = 0,
+    ) -> None:
+        await message.answer(
+            "❌ /checkbl [ник / UUID / @user]\n"
+            "Пример: /checkbl Daniel_Bradberry"
+        )
+
+    @bot.on.message(text=dual_with_args("checkbl", "<query>"))
+    @requires_public
+    async def checkbl_lookup(
+        message: Message,
+        query: str,
+        server_id: int = 0,
+        access_level: int = 0,
+    ) -> None:
+        lookup = await _resolve_checkbl_query(message, query, server_id)
+        if not lookup:
+            await message.answer("❌ Укажите ник, UUID или пользователя.")
+            return
+        text = await check_blacklist(lookup)
         await message.answer(text, disable_mentions=1)
 
     @bot.on.message(text=dual("online"))
