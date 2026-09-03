@@ -93,7 +93,8 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
         "🛡 Модерация",
         (
             HelpEntry("/kick", "Исключить из беседы", AccessLevel.SUPERVISOR),
-            HelpEntry("/poolkick", "Исключить из бесед пула", AccessLevel.SUPERVISOR),
+            HelpEntry("/invite", "Добавить в беседу", AccessLevel.SUPERVISOR),
+            HelpEntry("/poolkick", "Исключить из бесед (выбор scope)", AccessLevel.SUPERVISOR),
             HelpEntry("/mute", "Выдать мут", 2),
             HelpEntry("/unmute", "Снять мут", 2),
             HelpEntry("/stitle", "Название беседы", 3),

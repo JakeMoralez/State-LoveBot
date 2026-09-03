@@ -82,9 +82,12 @@ class PullKickReport:
     failed: int = 0
     gos_included: int = 0
     all_chats: bool = False
+    scope_label: str | None = None
     results: list[KickResult] = field(default_factory=list)
 
     def summary(self) -> str:
+        if self.scope_label:
+            return f"Исключён из {self.kicked}/{self.total} ({self.scope_label})."
         if self.all_chats:
             return f"Исключён из {self.kicked}/{self.total} бесед сервера."
         if self.gos_included:
@@ -95,6 +98,8 @@ class PullKickReport:
         return f"Исключён из {self.kicked}/{self.total} бесед пула."
 
     def _scope_label(self, pool_name: str) -> str:
+        if self.scope_label:
+            return self.scope_label
         if self.all_chats:
             return "сервера (все зарегистрированные)"
         if self.gos_included:
@@ -110,6 +115,8 @@ class PullKickReport:
     ) -> str:
         scope_label = self._scope_label(pool_name)
         if self.total == 0:
+            if self.scope_label:
+                return f"❌ Нет бесед для исключения ({self.scope_label})."
             if self.all_chats:
                 return "❌ На сервере нет зарегистрированных бесед."
             return "❌ В пуле нет зарегистрированных бесед."
@@ -197,6 +204,45 @@ class ModerationService:
             details=result.error,
         )
         return result
+
+    async def pullkick_peers(
+        self,
+        *,
+        server_id: int,
+        pool_id: int | None,
+        actor_vk_id: int,
+        target_vk_id: int,
+        reason: str | None,
+        peers: list[tuple[int, str]],
+        scope_label: str = "",
+    ) -> PullKickReport:
+        """Кик по явному списку (peer_id, title)."""
+        report = PullKickReport(
+            total=len(peers),
+            all_chats=False,
+            scope_label=scope_label or None,
+        )
+
+        for peer_id, title in peers:
+            result = await self.kick_from_chat(peer_id, target_vk_id)
+            result.title = title or f"peer {peer_id}"
+            report.results.append(result)
+            if result.success:
+                report.kicked += 1
+            else:
+                report.failed += 1
+
+        await ModerationRepository.log_kick(
+            server_id=server_id,
+            pool_id=pool_id,
+            actor_vk_id=actor_vk_id,
+            target_vk_id=target_vk_id,
+            action="pullkick",
+            reason=reason,
+            success=report.kicked > 0,
+            details=report.summary(),
+        )
+        return report
 
     async def pullkick(
         self,

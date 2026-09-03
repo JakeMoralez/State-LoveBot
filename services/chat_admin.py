@@ -153,6 +153,46 @@ class ChatAdminService:
                 )
         return False, last_err or "Нет прав у бота на мут"
 
+    async def invite_member(
+        self,
+        peer_id: int,
+        target_id: int,
+    ) -> tuple[bool, str]:
+        """Добавить пользователя в беседу (нужен VK_USER_TOKEN с messages)."""
+        if peer_id < 2_000_000_000:
+            return False, "Только в беседах"
+        if not VK_USER_TOKEN:
+            return False, "Не настроен VK_USER_TOKEN (нужен user-токен с правом «Сообщения»)"
+
+        chat_id = self.peer_to_chat_id(peer_id)
+        user_api = API(token=VK_USER_TOKEN)
+        try:
+            await user_api.messages.add_chat_user(
+                chat_id=chat_id,
+                user_id=target_id,
+            )
+            return True, ""
+        except Exception as exc:
+            logger.warning(
+                "invite failed peer=%s target=%s: %s",
+                peer_id,
+                target_id,
+                exc,
+            )
+            raw = str(exc).lower()
+            if "already" in raw or "уже" in raw:
+                return False, "Пользователь уже в беседе"
+            if "privacy" in raw or "приват" in raw:
+                return False, "Приватность: пользователь запретил приглашения"
+            if "access" in raw or "denied" in raw or "15" in raw:
+                return False, "Нет прав: аккаунт токена должен быть админом беседы"
+            if "not found" in raw or "can't add" in raw or "cannot add" in raw:
+                return False, "Не удалось добавить (закрытый профиль / нет в друзьях?)"
+            msg = str(exc)
+            if len(msg) > 120:
+                msg = msg[:117] + "..."
+            return False, msg or "Ошибка VK API"
+
     async def unmute_member(self, peer_id: int, target_id: int) -> tuple[bool, str]:
         params = {
             "peer_id": peer_id,
