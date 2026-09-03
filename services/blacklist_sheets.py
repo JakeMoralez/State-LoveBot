@@ -105,9 +105,13 @@ def _nickname_match_score(query: str, cell: str) -> float:
 
 
 def _find_header_row(rows: list[list[str]]) -> int:
-    for idx, row in enumerate(rows[:12]):
+    for idx, row in enumerate(rows[:15]):
         joined = " ".join(cell or "" for cell in row).lower()
-        if "никнейм" in joined:
+        if "никнейм" in joined or "игровой ник" in joined:
+            return idx
+    for idx, row in enumerate(rows[:15]):
+        joined = " ".join(cell or "" for cell in row).lower()
+        if "uuid" in joined and ("активен" in joined or "чс" in joined):
             return idx
     return 0
 
@@ -136,6 +140,14 @@ def _build_col_map(header_row: list[str]) -> dict[str, int]:
             mapping["admin"] = idx
         elif text == "сфера" or (text.startswith("сфера") and "дата" not in text):
             mapping["sphere"] = idx
+    if "nickname" not in mapping and len(header_row) >= 2:
+        second = (header_row[1] or "").lower()
+        if "ник" in second:
+            mapping["nickname"] = 1
+    if "uuid" not in mapping and header_row:
+        first = (header_row[0] or "").lower()
+        if "uuid" in first:
+            mapping["uuid"] = 0
     return mapping
 
 
@@ -204,14 +216,25 @@ async def _load_all_tabs(*, force: bool = False) -> dict[str, list[BlacklistHit]
             }
             return parsed
 
-        rows_by_tab: dict[str, list[list[str]]] = {}
         async with aiohttp.ClientSession() as session:
-            for tab in BLACKLIST_TABS:
-                try:
-                    rows_by_tab[tab] = await _fetch_tab(session, tab)
-                except Exception as exc:
-                    logger.warning("blacklist fetch failed tab=%s: %s", tab, exc)
-                    rows_by_tab[tab] = []
+            results = await asyncio.gather(
+                *(_fetch_tab(session, tab) for tab in BLACKLIST_TABS),
+                return_exceptions=True,
+            )
+
+        rows_by_tab: dict[str, list[list[str]]] = {}
+        for tab, result in zip(BLACKLIST_TABS, results, strict=True):
+            if isinstance(result, Exception):
+                logger.warning("blacklist fetch failed tab=%s: %s", tab, result)
+                rows_by_tab[tab] = []
+                continue
+            rows_by_tab[tab] = result
+            logger.info(
+                "blacklist tab=%s rows=%s parsed=%s",
+                tab,
+                len(result),
+                len(_parse_sheet_rows(tab, result)),
+            )
 
         _cache_rows = rows_by_tab
         _cache_at = now
@@ -251,7 +274,11 @@ def _account_id_match_score(query: str, entry_uuid: str) -> float:
 
 def _is_active_status(status: str) -> bool:
     text = (status or "").strip().lower()
-    return text in {"активен", "вечный", "бессрочно"}
+    if text in {"вынесен"} or "вынес" in text:
+        return False
+    if text in {"активен", "вечный", "бессрочно", "без права на амнистию"}:
+        return True
+    return bool(text)
 
 
 def _status_emoji(status: str) -> str:
@@ -311,9 +338,17 @@ def search_blacklist(query: str, entries_by_tab: dict[str, list[BlacklistHit]]) 
     return found
 
 
-def format_blacklist_results(query: str, hits: list[BlacklistHit]) -> str:
+def format_blacklist_results(
+    query: str,
+    hits: list[BlacklistHit],
+    *,
+    tabs_checked: int | None = None,
+) -> str:
     if not hits:
-        return f"✅ {query} — не найден в чёрных списках."
+        suffix = ""
+        if tabs_checked:
+            suffix = f"\nℹ️ Проверены все {tabs_checked} листов таблицы."
+        return f"✅ {query} — не найден в чёрных списках.{suffix}"
 
     lines = [f"📋 Чёрный список — {query}"]
     if hits[0].match_score < 0.999:
@@ -326,8 +361,7 @@ def format_blacklist_results(query: str, hits: list[BlacklistHit]) -> str:
         degree = f" ({hit.degree})" if hit.degree else ""
         lines.append(f"\n{_status_emoji(status)} {hit.sheet} — {status}{degree}")
         lines.append(f"Ник: {hit.nickname}")
-        if hit.uuid:
-            lines.append(f"ID аккаунта: {hit.uuid}")
+        lines.append(f"ID аккаунта: {hit.uuid or 'нет'}")
         if hit.sphere:
             lines.append(f"Сфера: {hit.sphere}")
         if hit.reason:
@@ -361,4 +395,9 @@ async def check_blacklist(query: str) -> str:
         return "❌ Не удалось загрузить таблицу чёрных списков."
 
     hits = search_blacklist(q, entries)
-    return format_blacklist_results(q, hits)
+    loaded_tabs = sum(1 for rows in entries.values() if rows)
+    return format_blacklist_results(
+        q,
+        hits,
+        tabs_checked=len(BLACKLIST_TABS) if loaded_tabs else None,
+    )

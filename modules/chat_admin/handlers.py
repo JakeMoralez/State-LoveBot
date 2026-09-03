@@ -113,7 +113,7 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
             or "vk.ru" in q_lower
             or re.match(r"\[id\d+\|", query, re.IGNORECASE)
         )
-        if is_vk_ref or reply_id:
+        if is_vk_ref:
             resolved, _hint = await resolver.resolve_from_message_with_hint(
                 query,
                 reply_from_id=reply_id,
