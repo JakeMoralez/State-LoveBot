@@ -181,6 +181,41 @@ class ChatAdminService:
                 "Перевыпустите токен (messages + offline)."
             )
 
+        who = f"{token_name} (id{token_uid})" if token_uid else "аккаунт токена"
+
+        # Диагностика: состоит ли владелец токена в беседе и админ ли он
+        try:
+            members = await user_api.request(
+                "messages.getConversationMembers",
+                {"peer_id": peer_id},
+            )
+            items = []
+            if isinstance(members, dict):
+                items = (members.get("response") or members).get("items") or []
+            my_item = next(
+                (
+                    it
+                    for it in items
+                    if isinstance(it, dict) and int(it.get("member_id") or 0) == token_uid
+                ),
+                None,
+            )
+            if my_item is None:
+                return False, (
+                    f"{who} не видит эту беседу через API / не в ней. "
+                    "Токен должен быть от участника-админа именно этой беседы."
+                )
+            if not my_item.get("is_admin") and not my_item.get("is_owner"):
+                return False, (
+                    f"{who} в беседе, но не админ (is_admin=0). "
+                    "Назначьте админом или используйте токен создателя."
+                )
+        except Exception as exc:
+            logger.warning(
+                "invite: getConversationMembers failed peer=%s: %s", peer_id, exc
+            )
+            # не стопаем — addChatUser всё равно покажет точную ошибку
+
         try:
             await user_api.messages.add_chat_user(
                 chat_id=chat_id,
@@ -198,39 +233,51 @@ class ChatAdminService:
             raw = str(exc)
             low = raw.lower()
             code = getattr(exc, "code", None)
+            err_msg = (getattr(exc, "error_msg", None) or "") or ""
             if code is None:
                 match = re.search(r"\[(\d+)\]", raw)
                 if match:
                     code = int(match.group(1))
+            if not err_msg:
+                # "… [15] Access denied …" / error_msg=…
+                m2 = re.search(r"\]\s*(.+)$", raw)
+                if m2:
+                    err_msg = m2.group(1).strip()
 
-            who = f"{token_name} (id{token_uid})" if token_uid else "аккаунт токена"
+            detail = f"{code}: {err_msg}" if code is not None else (err_msg or raw)
+            if len(detail) > 160:
+                detail = detail[:157] + "..."
 
-            if "already" in low or "уже" in low or code == 15 and "already" in low:
+            if "already" in low or "уже" in low:
                 return False, "Пользователь уже в беседе"
-            if "privacy" in low or "приват" in low:
-                return False, "Приватность: пользователь запретил приглашения"
+            if code == 981 or "privacy" in low or "приват" in low:
+                return False, (
+                    "Приватность цели: нельзя пригласить в беседы "
+                    "(настройки → Приватность → «Кто может приглашать в беседы»)."
+                )
+            if code == 925:
+                return False, f"{who} не админ этой беседы (VK 925)."
+            if code == 936:
+                return False, "Контакт не найден (нужно быть в друзьях?)."
+            if code in (982, 983, 984):
+                return False, f"Ограничение VK: {detail}"
             if code == 27 or "method is unavailable" in low or "messages api" in low:
                 return False, (
-                    "Токен без полноценного Messages API "
-                    "(часто у приложения vk.com). "
-                    "Нужен токен Kate Mobile / VK Admin с правом «Сообщения»."
+                    "Метод недоступен для этого токена (Messages API). "
+                    "Официально messages для user-токена выдаёт только VK Support."
                 )
-            if code in (917, 932) or "don't have access to this chat" in low:
+            if code in (917, 932):
                 return False, (
-                    f"{who} не состоит в этой беседе / нет доступа к ней. "
-                    "Токен должен быть от аккаунта-админа беседы."
+                    f"{who} не имеет доступа к беседе через API ({detail})."
                 )
-            if code == 15 or "access denied" in low or "access" in low:
+            if code == 15:
                 return False, (
-                    f"Access denied для {who}. "
-                    "Проверьте: 1) этот аккаунт — админ беседы; "
-                    "2) у токена есть «Сообщения»; "
-                    "3) не токен приложения vk.com без Messages API."
+                    f"Access denied ({detail}). "
+                    "Чаще всего у приложения нет официального права messages.addChatUser: "
+                    "VK выдаёт его только через devsupport@corp.vk.com на Standalone-приложение. "
+                    "Токены Kate/сайтов сейчас часто получают тот же отказ."
                 )
-            if "not found" in low or "can't add" in low or "cannot add" in low:
-                return False, "Не удалось добавить (закрытый профиль / нет в друзьях?)"
-            short = raw if len(raw) <= 140 else raw[:137] + "..."
-            return False, f"{who}: {short}"
+            return False, f"{who}: {detail}"
 
 
     async def unmute_member(self, peer_id: int, target_id: int) -> tuple[bool, str]:
