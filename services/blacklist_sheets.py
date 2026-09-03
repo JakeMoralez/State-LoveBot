@@ -253,9 +253,20 @@ def _is_account_id_query(query: str) -> bool:
     q = (query or "").strip()
     if not q:
         return False
+    # Игровой ник Name_Surname — не ID аккаунта
+    if re.fullmatch(r"[A-Za-z0-9]+_[A-Za-z0-9_]*", q):
+        return False
     if q.isdigit():
         return True
-    return bool(re.fullmatch(r"[\w-]{8,}", q, re.IGNORECASE))
+    if re.fullmatch(
+        r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+        q,
+        re.IGNORECASE,
+    ):
+        return True
+    if re.fullmatch(r"[0-9a-f]{8,}", q, re.IGNORECASE):
+        return True
+    return False
 
 
 def _account_id_match_score(query: str, entry_uuid: str) -> float:
