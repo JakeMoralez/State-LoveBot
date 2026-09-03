@@ -219,6 +219,36 @@ async def _load_all_tabs(*, force: bool = False) -> dict[str, list[BlacklistHit]
     return {tab: _parse_sheet_rows(tab, rows) for tab, rows in rows_by_tab.items()}
 
 
+def _normalize_account_id(value: str) -> str:
+    text = (value or "").strip()
+    if re.fullmatch(r"\d+\.0+", text):
+        return text.split(".", 1)[0]
+    return text
+
+
+def _is_account_id_query(query: str) -> bool:
+    q = (query or "").strip()
+    if not q:
+        return False
+    if q.isdigit():
+        return True
+    return bool(re.fullmatch(r"[\w-]{8,}", q, re.IGNORECASE))
+
+
+def _account_id_match_score(query: str, entry_uuid: str) -> float:
+    if not entry_uuid:
+        return 0.0
+    q = _normalize_account_id(query).lower()
+    uid = _normalize_account_id(entry_uuid).lower()
+    if not q or not uid:
+        return 0.0
+    if q == uid:
+        return 1.0
+    if len(q) >= 8 and q in uid:
+        return 0.98
+    return 0.0
+
+
 def _is_active_status(status: str) -> bool:
     text = (status or "").strip().lower()
     return text in {"активен", "вечный", "бессрочно"}
@@ -234,8 +264,7 @@ def search_blacklist(query: str, entries_by_tab: dict[str, list[BlacklistHit]]) 
         return []
 
     q_lower = q.lower()
-    q_norm = _normalize_nick(q)
-    is_uuid_query = bool(re.fullmatch(r"[\w-]{8,}", q_lower))
+    is_account_id = _is_account_id_query(q)
 
     found: list[BlacklistHit] = []
     seen: set[tuple[str, str, str]] = set()
@@ -243,10 +272,8 @@ def search_blacklist(query: str, entries_by_tab: dict[str, list[BlacklistHit]]) 
     for tab, entries in entries_by_tab.items():
         for entry in entries:
             score = 0.0
-            if is_uuid_query and entry.uuid and entry.uuid.strip().lower() == q_lower:
-                score = 1.0
-            elif is_uuid_query and q_lower in entry.uuid.lower():
-                score = 0.98
+            if is_account_id:
+                score = _account_id_match_score(q, entry.uuid)
             else:
                 score = _nickname_match_score(q, entry.nickname)
 
