@@ -127,6 +127,16 @@ class NicknameValidator:
         return True, ""
 
     @staticmethod
+    def normalize_developer(nickname: str) -> tuple[str | None, str | None]:
+        """Разработчик — без тегов/фракций, только длина."""
+        raw = (nickname or "").strip()
+        if not raw:
+            return None, "Никнейм не может быть пустым."
+        if len(raw) > 64:
+            return None, "Никнейм слишком длинный (макс. 64 символа)."
+        return raw, None
+
+    @staticmethod
     def normalize(nickname: str) -> tuple[str | None, str | None]:
         """Вернуть (нормализованный_ник, ошибка)."""
         raw = _ascii_brackets((nickname or "").strip())

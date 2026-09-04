@@ -269,27 +269,34 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             await message.answer("❌ Укажите никнейм.")
             return
 
-        blocked = await _staff_nick_blocked_message(target_id, server_id, names)
-        if blocked:
-            await message.answer(blocked, disable_mentions=1)
-            return
+        is_dev = await UserRepository.is_developer(message.from_id or 0)
 
-        nickname, val_err = NicknameValidator.normalize(nickname)
+        if not is_dev:
+            blocked = await _staff_nick_blocked_message(target_id, server_id, names)
+            if blocked:
+                await message.answer(blocked, disable_mentions=1)
+                return
+
+        if is_dev:
+            nickname, val_err = NicknameValidator.normalize_developer(nickname)
+        else:
+            nickname, val_err = NicknameValidator.normalize(nickname)
         if val_err or not nickname:
             await message.answer(f"❌ {val_err or 'Неверный никнейм.'}")
             return
 
-        if await UserRepository.has_nickname(target_id, server_id):
-            await message.answer("❌ Никнейм уже установлен. Сначала /rnick.")
-            return
+        if not is_dev:
+            if await UserRepository.has_nickname(target_id, server_id):
+                await message.answer("❌ Никнейм уже установлен. Сначала /rnick.")
+                return
 
-        if await UserRepository.is_nickname_taken(
-            server_id,
-            nickname,
-            exclude_vk_id=target_id,
-        ):
-            await message.answer("❌ Такой ник уже занят на этом сервере.")
-            return
+            if await UserRepository.is_nickname_taken(
+                server_id,
+                nickname,
+                exclude_vk_id=target_id,
+            ):
+                await message.answer("❌ Такой ник уже занят на этом сервере.")
+                return
 
         if target_id != message.from_id:
             resolver = VKResolver(api)
@@ -330,10 +337,11 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             await message.answer(_NICK_TARGET_ERR)
             return
 
-        blocked = await _staff_nick_blocked_message(target_id, server_id, names)
-        if blocked:
-            await message.answer(blocked, disable_mentions=1)
-            return
+        if not await UserRepository.is_developer(message.from_id or 0):
+            blocked = await _staff_nick_blocked_message(target_id, server_id, names)
+            if blocked:
+                await message.answer(blocked, disable_mentions=1)
+                return
 
         if not await UserRepository.has_nickname(target_id, server_id):
             link = await names.link_user(target_id, server_id)

@@ -45,7 +45,7 @@ def requires_setnick(
             return None
 
         level = await AccessChecker.get_level(user_id, server_id)
-        if level < AccessLevel.PGS:
+        if level < AccessLevel.PGS and not await UserRepository.is_developer(user_id):
             await message.answer(
                 "⛔ Недостаточно прав.\n"
                 f"Нужен уровень: ПГС\n"
@@ -54,7 +54,11 @@ def requires_setnick(
             return None
 
         kwargs["server_id"] = server_id
-        kwargs["access_level"] = level
+        kwargs["access_level"] = (
+            AccessLevel.DEVELOPER
+            if await UserRepository.is_developer(user_id)
+            else level
+        )
         return await func(message, *args, **kwargs)
 
     return wrapper

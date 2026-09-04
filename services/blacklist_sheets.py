@@ -31,6 +31,9 @@ _FUZZY_THRESHOLD = 0.86
 _FIRST_PART_THRESHOLD = 0.78
 _LAST_PART_THRESHOLD = 0.88
 
+CHECKBL_BATCH_MAX = 12
+VK_MESSAGE_LIMIT = 4090
+
 _cache_lock = asyncio.Lock()
 _cache_rows: dict[str, list[list[str]]] | None = None
 _cache_at: float = 0.0
@@ -366,10 +369,12 @@ def format_blacklist_results(
     hits: list[BlacklistHit],
     *,
     tabs_checked: int | None = None,
+    show_tabs_hint: bool = True,
+    max_hits: int = 8,
 ) -> str:
     if not hits:
         suffix = ""
-        if tabs_checked:
+        if tabs_checked and show_tabs_hint:
             suffix = f"\nℹ️ Проверены все {tabs_checked} листов таблицы."
         return f"✅ {query} — не найден в чёрных списках.{suffix}"
 
@@ -379,7 +384,7 @@ def format_blacklist_results(
             f"ℹ️ Найдено по похожести ({int(hits[0].match_score * 100)}%): {hits[0].nickname}"
         )
 
-    for hit in hits[:8]:
+    for hit in hits[:max_hits]:
         status = hit.status or "—"
         degree = f" ({hit.degree})" if hit.degree else ""
         lines.append(f"\n{_status_emoji(status)} {hit.sheet} — {status}{degree}")
@@ -399,28 +404,82 @@ def format_blacklist_results(
         if meta:
             lines.append(" · ".join(meta))
 
-    if len(hits) > 8:
-        lines.append(f"\n… и ещё {len(hits) - 8} записей.")
+    if len(hits) > max_hits:
+        lines.append(f"\n… и ещё {len(hits) - max_hits} записей.")
     return "\n".join(lines)
 
 
-async def check_blacklist(query: str) -> str:
+def _split_message_chunks(blocks: list[str], *, footer: str = "") -> list[str]:
+    if not blocks:
+        return [footer] if footer else []
+
+    chunks: list[str] = []
+    current = ""
+    for block in blocks:
+        if not block:
+            continue
+        candidate = block if not current else f"{current}\n\n{block}"
+        if len(candidate) > VK_MESSAGE_LIMIT and current:
+            chunks.append(current)
+            current = block
+        else:
+            current = candidate
+
+    if footer:
+        candidate = f"{current}\n\n{footer}" if current else footer
+        if current and len(candidate) > VK_MESSAGE_LIMIT:
+            chunks.append(current)
+            current = footer
+        else:
+            current = candidate
+
+    if current:
+        chunks.append(current)
+    return chunks or ([footer] if footer else [])
+
+
+async def check_blacklist_many(queries: list[str]) -> list[str]:
     if not BLACKLIST_SHEET_ID:
-        return "❌ Таблица чёрных списков не настроена."
-    q = (query or "").strip()
-    if not q:
-        return "❌ /checkbl [ник / ID аккаунта]\nПример: /checkbl Daniel_Bradberry"
+        return ["❌ Таблица чёрных списков не настроена."]
+
+    cleaned = [(q or "").strip() for q in queries if (q or "").strip()]
+    if not cleaned:
+        return [
+            "❌ /checkbl [ник / ID …]\n"
+            "Пример: /checkbl Daniel_Bradberry\n"
+            "Несколько: /cbl Nick_One Nick_Two 709801"
+        ]
 
     try:
         entries = await _load_all_tabs()
     except Exception as exc:
         logger.exception("blacklist load failed: %s", exc)
-        return "❌ Не удалось загрузить таблицу чёрных списков."
+        return ["❌ Не удалось загрузить таблицу чёрных списков."]
 
-    hits = search_blacklist(q, entries)
     loaded_tabs = sum(1 for rows in entries.values() if rows)
-    return format_blacklist_results(
-        q,
-        hits,
-        tabs_checked=len(BLACKLIST_TABS) if loaded_tabs else None,
-    )
+    tabs_count = len(BLACKLIST_TABS) if loaded_tabs else None
+    batch = len(cleaned) > 1
+    max_hits = 3 if batch else 8
+
+    blocks: list[str] = []
+    for q in cleaned:
+        hits = search_blacklist(q, entries)
+        blocks.append(
+            format_blacklist_results(
+                q,
+                hits,
+                tabs_checked=tabs_count,
+                show_tabs_hint=not batch,
+                max_hits=max_hits,
+            )
+        )
+
+    footer = ""
+    if batch and tabs_count:
+        footer = f"ℹ️ Проверены все {tabs_count} листов таблицы."
+    return _split_message_chunks(blocks, footer=footer)
+
+
+async def check_blacklist(query: str) -> str:
+    chunks = await check_blacklist_many([query])
+    return chunks[0] if chunks else "❌ Пустой запрос."
