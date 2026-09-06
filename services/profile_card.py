@@ -92,7 +92,7 @@ async def format_user_profile_card(
     days = days_on_post(appointed)
 
     lines = [
-        "📝 Основая информация о пользователе ⬇",
+        "📝 Основная информация о пользователе ⬇",
         "",
         f"👤 Ник пользователя: {nick_link}",
         f"🌐 Сервер: {server_label}",

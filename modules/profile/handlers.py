@@ -15,6 +15,7 @@ from database.repository.user_repo import UserRepository
 from middlewares.access import AccessChecker, requires_level, requires_public
 from middlewares.congress_access import requires_setnick
 from middlewares.action_logger import ActionLogger
+from services import responses as resp
 from services.command_utils import (
     dual,
     dual_args,
@@ -63,8 +64,8 @@ _SETNICK_LEAD = re.compile(
 )
 
 
-_SETNICK_FORMAT_ERR = (
-    "❌ /snick [@user] [тег] [ранг] Name_Surname\n"
+_SETNICK_FORMAT_ERR = resp.error(
+    "/snick [@user] [тег] [ранг] Name_Surname\n"
     "Фракция: [GOV] [9] Land_Sanchez\n"
     "Роль: [Speaker] Name_Surname или [Speaker | LSPD][10] Name_Surname\n"
     "Судья: [Judge] Name_Surname\n"
@@ -72,8 +73,8 @@ _SETNICK_FORMAT_ERR = (
     "Пинг / ссылка / ответ на сообщение. Ник следящего — только с сайта."
 )
 
-_NICK_TARGET_ERR = (
-    "❌ Неверный формат.\n"
+_NICK_TARGET_ERR = resp.error(
+    "Неверный формат.\n"
     "Укажите @user, [id|имя], vk.ru/… или ответьте на сообщение."
 )
 
@@ -82,8 +83,8 @@ _VK_REF_ONLY = re.compile(
     re.IGNORECASE,
 )
 
-_SETSPHERE_USAGE = (
-    "❌ /setsphere [@user] сферы [ст сферы]\n"
+_SETSPHERE_USAGE = resp.error(
+    "/setsphere [@user] сферы [ст сферы]\n"
     "Сферы: ца, мю, мо, мз, гос, нелег, сервер\n"
     "• /setsphere @user ца мю — задать список\n"
     "• /setsphere @user -ца — снять одну сферу\n"
@@ -126,7 +127,7 @@ async def _parse_setnick(message: Message, api: API) -> tuple[int | None, str | 
     if message.reply_message and message.reply_message.from_id > 0:
         nick = args.strip()
         if not nick:
-            return None, None, "❌ Укажите никнейм."
+            return None, None, resp.error("Укажите никнейм.")
         return message.reply_message.from_id, nick, None
 
     lead = _SETNICK_LEAD.match(args)
@@ -140,7 +141,7 @@ async def _parse_setnick(message: Message, api: API) -> tuple[int | None, str | 
         lead.group(4).strip(),
     )
     if not nickname:
-        return None, None, "❌ Укажите никнейм."
+        return None, None, resp.error("Укажите никнейм.")
 
     if vk_id_raw:
         return int(vk_id_raw), nickname, None
@@ -169,8 +170,8 @@ async def _staff_nick_blocked_message(
     if await UserRepository.get_access_level(target_id, server_id) < AccessLevel.PGS:
         return None
     link = await names.link_user(target_id, server_id)
-    return (
-        f"❌ У {link} есть доступ следящего — "
+    return resp.error(
+        f"У {link} есть доступ следящего — "
         "ник меняется через сайт (Команда → профиль)."
     )
 
@@ -215,14 +216,14 @@ async def _parse_profile_target(message: Message, api: API, cmd: str) -> tuple[i
     if message.reply_message and message.reply_message.from_id > 0:
         if args:
             return None, (
-                "❌ Укажите только @user, ссылку VK или ответьте на сообщение, но не оба сразу."
+                resp.error("Укажите только @user, ссылку VK или ответьте на сообщение, но не оба сразу.")
             )
         return message.reply_message.from_id, None
 
     if not args:
         if message.from_id:
             return message.from_id, None
-        return None, "❌ Не удалось определить пользователя."
+        return None, resp.error("Не удалось определить пользователя.")
 
     lead = _VK_REF_ONLY.match(args.strip())
     if not lead:
@@ -266,7 +267,7 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             await message.answer(err)
             return
         if not nickname or target_id is None:
-            await message.answer("❌ Укажите никнейм.")
+            await message.answer(resp.error("Укажите никнейм."))
             return
 
         is_dev = await UserRepository.is_developer(message.from_id or 0)
@@ -282,12 +283,12 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         else:
             nickname, val_err = NicknameValidator.normalize(nickname)
         if val_err or not nickname:
-            await message.answer(f"❌ {val_err or 'Неверный никнейм.'}")
+            await message.answer(resp.error(f"{val_err or 'Неверный никнейм.'}"))
             return
 
         if not is_dev:
             if await UserRepository.has_nickname(target_id, server_id):
-                await message.answer("❌ Никнейм уже установлен. Сначала /rnick.")
+                await message.answer(resp.error("Никнейм уже установлен. Сначала /rnick."))
                 return
 
             if await UserRepository.is_nickname_taken(
@@ -295,7 +296,7 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
                 nickname,
                 exclude_vk_id=target_id,
             ):
-                await message.answer("❌ Такой ник уже занят на этом сервере.")
+                await message.answer(resp.error("Такой ник уже занят на этом сервере."))
                 return
 
         if target_id != message.from_id:
@@ -346,7 +347,7 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         if not await UserRepository.has_nickname(target_id, server_id):
             link = await names.link_user(target_id, server_id)
             await message.answer(
-                f"❌ У {link} нет никнейма на этом сервере.",
+                resp.error(f"У {link} нет никнейма на этом сервере."),
                 disable_mentions=1,
             )
             return
@@ -392,7 +393,7 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         member_ids: set[int] | None = None
         if chat_only:
             if message.peer_id < 2_000_000_000:
-                await message.answer("❌ Режим chat — только в беседе.")
+                await message.answer(resp.error("Режим chat — только в беседе."))
                 return
             messaging = MessagingService(api)
             member_ids = set(await messaging.get_member_ids(message.peer_id))
@@ -420,7 +421,7 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             target_id = message.from_id
 
         if not target_id:
-            await message.answer("ℹ️ Ответьте на сообщение пользователя.")
+            await message.answer(resp.info("Ответьте на сообщение пользователя."))
             return
 
         card = await format_who_card(target_id, api, server_id)
@@ -435,8 +436,10 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
     ) -> None:
         max_lvl = AccessLevel.GA if await UserRepository.is_developer(message.from_id or 0) else AccessLevel.ZGA
         await message.answer(
-            f"❌ /setlevel [@user] [0–{max_lvl}]\n"
-            "Нельзя выдать уровень равный или выше своего."
+            resp.error(
+                f"/setlevel [@user] [0–{max_lvl}]\n"
+                "Нельзя выдать уровень равный или выше своего."
+            )
         )
 
     @bot.on.message(text=dual_with_args("setlevel", "<target> <level>"))
@@ -454,17 +457,17 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         try:
             new_level = int(level)
         except ValueError:
-            await message.answer(f"❌ Уровень — число от 0 до {max_grant}.")
+            await message.answer(resp.error(f"Уровень — число от 0 до {max_grant}."))
             return
         if new_level < 0 or new_level > max_grant:
-            await message.answer(f"❌ Доступны уровни 0–{max_grant}.")
+            await message.answer(resp.error(f"Доступны уровни 0–{max_grant}."))
             return
 
         granter_level = access_level
         if is_dev:
             granter_level = AccessLevel.DEVELOPER
         if new_level > granter_level:
-            await message.answer("❌ Нельзя выдать уровень выше своего.")
+            await message.answer(resp.error("Нельзя выдать уровень выше своего."))
             return
 
         resolver = VKResolver(api, server_id)
@@ -474,17 +477,17 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             return
         if not resolved:
             await message.answer(
-                "❌ Пользователь не найден.\n"
-                "Укажите ссылку, @user или ник."
+                resp.error("Пользователь не найден.\n"
+                "Укажите ссылку, @user или ник.")
             )
             return
 
         if resolved.vk_id != message.from_id and new_level >= granter_level:
-            await message.answer("❌ Нельзя выдать уровень равный или выше своего.")
+            await message.answer(resp.error("Нельзя выдать уровень равный или выше своего."))
             return
 
         if resolved.vk_id == message.from_id and new_level < granter_level:
-            await message.answer("❌ Нельзя понизить свой уровень ниже текущего.")
+            await message.answer(resp.error("Нельзя понизить свой уровень ниже текущего."))
             return
 
         old_level = await UserRepository.get_access_level(resolved.vk_id, server_id)
@@ -496,9 +499,9 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             and old_level >= granter_level
         ):
             await message.answer(
-                "❌ Нельзя изменять уровень пользователя своего уровня или выше.\n"
+                resp.error("Нельзя изменять уровень пользователя своего уровня или выше.\n"
                 f"Ваш уровень: {AccessChecker.level_name(granter_level)}, "
-                f"у цели: {AccessChecker.level_name(old_level)}."
+                f"у цели: {AccessChecker.level_name(old_level)}.")
             )
             return
 
@@ -511,8 +514,10 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
                 else "/assign?type=staff"
             )
             await message.answer(
-                "❌ У пользователя не было доступа следящего.\n"
-                f"Назначьте через сайт: {assign_url}",
+                resp.error(
+                    "У пользователя не было доступа следящего.\n"
+                    f"Назначьте через сайт: {assign_url}"
+                ),
                 disable_mentions=1,
             )
             return
@@ -555,7 +560,7 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         )
         log_detail = "Снят" if new_level == 0 else "Выдан"
         await message.answer(
-            f"✅ {result_text}{nick_note}",
+            resp.success(f"{result_text}{nick_note}"),
             disable_mentions=1,
         )
         await action_logger.log_user(
@@ -612,8 +617,8 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             return
         if not resolved:
             await message.answer(
-                "❌ Пользователь не найден.\n"
-                "Укажите ссылку, @user, ник или ответьте на сообщение."
+                resp.error("Пользователь не найден.\n"
+                "Укажите ссылку, @user, ник или ответьте на сообщение.")
             )
             return
 
@@ -626,14 +631,14 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
 
         if not is_self and not is_dev and target_level >= actor_level:
             await message.answer(
-                "❌ Нельзя менять сферы пользователя своего уровня или выше.\n"
+                resp.error("Нельзя менять сферы пользователя своего уровня или выше.\n"
                 f"Ваш уровень: {AccessChecker.level_name(actor_level)}, "
-                f"у цели: {AccessChecker.level_name(target_level)}."
+                f"у цели: {AccessChecker.level_name(target_level)}.")
             )
             return
 
         if target_level < AccessLevel.PGS:
-            await message.answer("❌ У пользователя нет доступа следящего.")
+            await message.answer(resp.error("У пользователя нет доступа следящего."))
             return
 
         main_text, senior_text = _split_setsphere_payload(payload)
@@ -649,7 +654,7 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             if spheres:
                 spheres = validate_spheres(spheres, access_level=target_level)
         except ValueError as exc:
-            await message.answer(f"❌ {exc}")
+            await message.answer(resp.error(f"{exc}"))
             return
 
         senior_spheres: list[str] | None = None
@@ -666,7 +671,7 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
                         access_level=AccessLevel.SUPERVISOR,
                     )
                 except ValueError as exc:
-                    await message.answer(f"❌ {exc}")
+                    await message.answer(resp.error(f"{exc}"))
                     return
                 is_senior = True
 
@@ -685,7 +690,7 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
                     removable = set(target_current) & set(actor_spheres or [])
                     if not removable:
                         await message.answer(
-                            "❌ Недостаточно прав для снятия оставшихся сфер."
+                            resp.error("Недостаточно прав для снятия оставшихся сфер.")
                         )
                         return
                 if is_senior and senior_spheres:
@@ -697,12 +702,14 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
                     bad_senior = [s for s in senior_spheres if s not in grantable]
                     if bad_senior:
                         await message.answer(
-                            "❌ Старшие сферы можно ставить только из своих: "
-                            f"{format_spheres_display(bad_senior)}."
+                            resp.error(
+                                "Старшие сферы можно ставить только из своих: "
+                                f"{format_spheres_display(bad_senior)}."
+                            )
                         )
                         return
             except ValueError as exc:
-                await message.answer(f"❌ {exc}")
+                await message.answer(resp.error(f"{exc}"))
                 return
 
         if not spheres:
@@ -712,7 +719,7 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
                 vk_id=target_id,
             )
             if not ok:
-                await message.answer(f"❌ {result}")
+                await message.answer(resp.error(f"{result}"))
                 return
             await UserRepository.set_access_level(
                 target_id, server_id, 0, granted_by=actor_id
@@ -727,7 +734,7 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             granter = await names.link_user(actor_id, server_id)
             target_link = await names.link_user(target_id, server_id)
             await message.answer(
-                f"✅ {granter} снял(а) доступ следящего у {target_link}.",
+                resp.success(f"{granter} снял(а) доступ следящего у {target_link}."),
                 disable_mentions=1,
             )
             await action_logger.log_user(
@@ -748,7 +755,7 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             senior_spheres=senior_spheres,
         )
         if not ok:
-            await message.answer(f"❌ {result}")
+            await message.answer(resp.error(f"{result}"))
             return
 
         nick_note = ""
@@ -768,7 +775,7 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         granter = await names.link_user(actor_id, server_id)
         target_link = await names.link_user(target_id, server_id)
         sphere_text = format_spheres_display(spheres)
-        msg = f"✅ {granter} обновил сферы у {target_link}: {sphere_text}{nick_note}"
+        msg = resp.success(f"{granter} обновил сферы у {target_link}: {sphere_text}{nick_note}")
         if is_senior and senior_spheres:
             msg += f"\n👑 Старший / совмещение: {format_spheres_display(senior_spheres)}"
         elif is_senior is False:

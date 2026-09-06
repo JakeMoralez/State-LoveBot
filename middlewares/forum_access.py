@@ -15,6 +15,7 @@ from database.repository.forum_role_repo import ForumRoleRepository
 from database.repository.server_repo import ServerRepository
 from database.repository.user_repo import UserRepository
 from middlewares.access import AccessChecker
+from services import responses as resp
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +76,7 @@ def requires_court_manager(
         server_id = await AccessChecker.resolve_server_id(message.peer_id, user_id)
         if not await ForumAccessChecker.can_manage_court_roles(user_id, server_id):
             await message.answer(
-                "⛔ Нужен уровень ЗГС и доступ ЦА."
+                resp.denied(hint="Нужен уровень ЗГС (3 и выше) и доступ ЦА.")
             )
             return None
 
@@ -101,7 +102,12 @@ def requires_forum_user(
             return None
 
         if not await ForumRoleRepository.can_use_forum_bot(user_id):
-            await message.answer("⛔ У вас нет доступа к боту. Обратитесь к администратору.")
+            await message.answer(
+                resp.denied(
+                    "У вас нет доступа к боту.",
+                    hint="Обратитесь к администратору, чтобы вас добавили.",
+                )
+            )
             return None
 
         kwargs["server_id"] = await AccessChecker.resolve_server_id(
@@ -127,7 +133,9 @@ def requires_judge(
             user_id,
         )
         if not await ForumRoleRepository.is_judge_effective(user_id, server_id):
-            await message.answer("⛔ Команда доступна только судьям на этом сервере.")
+            await message.answer(
+                resp.denied("Команда доступна только судьям этого сервера.")
+            )
             return None
 
         kwargs["server_id"] = server_id
@@ -152,7 +160,9 @@ def requires_judge_or_developer(
             kwargs["server_id"] = server_id
             return await func(message, *args, **kwargs)
         if not await ForumRoleRepository.is_judge_effective(user_id, server_id):
-            await message.answer("⛔ Команда доступна только судьям на этом сервере.")
+            await message.answer(
+                resp.denied("Команда доступна только судьям этого сервера.")
+            )
             return None
 
         kwargs["server_id"] = server_id

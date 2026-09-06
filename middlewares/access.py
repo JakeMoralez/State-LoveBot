@@ -16,6 +16,7 @@ from database.repository.chat_repo import ChatRepository
 from database.repository.server_repo import ServerRepository
 from database.repository.forum_role_repo import ForumRoleRepository
 from database.repository.user_repo import UserRepository
+from services import responses as resp
 from services.dev_server_context import get_dev_server_override
 
 logger = logging.getLogger(__name__)
@@ -94,7 +95,10 @@ def requires_level(
                 user_id
             ):
                 await message.answer(
-                    "⛔ У вас нет доступа к боту. Обратитесь к администратору."
+                    resp.denied(
+                        "У вас нет доступа к боту.",
+                        hint="Обратитесь к администратору, чтобы вас добавили.",
+                    )
                 )
                 return None
 
@@ -109,9 +113,10 @@ def requires_level(
                 required = AccessChecker.level_name(min_level)
                 current = AccessChecker.level_name(level) if level else "нет доступа"
                 await message.answer(
-                    "⛔ Недостаточно прав.\n"
-                    f"Нужен уровень: {required}\n"
-                    f"Ваш уровень: {current}"
+                    resp.denied(
+                        "Недостаточно прав для этой команды.",
+                        hint=f"Нужен уровень: {required}\nВаш уровень: {current}",
+                    )
                 )
                 logger.warning(
                     "Отказ в доступе: user=%s server=%s need=%s have=%s cmd=%s",
@@ -162,7 +167,12 @@ def requires_zgs_or_gos(
             return None
 
         if not await ForumRoleRepository.can_use_forum_bot(user_id):
-            await message.answer("⛔ У вас нет доступа к боту.")
+            await message.answer(
+                resp.denied(
+                    "У вас нет доступа к боту.",
+                    hint="Обратитесь к администратору, чтобы вас добавили.",
+                )
+            )
             return None
 
         server_id = await AccessChecker.resolve_server_id(message.peer_id, user_id)
@@ -172,7 +182,9 @@ def requires_zgs_or_gos(
             allowed = True
 
         if not allowed:
-            await message.answer("⛔ Требуется ЗГС (3) или ГС ГОС+ (6+).")
+            await message.answer(
+                resp.denied(hint="Нужен уровень ЗГС (3) или ГС ГОС+ (6 и выше).")
+            )
             return None
 
         kwargs["server_id"] = server_id
@@ -191,7 +203,7 @@ def requires_developer(
         if not user_id or user_id <= 0:
             return None
         if not await UserRepository.is_developer(user_id):
-            await message.answer("⛔ Только для разработчика.")
+            await message.answer(resp.denied("Команда доступна только разработчику."))
             return None
         kwargs["server_id"] = await AccessChecker.resolve_server_id(
             message.peer_id,

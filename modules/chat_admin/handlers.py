@@ -16,6 +16,7 @@ from database.repository.chat_repo import ChatRepository
 from database.repository.chat_settings_repo import ChatSettingsRepository
 from middlewares.access import requires_level, requires_public
 from middlewares.action_logger import ActionLogger
+from services import responses as resp
 from services.blacklist_sheets import CHECKBL_BATCH_MAX, check_blacklist_many
 from services.chat_admin import ChatAdminService
 from services.chat_settings_keyboard import create_open_edit_keyboard, create_value_keyboard
@@ -66,8 +67,8 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
     @requires_public
     async def find_usage(message: Message, server_id: int = 0, access_level: int = 0) -> None:
         await message.answer(
-            "❌ /find [ник / @user / ссылка]\n"
-            "Пример: /find rp123"
+            resp.error("/find [ник / @user / ссылка]\n"
+            "Пример: /find rp123")
         )
 
     @bot.on.message(text=dual_with_args("find", "<query>"))
@@ -156,10 +157,10 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
         access_level: int = 0,
     ) -> None:
         await message.answer(
-            "❌ /checkbl [ник / ID …]\n"
+            resp.error("/checkbl [ник / ID …]\n"
             "Пример: /checkbl Daniel_Bradberry\n"
             "Несколько: /cbl Nick_One Nick_Two 709801\n"
-            "ID аккаунта — UUID с сервера, не VK."
+            "ID аккаунта — UUID с сервера, не VK.")
         )
 
     @bot.on.message(text=dual_with_args("checkbl", "<query>"))
@@ -173,12 +174,12 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
         lookups = await _resolve_checkbl_queries(message, query, server_id)
         if not lookups:
             await message.answer(
-                "❌ Укажите ник, ID аккаунта на сервере или @user."
+                resp.error("Укажите ник, ID аккаунта на сервере или @user.")
             )
             return
         if len(lookups) > CHECKBL_BATCH_MAX:
             await message.answer(
-                f"❌ Максимум {CHECKBL_BATCH_MAX} ников или ID за раз."
+                resp.error(f"Максимум {CHECKBL_BATCH_MAX} ников или ID за раз.")
             )
             return
         for chunk in await check_blacklist_many(lookups):
@@ -192,7 +193,7 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
         access_level: int = 0,
     ) -> None:
         if not _require_chat(message):
-            await message.answer("❌ Команда только в беседах.")
+            await message.answer(resp.error("Команда только в беседах."))
             return
         text = await admin.format_online_list(message.peer_id)
         await message.answer(text, disable_mentions=1)
@@ -206,8 +207,8 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
             target_id = message.from_id
         else:
             await message.answer(
-                "❌ /regdate [@user]\n"
-                "Или ответом на сообщение."
+                resp.error("/regdate [@user]\n"
+                "Или ответом на сообщение.")
             )
             return
         text = await admin.format_registration_date(target_id)
@@ -223,7 +224,7 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
     ) -> None:
         target_id = await _resolve_target(message, target, server_id)
         if not target_id:
-            await message.answer("❌ Пользователь не найден.")
+            await message.answer(resp.error("Пользователь не найден."))
             return
         text = await admin.format_registration_date(target_id)
         await message.answer(text, disable_mentions=1)
@@ -236,9 +237,9 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
         access_level: int = 0,
     ) -> None:
         await message.answer(
-            "❌ /mute [@user] [время] [причина]\n"
+            resp.error("/mute [@user] [время] [причина]\n"
             "Время: 30m, 1h, 2d\n"
-            "Или ответом: /mute 30m спам"
+            "Или ответом: /mute 30m спам")
         )
 
     @bot.on.message(text=dual_with_args("mute", "<args>"))
@@ -250,7 +251,7 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
         access_level: int = 0,
     ) -> None:
         if not _require_chat(message):
-            await message.answer("❌ Команда только в беседах.")
+            await message.answer(resp.error("Команда только в беседах."))
             return
 
         reason: str | None = None
@@ -258,30 +259,30 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
             target_id = message.reply_message.from_id
             reply_parts = args.strip().split(maxsplit=1)
             if not reply_parts:
-                await message.answer("❌ Ответом: /mute [время] [причина]")
+                await message.answer(resp.error("Ответом: /mute [время] [причина]"))
                 return
             seconds = admin.parse_duration(reply_parts[0])
             if not seconds:
-                await message.answer("❌ Укажите время: 30m, 1h, 2d")
+                await message.answer(resp.error("Укажите время: 30m, 1h, 2d"))
                 return
             reason = reply_parts[1].strip() if len(reply_parts) > 1 else None
         else:
             target_raw, seconds, reason = admin.parse_mute_args(args)
             if not target_raw or not seconds:
-                await message.answer("❌ /mute [@user] [время] [причина]")
+                await message.answer(resp.error("/mute [@user] [время] [причина]"))
                 return
             target_id = await _resolve_target(message, target_raw, server_id)
             if not target_id:
-                await message.answer("❌ Пользователь не найден.")
+                await message.answer(resp.error("Пользователь не найден."))
                 return
 
         if not seconds or seconds < 1:
-            await message.answer("❌ Укажите время: 30m, 1h, 2d.")
+            await message.answer(resp.error("Укажите время: 30m, 1h, 2d."))
             return
 
         actor_id = message.from_id or 0
         if target_id == actor_id:
-            await message.answer("❌ Нельзя выдать мут самому себе.")
+            await message.answer(resp.error("Нельзя выдать мут самому себе."))
             return
         allowed, hier_err = await can_act_on_target(
             actor_id,
@@ -289,12 +290,12 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
             target_id,
             server_id,
             on_equal_or_higher=(
-                "❌ Нельзя выдать мут пользователю своего уровня или выше."
+                resp.error("Нельзя выдать мут пользователю своего уровня или выше.")
             ),
-            on_developer="❌ Нельзя выдать мут разработчику.",
+            on_developer=resp.error("Нельзя выдать мут разработчику."),
         )
         if not allowed:
-            await message.answer(hier_err or "❌ Недостаточно прав.")
+            await message.answer(hier_err or resp.error("Недостаточно прав."))
             return
 
         ok, err = await admin.mute_member(
@@ -317,7 +318,7 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
                 source_peer_id=message.peer_id,
             )
         else:
-            await message.answer(f"❌ Не удалось выдать мут.\n{err}")
+            await message.answer(resp.error(f"Не удалось выдать мут.\n{err}"))
 
     @bot.on.message(text=dual("unmute"))
     @requires_level(AccessLevel.SUPERVISOR)
@@ -326,7 +327,7 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
         server_id: int = 0,
         access_level: int = 0,
     ) -> None:
-        await message.answer("❌ /unmute [@user] — или ответом на сообщение.")
+        await message.answer(resp.error("/unmute [@user] — или ответом на сообщение."))
 
     @bot.on.message(text=dual_with_args("unmute", "<target>"))
     @requires_level(AccessLevel.SUPERVISOR)
@@ -337,16 +338,16 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
         access_level: int = 0,
     ) -> None:
         if not _require_chat(message):
-            await message.answer("❌ Команда только в беседах.")
+            await message.answer(resp.error("Команда только в беседах."))
             return
         target_id = await _resolve_target(message, target, server_id)
         if not target_id:
-            await message.answer("❌ Пользователь не найден.")
+            await message.answer(resp.error("Пользователь не найден."))
             return
 
         actor_id = message.from_id or 0
         if target_id == actor_id:
-            await message.answer("❌ Нельзя снять мут с самого себя этой командой.")
+            await message.answer(resp.error("Нельзя снять мут с самого себя этой командой."))
             return
         allowed, hier_err = await can_act_on_target(
             actor_id,
@@ -354,12 +355,12 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
             target_id,
             server_id,
             on_equal_or_higher=(
-                "❌ Нельзя снять мут с пользователя своего уровня или выше."
+                resp.error("Нельзя снять мут с пользователя своего уровня или выше.")
             ),
-            on_developer="❌ Нельзя снять мут с разработчика.",
+            on_developer=resp.error("Нельзя снять мут с разработчика."),
         )
         if not allowed:
-            await message.answer(hier_err or "❌ Недостаточно прав.")
+            await message.answer(hier_err or resp.error("Недостаточно прав."))
             return
 
         ok, err = await admin.unmute_member(message.peer_id, target_id)
@@ -374,7 +375,7 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
                 source_peer_id=message.peer_id,
             )
         else:
-            await message.answer(f"❌ Не удалось снять мут.\n{err}")
+            await message.answer(resp.error(f"Не удалось снять мут.\n{err}"))
 
     @bot.on.message(text=dual("stitle"))
     @requires_level(AccessLevel.ZGS)
@@ -383,7 +384,7 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
         server_id: int = 0,
         access_level: int = 0,
     ) -> None:
-        await message.answer("❌ /stitle [новое название беседы]")
+        await message.answer(resp.error("/stitle [новое название беседы]"))
 
     @bot.on.message(text=dual_with_args("stitle", "<title>"))
     @requires_level(AccessLevel.ZGS)
@@ -394,7 +395,7 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
         access_level: int = 0,
     ) -> None:
         if not _require_chat(message):
-            await message.answer("❌ Команда только в беседах.")
+            await message.answer(resp.error("Команда только в беседах."))
             return
 
         ok, result = await admin.set_chat_title(message.peer_id, title)
@@ -403,7 +404,7 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
             if chat:
                 chat.title = result
                 await chat.save()
-            await message.answer(f"✅ Название беседы: «{result}»")
+            await message.answer(resp.success(f"Название беседы: «{result}»"))
             await action_logger.log_user(
                 "stitle",
                 message.from_id,
@@ -412,7 +413,7 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
                 source_peer_id=message.peer_id,
             )
         else:
-            await message.answer(f"❌ {result}")
+            await message.answer(resp.error(f"{result}"))
 
     @bot.on.message(text=dual("chatsettings"))
     @requires_level(AccessLevel.ZGS)
@@ -422,7 +423,7 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
         access_level: int = 0,
     ) -> None:
         if not _require_chat(message):
-            await message.answer("❌ Команда только в беседах.")
+            await message.answer(resp.error("Команда только в беседах."))
             return
         owner_id = message.from_id or 0
         register_owner(message.peer_id, owner_id)
@@ -452,7 +453,7 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
         number = int((message.text or "").strip())
         setting = CHAT_SETTINGS_BY_NUMBER.get(number)
         if not setting:
-            await message.answer("❌ Нет такого пункта. Укажите 1, 2 или 3.")
+            await message.answer(resp.error("Нет такого пункта. Укажите 1, 2 или 3."))
             return
         owner_id = message.from_id or 0
         await message.answer(
@@ -473,14 +474,14 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
             return
 
         if event.peer_id < 2_000_000_000:
-            await event.show_snackbar("❌ Только в беседах.")
+            await event.show_snackbar(resp.error("Только в беседах."))
             return
 
         from middlewares.access import AccessChecker
 
         server_id = await AccessChecker.resolve_server_id(event.peer_id, event.user_id)
         if await AccessChecker.get_level(event.user_id, server_id) < AccessLevel.ZGS:
-            await event.show_snackbar("⛔ Недостаточно прав.")
+            await event.show_snackbar(resp.denied("Недостаточно прав."))
             return
 
         action = payload.get("action")
@@ -488,7 +489,7 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
         owner_id = payload.get("owner")
 
         if action in ("edit", "set") and not is_callback_owner(event.user_id, owner_id):
-            await event.show_snackbar("⛔ Только автор команды.")
+            await event.show_snackbar(resp.denied("Только автор команды."))
             await event.send_empty_answer()
             return
 
@@ -504,7 +505,7 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
             value = payload.get("value")
             setting = CHAT_SETTINGS.get(str(field or ""))
             if not setting or not value:
-                await event.show_snackbar("❌ Некорректный запрос.")
+                await event.show_snackbar(resp.error("Некорректный запрос."))
                 return
             try:
                 await apply_setting(
@@ -514,7 +515,7 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
                     updated_by=event.user_id,
                 )
             except ValueError as exc:
-                await event.show_snackbar(f"❌ {exc}")
+                await event.show_snackbar(resp.error(f"{exc}"))
                 return
             clear_chat_settings_session(peer_id, event.user_id)
             await event.send_message(
@@ -541,7 +542,7 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
             *,
             _cmd: str = cmd,
         ) -> None:
-            await message.answer(f"❌ /{_cmd} on|off|ask")
+            await message.answer(resp.error(f"/{_cmd} on|off|ask"))
 
         @bot.on.message(text=dual_with_args(cmd, "<mode>"))
         @requires_level(AccessLevel.ZGS)
@@ -555,11 +556,11 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
             _field: str = field,
         ) -> None:
             if not _require_chat(message):
-                await message.answer("❌ Команда только в беседах.")
+                await message.answer(resp.error("Команда только в беседах."))
                 return
             normalized = ChatSettingsRepository.normalize_mode(mode)
             if not normalized:
-                await message.answer("❌ Режим: on, off или ask")
+                await message.answer(resp.error("Режим: on, off или ask"))
                 return
             await ChatSettingsRepository.set_mode(
                 message.peer_id,
@@ -577,6 +578,6 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
                 if _field == "kick_on_leave"
                 else ChatSettingsRepository.mode_label(normalized)
             )
-            await message.answer(f"✅ /{_cmd} → {label}")
+            await message.answer(resp.success(f"/{_cmd} → {label}"))
 
     _register_rejoin("rejoinkick", "kick_on_leave")

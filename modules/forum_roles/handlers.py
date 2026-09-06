@@ -15,6 +15,7 @@ from database.repository.user_repo import UserRepository
 from middlewares.access import requires_developer, requires_level, requires_public
 from middlewares.ca_access import requires_ca_scope
 from middlewares.action_logger import ActionLogger
+from services import responses as resp
 from services.command_utils import dual, dual_args
 from services.display_name import DisplayNameService
 from services.staff_hierarchy import can_act_on_target
@@ -101,8 +102,8 @@ def register_forum_roles(bot: Bot, api: API, action_logger: ActionLogger) -> Non
             message.reply_message and message.reply_message.from_id > 0
         ):
             await message.answer(
-                "❌ /deluser [@user]\n"
-                "Или ответом на сообщение."
+                resp.error("/deluser [@user]\n"
+                "Или ответом на сообщение.")
             )
             return
 
@@ -123,7 +124,7 @@ def register_forum_roles(bot: Bot, api: API, action_logger: ActionLogger) -> Non
             ok = await ForumRoleRepository.remove_user_by_username(
                 (args or "").strip()
             )
-        await message.answer("✅ Удалён." if ok else "❌ Не найден.")
+        await message.answer(resp.success("Удалён.") if ok else resp.error("Не найден."))
         target_label = (
             f"id{resolved.vk_id}" if resolved else (args or "").strip()
         )
@@ -161,8 +162,8 @@ def register_forum_roles(bot: Bot, api: API, action_logger: ActionLogger) -> Non
             message.reply_message and message.reply_message.from_id > 0
         ):
             await message.answer(
-                "❌ /addleader [@user] [фракция]\n"
-                "Или ответом на сообщение."
+                resp.error("/addleader [@user] [фракция]\n"
+                "Или ответом на сообщение.")
             )
             return
 
@@ -181,7 +182,7 @@ def register_forum_roles(bot: Bot, api: API, action_logger: ActionLogger) -> Non
             await message.answer(hint, disable_mentions=1)
             return
         if not resolved:
-            await message.answer("❌ Пользователь не найден.")
+            await message.answer(resp.error("Пользователь не найден."))
             return
 
         actor_id = message.from_id or 0
@@ -191,12 +192,12 @@ def register_forum_roles(bot: Bot, api: API, action_logger: ActionLogger) -> Non
             resolved.vk_id,
             server_id,
             on_equal_or_higher=(
-                "❌ Нельзя назначить лидером пользователя своего уровня или выше."
+                resp.error("Нельзя назначить лидером пользователя своего уровня или выше.")
             ),
-            on_developer="❌ Нельзя назначить лидером разработчика.",
+            on_developer=resp.error("Нельзя назначить лидером разработчика."),
         )
         if not allowed:
-            await message.answer(hier_err or "❌ Недостаточно прав.")
+            await message.answer(hier_err or resp.error("Недостаточно прав."))
             return
 
         await ForumRoleRepository.set_role(
@@ -236,8 +237,8 @@ def register_forum_roles(bot: Bot, api: API, action_logger: ActionLogger) -> Non
             message.reply_message and message.reply_message.from_id > 0
         ):
             await message.answer(
-                "❌ /removeleader [@user]\n"
-                "Или ответом на сообщение."
+                resp.error("/removeleader [@user]\n"
+                "Или ответом на сообщение.")
             )
             return
 
@@ -256,7 +257,7 @@ def register_forum_roles(bot: Bot, api: API, action_logger: ActionLogger) -> Non
             await message.answer(hint, disable_mentions=1)
             return
         if not resolved:
-            await message.answer("❌ Пользователь не найден.")
+            await message.answer(resp.error("Пользователь не найден."))
             return
 
         actor_id = message.from_id or 0
@@ -266,12 +267,12 @@ def register_forum_roles(bot: Bot, api: API, action_logger: ActionLogger) -> Non
             resolved.vk_id,
             server_id,
             on_equal_or_higher=(
-                "❌ Нельзя снять лидера своего уровня или выше."
+                resp.error("Нельзя снять лидера своего уровня или выше.")
             ),
-            on_developer="❌ Нельзя снять роль лидера у разработчика.",
+            on_developer=resp.error("Нельзя снять роль лидера у разработчика."),
         )
         if not allowed:
-            await message.answer(hier_err or "❌ Недостаточно прав.")
+            await message.answer(hier_err or resp.error("Недостаточно прав."))
             return
 
         if not await ForumRoleRepository.is_leader(resolved.vk_id, server_id):
@@ -280,7 +281,7 @@ def register_forum_roles(bot: Bot, api: API, action_logger: ActionLogger) -> Non
                 server_id,
             )
             await message.answer(
-                f"❌ {link} не является лидером.",
+                resp.error(f"{link} не является лидером."),
                 disable_mentions=1,
             )
             return

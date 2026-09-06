@@ -22,6 +22,7 @@ from services.invite_guard import (
     handle_member_joined,
     handle_voluntary_leave,
 )
+from services import responses as resp
 from services.display_name import DisplayNameService
 from services.messaging import MessagingService
 from services.moderation import ModerationService
@@ -58,7 +59,7 @@ def register_chat(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         access_level: int = 0,
     ) -> None:
         if message.peer_id < 2_000_000_000:
-            await message.answer("❌ Команда доступна только в беседах.")
+            await message.answer(resp.error("Команда доступна только в беседах."))
             return
 
         text = await messaging.format_members_list(message.peer_id, server_id)
@@ -72,15 +73,15 @@ def register_chat(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         access_level: int = 0,
     ) -> None:
         if message.peer_id < 2_000_000_000:
-            await message.answer("❌ Команда доступна только в беседах.")
+            await message.answer(resp.error("Команда доступна только в беседах."))
             return
         if not message.reply_message:
-            await message.answer("❌ Ответьте на сообщение, которое нужно закрепить.")
+            await message.answer(resp.error("Ответьте на сообщение, которое нужно закрепить."))
             return
 
         cmid = message.reply_message.conversation_message_id
         if not cmid:
-            await message.answer("❌ Не удалось определить ID сообщения.")
+            await message.answer(resp.error("Не удалось определить ID сообщения."))
             return
 
         try:
@@ -95,7 +96,12 @@ def register_chat(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             )
         except Exception as exc:
             logger.error("pin failed peer=%s: %s", message.peer_id, exc)
-            await message.answer(f"❌ Не удалось закрепить: {exc}")
+            await message.answer(
+                resp.error(
+                    "Не получилось закрепить сообщение.",
+                    hint="Проверьте, что бот — администратор беседы.",
+                )
+            )
 
     @bot.on.message(text=dual("del"))
     @requires_level(AccessLevel.SUPERVISOR)
@@ -105,7 +111,7 @@ def register_chat(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         access_level: int = 0,
     ) -> None:
         if message.peer_id < 2_000_000_000:
-            await message.answer("❌ Команда доступна только в беседах.")
+            await message.answer(resp.error("Команда доступна только в беседах."))
             return
 
         target_cmids: list[int] = []
@@ -128,7 +134,7 @@ def register_chat(bot: Bot, api: API, action_logger: ActionLogger) -> None:
 
         if not target_cmids:
             await message.answer(
-                "❌ Ответьте на сообщение(я) или перешлите их с командой /del."
+                resp.error("Ответьте на сообщение(я) или перешлите их с командой /del.")
             )
             return
 
@@ -155,7 +161,12 @@ def register_chat(bot: Bot, api: API, action_logger: ActionLogger) -> None:
                 delete_cmids,
                 exc,
             )
-            await message.answer(f"❌ Не удалось удалить: {exc}")
+            await message.answer(
+                resp.error(
+                    "Не получилось удалить сообщение(я).",
+                    hint="Бот должен быть администратором, а сообщения — не старше 24 часов.",
+                )
+            )
             return
 
         n = len(target_cmids)
@@ -190,15 +201,15 @@ def register_chat(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         access_level: int = 0,
     ) -> None:
         if message.peer_id < 2_000_000_000:
-            await message.answer("❌ Команда доступна только в беседах.")
+            await message.answer(resp.error("Команда доступна только в беседах."))
             return
         if not message.reply_message:
-            await message.answer("❌ Ответьте на сообщение, которое нужно открепить.")
+            await message.answer(resp.error("Ответьте на сообщение, которое нужно открепить."))
             return
 
         cmid = message.reply_message.conversation_message_id
         if not cmid:
-            await message.answer("❌ Не удалось определить ID сообщения.")
+            await message.answer(resp.error("Не удалось определить ID сообщения."))
             return
 
         try:
@@ -213,7 +224,12 @@ def register_chat(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             )
         except Exception as exc:
             logger.error("unpin failed peer=%s: %s", message.peer_id, exc)
-            await message.answer(f"❌ Не удалось открепить: {exc}")
+            await message.answer(
+                resp.error(
+                    "Не получилось открепить сообщение.",
+                    hint="Проверьте, что бот — администратор беседы.",
+                )
+            )
 
     async def _send_text(peer_id: int, text: str) -> None:
         await api.messages.send(
@@ -397,20 +413,20 @@ def register_chat(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             peer_id = int(payload["peer_id"])
             target_id = int(payload["target_id"])
         except (KeyError, TypeError, ValueError):
-            await event.show_snackbar("❌ Некорректный запрос.")
+            await event.show_snackbar(resp.error("Некорректный запрос."))
             return
 
         if event.peer_id != peer_id or peer_id < 2_000_000_000 or target_id <= 0:
-            await event.show_snackbar("❌ Некорректный запрос.")
+            await event.show_snackbar(resp.error("Некорректный запрос."))
             return
 
         server_id = await AccessChecker.resolve_server_id(peer_id, event.user_id)
         if await AccessChecker.get_level(event.user_id, server_id) < AccessLevel.SUPERVISOR:
-            await event.show_snackbar("⛔ Недостаточно прав.")
+            await event.show_snackbar(resp.denied("Недостаточно прав."))
             return
 
         if not await ChatSettingsRepository.was_voluntary_leave(peer_id, target_id):
-            await event.show_snackbar("❌ Пользователь не в списке выхода.")
+            await event.show_snackbar(resp.error("Пользователь не в списке выхода."))
             return
 
         result = await moderation.kick_from_chat(peer_id, target_id)

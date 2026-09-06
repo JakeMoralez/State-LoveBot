@@ -16,6 +16,7 @@ from database.spheres import GOV_STRUCTURES
 from middlewares.access import AccessChecker, requires_level
 from middlewares.congress_access import requires_chat_kick
 from middlewares.action_logger import ActionLogger
+from services import responses as resp
 from services.command_utils import dual, dual_with_args
 from services.display_name import DisplayNameService
 from services.moderation import ModerationService
@@ -83,8 +84,8 @@ async def _can_kick_by_access(
         actor_level,
         target_vk_id,
         server_id,
-        on_equal_or_higher="❌ Нельзя исключить пользователя своего уровня или выше.",
-        on_developer="❌ Нельзя исключить разработчика.",
+        on_equal_or_higher=resp.error("Нельзя исключить пользователя своего уровня или выше."),
+        on_developer=resp.error("Нельзя исключить разработчика."),
     )
 
 
@@ -99,29 +100,29 @@ async def _senior_poolkick_allowed(
         return True, None
 
     if access_level < AccessLevel.SUPERVISOR:
-        return False, "⛔ Недостаточно прав."
+        return False, resp.denied("Недостаточно прав.")
 
     if not chat:
-        return False, "⛔ Беседа не зарегистрирована."
+        return False, resp.denied("Беседа не зарегистрирована.")
 
     is_senior, senior_spheres = await UserRepository.get_senior_status(
         actor_vk_id, server_id
     )
     if not is_senior:
-        return False, "⛔ Нужен уровень ЗГС или статус старшего следящего."
+        return False, resp.denied("Нужен уровень ЗГС или статус старшего следящего.")
     if not senior_spheres:
-        return False, "⛔ У вас не назначена сфера старшего."
+        return False, resp.denied("У вас не назначена сфера старшего.")
 
     pool = getattr(chat, "pool", None)
     pool_name = getattr(pool, "name", None) if pool else None
     alias = getattr(chat, "alias", None)
     pool_sphere = pool_alias_to_sphere(alias, pool_name)
     if pool_sphere is None:
-        return False, "⛔ Не удалось определить сферу этой беседы."
+        return False, resp.denied("Не удалось определить сферу этой беседы.")
     if pool_sphere not in senior_spheres:
         return False, (
-            "⛔ Эта беседа не в вашей сфере старшего.\n"
-            f"Ваши сферы: {format_spheres_display(senior_spheres)}."
+            resp.denied("Эта беседа не в вашей сфере старшего.\n"
+            f"Ваши сферы: {format_spheres_display(senior_spheres)}.")
         )
     return True, None
 
@@ -232,7 +233,7 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
         flow_token: str,
     ) -> None:
         if not peers:
-            await message.answer("❌ Нет бесед для исключения в выбранном scope.")
+            await message.answer(resp.error("Нет бесед для исключения в выбранном scope."))
             return
 
         report = await moderation.pullkick_peers(
@@ -338,8 +339,8 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
         access_level: int = 0,
     ) -> None:
         await message.answer(
-            "❌ /kick [@user] [причина]\n"
-            "Или ответом: /kick причина"
+            resp.error("/kick [@user] [причина]\n"
+            "Или ответом: /kick причина")
         )
 
     @bot.on.message(text=dual_with_args("kick", "<args>"))
@@ -351,7 +352,7 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
         access_level: int = 0,
     ) -> None:
         if message.peer_id < 2_000_000_000:
-            await message.answer("❌ Команда только в беседах.")
+            await message.answer(resp.error("Команда только в беседах."))
             return
 
         reply_id = (
@@ -375,10 +376,10 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
             )
 
         if not resolved:
-            await message.answer("❌ Пользователь не найден.")
+            await message.answer(resp.error("Пользователь не найден."))
             return
         if resolved.vk_id == message.from_id:
-            await message.answer("❌ Нельзя исключить самого себя.")
+            await message.answer(resp.error("Нельзя исключить самого себя."))
             return
 
         ok, err = await _can_kick_by_access(
@@ -388,7 +389,7 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
             server_id,
         )
         if not ok:
-            await message.answer(err or "❌ Недостаточно прав для исключения.")
+            await message.answer(err or resp.error("Недостаточно прав для исключения."))
             return
 
         chat = await ChatRepository.get_by_peer_id(message.peer_id)
@@ -435,7 +436,7 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
             )
         else:
             await message.answer(
-                f"❌ Не удалось исключить.\n{result.error or 'нет прав админа у бота'}"
+                resp.error(f"Не удалось исключить.\n{result.error or 'нет прав админа у бота'}")
             )
             await action_logger.log_user(
                 "kick",
@@ -453,9 +454,9 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
         access_level: int = 0,
     ) -> None:
         await message.answer(
-            "❌ /poolkick [@user] [причина]\n"
+            resp.error("/poolkick [@user] [причина]\n"
             "Или ответом: /poolkick причина\n"
-            "Бот найдёт беседы и спросит, откуда исключить."
+            "Бот найдёт беседы и спросит, откуда исключить.")
         )
 
     @bot.on.message(text=dual_with_args("poolkick", "<args>"))
@@ -467,12 +468,12 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
         access_level: int = 0,
     ) -> None:
         if message.peer_id < 2_000_000_000:
-            await message.answer("❌ Команда только в беседах.")
+            await message.answer(resp.error("Команда только в беседах."))
             return
 
         chat = await ChatRepository.get_by_peer_id(message.peer_id)
         if not chat:
-            await message.answer("❌ Беседа не зарегистрирована.")
+            await message.answer(resp.error("Беседа не зарегистрирована."))
             return
 
         reply_id = (
@@ -498,7 +499,7 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
             access_level=access_level,
         )
         if not allowed:
-            await message.answer(err or "⛔ Недостаточно прав.")
+            await message.answer(err or resp.denied("Недостаточно прав."))
             return
 
         resolved = await VKResolver(api, server_id).resolve_from_message(
@@ -507,10 +508,10 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
             server_id=server_id,
         )
         if not resolved:
-            await message.answer("❌ Пользователь не найден.")
+            await message.answer(resp.error("Пользователь не найден."))
             return
         if resolved.vk_id == message.from_id:
-            await message.answer("❌ Нельзя исключить самого себя.")
+            await message.answer(resp.error("Нельзя исключить самого себя."))
             return
 
         ok, err = await _can_kick_by_access(
@@ -520,7 +521,7 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
             server_id,
         )
         if not ok:
-            await message.answer(err or "❌ Недостаточно прав для исключения.")
+            await message.answer(err or resp.error("Недостаточно прав для исключения."))
             return
 
         target_link = await names.link_user(resolved.vk_id, server_id)
@@ -539,8 +540,10 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
         )
         if not scan.found:
             await message.answer(
-                f"❌ {target_link} не найден ни в одной зарегистрированной беседе "
-                f"(проверено: {scan.scanned}).",
+                resp.error(
+                    f"{target_link} не найден ни в одной зарегистрированной беседе "
+                    f"(проверено: {scan.scanned}).",
+                ),
                 disable_mentions=1,
             )
             return
@@ -610,14 +613,14 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
             return
 
         if not _payload_owner_ok(payload, event.user_id):
-            await event.show_snackbar("⛔ Только автор команды.")
+            await event.show_snackbar(resp.denied("Только автор команды."))
             return
 
         token = payload.get("token")
         scope = payload.get("scope")
         sphere = payload.get("sphere")
         if not token or not scope:
-            await event.show_snackbar("❌ Запрос устарел.")
+            await event.show_snackbar(resp.error("Запрос устарел."))
             return
 
         pending = get_poolkick_flow(str(token), event.user_id)
@@ -629,7 +632,7 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
             pop_poolkick_flow(str(token), event.user_id)
             await event.show_snackbar("Отменено.")
             try:
-                await _ChatReply(pending.peer_id).answer("ℹ️ Poolkick отменён.")
+                await _ChatReply(pending.peer_id).answer(resp.info("Poolkick отменён."))
             except Exception:
                 pass
             return
@@ -653,7 +656,7 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
             sphere_key=str(sphere) if sphere else None,
         )
         if not selected:
-            await event.show_snackbar("❌ Нет бесед в этом scope.")
+            await event.show_snackbar(resp.error("Нет бесед в этом scope."))
             return
 
         label = _scope_label(str(scope), str(sphere) if sphere else None)
@@ -695,7 +698,7 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
             )
             try:
                 await reply.answer(
-                    f"❌ Ошибка poolkick ({label}): {exc}"
+                    resp.error(f"Не получилось выполнить poolkick ({label}).")
                 )
             except Exception:
                 pass
@@ -712,13 +715,13 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
             return
 
         if not _payload_owner_ok(payload, event.user_id):
-            await event.show_snackbar("⛔ Только автор команды.")
+            await event.show_snackbar(resp.denied("Только автор команды."))
             return
 
         token = payload.get("token")
         choice = payload.get("choice")
         if not token or not choice:
-            await event.show_snackbar("❌ Запрос устарел.")
+            await event.show_snackbar(resp.error("Запрос устарел."))
             return
 
         pending = get_poolkick_flow(str(token), event.user_id)
@@ -747,9 +750,9 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
             )
         except Exception as exc:
             logger.exception("poolkick access failed: %s", exc)
-            await event.show_snackbar("❌ Ошибка обработки.")
+            await event.show_snackbar(resp.error("Ошибка обработки."))
             try:
-                await reply.answer(f"❌ Ошибка: {exc}")
+                await reply.answer(resp.error("Не получилось обработать выбор."))
             except Exception:
                 pass
             return
@@ -762,9 +765,9 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
             pending.target_vk_id, pending.server_id
         )
         text = (
-            f"✅ {target_link} — {detail}"
+            resp.success(f"{target_link} — {detail}")
             if ok
-            else f"❌ {detail}"
+            else resp.error(f"{detail}")
         )
         try:
             await reply.answer(text)
@@ -784,13 +787,13 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
             return
 
         if not _payload_owner_ok(payload, event.user_id):
-            await event.show_snackbar("⛔ Только автор команды.")
+            await event.show_snackbar(resp.denied("Только автор команды."))
             return
 
         token = payload.get("token")
         choice = payload.get("choice")
         if not token or not choice:
-            await event.show_snackbar("❌ Запрос устарел.")
+            await event.show_snackbar(resp.error("Запрос устарел."))
             return
 
         if choice == "skip":
@@ -798,7 +801,7 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
             if not pending:
                 await event.show_snackbar("⏰ Время выбора истекло.")
                 return
-            await _ChatReply(pending.peer_id).answer("ℹ️ Сферы не изменены.")
+            await _ChatReply(pending.peer_id).answer(resp.info("Сферы не изменены."))
             await event.show_snackbar("Ок.")
             return
 
@@ -828,8 +831,8 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
             target_link = await names.link_user(
                 pending.target_vk_id, pending.server_id
             )
-            await reply.answer(f"✅ {target_link} — {detail}")
+            await reply.answer(resp.success(f"{target_link} — {detail}"))
             await event.show_snackbar("Готово.")
         else:
-            await reply.answer(f"❌ {detail}")
+            await reply.answer(resp.error(f"{detail}"))
             await event.show_snackbar("Ошибка.")

@@ -13,11 +13,13 @@ import time
 from vkbottle import API
 from vkbottle.bot import Bot, Message
 from vkbottle.dispatch.rules.base import FuncRule
-from vkbottle.exception_factory import VKAPIError
+from vkbottle.exception_factory import ErrorHandler, VKAPIError
 from vkbottle.polling import BotPolling
 
 from config import VK_GROUP_ID, VK_GROUP_TOKEN
 from config.settings import BASE_DIR
+from packages.domain.errors import DomainError
+from services import responses as resp
 from config.logging_setup import setup_logging
 from database import close_db, init_db
 from middlewares.access import AccessChecker, requires_developer
@@ -51,16 +53,45 @@ def get_complaint_watcher() -> LeaderComplaintWatcher | None:
 def create_bot(token: str, group_id: int) -> tuple[Bot, API, ActionLogger]:
     api = API(token=token)
     polling = BotPolling(api=api, group_id=group_id)
-    bot = Bot(token=token, api=api, polling=polling)
+    # Единый обработчик ошибок для всех вью (сообщения + raw-события).
+    # redirect_arguments=True — чтобы в обработчик приходил сам event и можно
+    # было ответить пользователю, а не только записать в лог.
+    error_handler = ErrorHandler(redirect_arguments=True)
+    bot = Bot(token=token, api=api, polling=polling, error_handler=error_handler)
     # Не вырезать @бот из текста — иначе ломается [id|никнейм] и команды с @
     bot.labeler.message_view.replace_mention = False
     action_logger = ActionLogger(api)
     register_all_modules(bot, api, action_logger, forum_service=_forum_service)
     register_edit_link_commands(bot, action_logger)
 
-    @bot.error_handler.register_undefined_error_handler
-    async def on_vkbottle_error(error: Exception) -> None:
-        logger.exception("Ошибка обработки события VK: %s", error)
+    async def _maybe_answer(event: object, text: str) -> None:
+        """Ответить пользователю, если у события есть метод answer (сообщения)."""
+        answer = getattr(event, "answer", None)
+        if callable(answer):
+            try:
+                await answer(text)
+            except Exception:
+                logger.exception("Не удалось отправить пользователю сообщение об ошибке")
+
+    # ErrorHandler(redirect_arguments=True) вызывает обработчик как
+    # handler(error, *args), где args = (event,) для ошибок из вью и ()
+    # для ошибок polling. Событие берём из *args, чтобы magic_bundle не
+    # подмешивал дефолтные именованные аргументы.
+    def _event_from_args(args: tuple[object, ...]) -> object | None:
+        return args[0] if args else None
+
+    @error_handler.register_error_handler(DomainError)
+    async def on_domain_error(error: DomainError, *args: object, **_: object) -> None:
+        # Ожидаемая доменная ошибка: показываем человечный текст, без трейсбека.
+        logger.info("Доменная ошибка: %s", error)
+        await _maybe_answer(_event_from_args(args), resp.from_domain_error(error))
+
+    @error_handler.register_undefined_error_handler
+    async def on_vkbottle_error(error: Exception, *args: object, **_: object) -> None:
+        # Непойманное исключение: логируем полностью, пользователю — мягкий текст
+        # вместо тишины или сырого {exc}.
+        logger.exception("Необработанная ошибка при обработке события VK: %s", error)
+        await _maybe_answer(_event_from_args(args), resp.error(resp.GENERIC_ERROR_TEXT))
 
     @bot.on.message(text=["/help", "/start", "!help", "!start"])
     async def help_handler(message: Message) -> None:

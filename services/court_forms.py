@@ -339,9 +339,10 @@ def format_submit_result(
     errors: list[FormParseFailure] | None = None,
 ) -> str:
     lines = [
-        f"✅В базу данных записано {saved} {_form_word(saved)}✅",
-        f"⛔Не удалось записать {failed} {_form_word(failed)}⛔",
+        f"✅ Записано в базу: {saved} {_form_word(saved)}",
     ]
+    if failed:
+        lines.append(f"❌ Не удалось записать: {failed} {_form_word(failed)}")
     if errors:
         for item in errors[:8]:
             lines.append(f"• {item.line_hint}: {item.reason}")

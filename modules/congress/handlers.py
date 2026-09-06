@@ -12,6 +12,7 @@ from database.repository.congress_repo import CONGRESS_DEFAULT_ALIAS, CongressRe
 from middlewares.access import requires_level, requires_public
 from middlewares.ca_access import requires_ca_scope
 from middlewares.action_logger import ActionLogger
+from services import responses as resp
 from services.command_utils import dual, dual_args
 from services.display_name import DisplayNameService
 from services.staff_hierarchy import can_act_on_target
@@ -37,13 +38,13 @@ async def _assert_can_replace_officer(
         current_vk_id,
         server_id,
         on_equal_or_higher=(
-            f"❌ Нельзя снять {role_label} своего уровня или выше."
+            resp.error(f"Нельзя снять {role_label} своего уровня или выше.")
         ),
-        on_developer=f"❌ Нельзя снять {role_label} у разработчика.",
+        on_developer=resp.error(f"Нельзя снять {role_label} у разработчика."),
     )
     if allowed:
         return None
-    return err or "❌ Недостаточно прав."
+    return err or resp.error("Недостаточно прав.")
 
 
 async def _format_congress_info(api: API, server_id: int) -> str:
@@ -109,8 +110,8 @@ def register_congress(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             message.reply_message and message.reply_message.from_id > 0
         ):
             await message.answer(
-                "❌ /setspeaker [@user]\n"
-                "Или ответом на сообщение."
+                resp.error("/setspeaker [@user]\n"
+                "Или ответом на сообщение.")
             )
             return
 
@@ -129,7 +130,7 @@ def register_congress(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             await message.answer(hint, disable_mentions=1)
             return
         if not resolved:
-            await message.answer("❌ Пользователь не найден.")
+            await message.answer(resp.error("Пользователь не найден."))
             return
 
         actor_id = message.from_id or 0
@@ -180,8 +181,8 @@ def register_congress(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             message.reply_message and message.reply_message.from_id > 0
         ):
             await message.answer(
-                "❌ /setvice [@user]\n"
-                "Или ответом на сообщение."
+                resp.error("/setvice [@user]\n"
+                "Или ответом на сообщение.")
             )
             return
 
@@ -200,7 +201,7 @@ def register_congress(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             await message.answer(hint, disable_mentions=1)
             return
         if not resolved:
-            await message.answer("❌ Пользователь не найден.")
+            await message.answer(resp.error("Пользователь не найден."))
             return
 
         actor_id = message.from_id or 0
@@ -259,7 +260,7 @@ def register_congress(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             await message.answer(blocked)
             return
         ok = await CongressRepository.clear_speaker(server_id)
-        await message.answer("✅ Спикер снят." if ok else "❌ Спикер не был назначен.")
+        await message.answer(resp.success("Спикер снят.") if ok else resp.error("Спикер не был назначен."))
 
     @bot.on.message(text=dual("removevice"))
     @requires_level(AccessLevel.SUPERVISOR)
@@ -282,4 +283,4 @@ def register_congress(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             await message.answer(blocked)
             return
         ok = await CongressRepository.clear_vice(server_id)
-        await message.answer("✅ Вице-спикер снят." if ok else "❌ Вице не был назначен.")
+        await message.answer(resp.success("Вице-спикер снят.") if ok else resp.error("Вице не был назначен."))

@@ -11,6 +11,7 @@ from vkbottle.bot import Message
 from database.models.user import AccessLevel
 from database.repository.user_repo import UserRepository
 from middlewares.access import AccessChecker
+from services import responses as resp
 
 P = ParamSpec("P")
 R = TypeVar("R")
@@ -33,8 +34,10 @@ def requires_ca_scope(
         )
         if not await UserRepository.can_use_ca_scope(user_id, server_id):
             await message.answer(
-                "⛔ Нужен доступ ЦА.\n"
-                "Получите его в беседе след. ЦА или на сайте."
+                resp.denied(
+                    "Нужен доступ ЦА.",
+                    hint="Получите его в беседе следящих ЦА или на портале.",
+                )
             )
             return None
 
@@ -71,7 +74,10 @@ def requires_ca_form_reviewer(
         )
         if not await can_review_court_forms(user_id, server_id):
             await message.answer(
-                "⛔ Модерация форм: нужен доступ ЦА и уровень Следящий."
+                resp.denied(
+                    "Модерация форм недоступна.",
+                    hint="Нужен доступ ЦА и уровень Следящий (2 и выше).",
+                )
             )
             return None
 

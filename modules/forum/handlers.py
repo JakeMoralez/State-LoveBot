@@ -20,6 +20,7 @@ from middlewares.access import AccessChecker, requires_developer
 from middlewares.action_logger import ActionLogger
 from middlewares.forum_access import ForumAccessChecker, requires_forum_user
 from modules.forum.form_handlers import register_form_handlers
+from services import responses as resp
 from services.command_utils import matches_cmd, parse_forum_thread, strip_cmd
 from services.forum_api import ForumService, format_forum_health
 from services.forum_format import format_claim_detail, format_thread_card
@@ -90,7 +91,7 @@ def _parse_iski_arg(arg: str) -> tuple[str, object] | str:
     if parts[0].lower() in ("дни", "дней", "дня", "days", "day", "d"):
         if len(parts) < 2:
             return (
-                "❌ /иски [страницы] · /иски 30д · /иски дата · /иски дата дата"
+                resp.error("/иски [страницы] · /иски 30д · /иски дата · /иски дата дата")
             )
         try:
             days = int(parts[1])
@@ -128,7 +129,7 @@ def _parse_iski_arg(arg: str) -> tuple[str, object] | str:
         pages = int(parts[0])
     except ValueError:
         return (
-            "❌ /иски [страницы] · /иски 30д · /иски дата · /иски дата дата"
+            resp.error("/иски [страницы] · /иски 30д · /иски дата · /иски дата дата")
         )
     if pages < 1 or pages > 20:
         return "Укажите число страниц от 1 до 20."
@@ -176,15 +177,19 @@ def register_forum(
         if not forum.available:
             await _reply_not_ready(
                 target,
-                "⚠️ Форум не настроен.\n"
-                "Заполните FORUM_XF_USER и FORUM_XF_SESSION в .env.",
+                resp.warn(
+                    "Форум не настроен.\n"
+                    "Заполните FORUM_XF_USER и FORUM_XF_SESSION в .env.",
+                ),
             )
             return True
         if not forum.backend:
             await _reply_not_ready(
                 target,
-                "⚠️ Форум не подключён при старте.\n"
-                "Перезапустите бота. Нужны cookies с forum.arizona-rp.com.",
+                resp.warn(
+                    "Форум не подключён при старте.\n"
+                    "Перезапустите бота. Нужны cookies с forum.arizona-rp.com.",
+                ),
             )
             return True
         return False
@@ -199,7 +204,7 @@ def register_forum(
         if category_id and not await ForumAccessChecker.is_thread_allowed(
             user_id, int(category_id), server_id
         ):
-            await reply("⛔ Нет доступа к разделу форума.")
+            await reply(resp.denied("Нет доступа к разделу форума."))
             return False
         return True
 
@@ -210,12 +215,14 @@ def register_forum(
     ) -> bool:
         judge_forum_id = await ServerRepository.get_judge_forum_id(server_id)
         if not judge_forum_id:
-            await reply("⛔ Раздел судебных исков не настроен для этого сервера.")
+            await reply(resp.denied("Раздел судебных исков не настроен для этого сервера."))
             return False
         if category_id != judge_forum_id:
             await reply(
-                "⛔ Команда только для раздела судебных исков "
-                f"({format_judge_forum_hint(judge_forum_id)})."
+                resp.denied(
+                    "Команда только для раздела судебных исков "
+                    f"({format_judge_forum_hint(judge_forum_id)})."
+                )
             )
             return False
         return True
@@ -232,15 +239,15 @@ def register_forum(
         thread_id = parse_forum_thread(message.text or "", ("info", "edit"))
         if not thread_id:
             await message.answer(
-                "❌ /info [@ссылка темы]\n"
-                "Пример: /info https://forum.arizona-rp.com/threads/11103806/"
+                resp.error("/info [@ссылка темы]\n"
+                "Пример: /info https://forum.arizona-rp.com/threads/11103806/")
             )
             return
 
         info, reconnected = await forum.get_thread_info_with_reconnect(thread_id)
         if not info:
             await message.answer(
-                f"❌ {forum.thread_not_found_message(thread_id, reconnected=reconnected)}"
+                resp.error(f"{forum.thread_not_found_message(thread_id, reconnected=reconnected)}")
             )
             return
 
@@ -281,14 +288,14 @@ def register_forum(
         thread_id = ForumService.parse_thread_id(arg) if arg else None
         if not thread_id:
             await message.answer(
-                f"❌ Использование: /{cmd} или !{cmd} [ссылка/id темы]"
+                resp.error(f"Использование: /{cmd} или !{cmd} [ссылка/id темы]")
             )
             return
 
         info, reconnected = await forum.get_thread_info_with_reconnect(thread_id)
         if not info:
             await message.answer(
-                f"❌ {forum.thread_not_found_message(thread_id, reconnected=reconnected)}"
+                resp.error(f"{forum.thread_not_found_message(thread_id, reconnected=reconnected)}")
             )
             return
 
@@ -324,7 +331,7 @@ def register_forum(
                 source_peer_id=message.peer_id,
             )
         else:
-            await message.answer(f"❌ {err or 'Ошибка'}")
+            await message.answer(resp.error(f"{err or 'Ошибка'}"))
             log_action, _ = _FCMD_LOG[cmd]
             await action_logger.log_user(
                 log_action,
@@ -362,14 +369,14 @@ def register_forum(
         thread_id = ForumService.parse_thread_id(arg) if arg else None
         if not thread_id:
             await message.answer(
-                f"❌ Использование: /{cmd} или !{cmd} [ссылка/id темы]"
+                resp.error(f"Использование: /{cmd} или !{cmd} [ссылка/id темы]")
             )
             return
 
         info, reconnected = await forum.get_thread_info_with_reconnect(thread_id)
         if not info:
             await message.answer(
-                f"❌ {forum.thread_not_found_message(thread_id, reconnected=reconnected)}"
+                resp.error(f"{forum.thread_not_found_message(thread_id, reconnected=reconnected)}")
             )
             return
 
@@ -386,7 +393,7 @@ def register_forum(
 
         ok_close, err_close = await forum.set_thread_open(thread_id, False)
         if not ok_close:
-            await message.answer(f"❌ {err_close or 'Не удалось закрыть тему'}")
+            await message.answer(resp.error(f"{err_close or 'Не удалось закрыть тему'}"))
             await action_logger.log_user(
                 "close_thread",
                 message.from_id,
@@ -405,7 +412,10 @@ def register_forum(
         ok_unpin, err_unpin = await forum.set_thread_sticky(thread_id, False)
         if not ok_unpin:
             await message.answer(
-                f"⚠️ Тема закрыта, но открепить не удалось: {err_unpin or 'ошибка'}"
+                resp.warn(
+                    "Тема закрыта, но открепить не удалось."
+                    + (f" {err_unpin}" if err_unpin else "")
+                )
             )
             await action_logger.log_user(
                 "close_thread",
@@ -449,16 +459,18 @@ def register_forum(
         parsed = _parse_iski_arg(arg)
         if isinstance(parsed, str):
             await message.answer(
-                f"❌ {parsed}\n"
-                "Примеры: /иски 5 · /иски 30д · /иски 21.07.2026"
+                resp.error(
+                    f"{parsed}\n"
+                    "Примеры: /иски 5 · /иски 30д · /иски 21.07.2026"
+                )
             )
             return
 
         mode, value = parsed
-        await message.answer("⚙️ Загрузка статистики исков...")
+        await message.answer(resp.working("Загрузка статистики исков..."))
         judge_forum_id = await ServerRepository.get_judge_forum_id(server_id)
         if not judge_forum_id:
-            await message.answer("⛔ Раздел судебных исков не настроен для этого сервера.")
+            await message.answer(resp.denied("Раздел судебных исков не настроен для этого сервера."))
             return
         if mode == "days":
             report = await forum.get_court_stats(
@@ -522,7 +534,7 @@ def register_forum(
         access_level: int = 0,
     ) -> None:
         ok, msg = await sync_judge_list(server_id, forum)
-        await message.answer("✅ " + msg if ok else "❌ " + msg)
+        await message.answer(resp.success(msg) if ok else resp.error(msg))
         await action_logger.log_user(
             "sync_judges",
             message.from_id,
@@ -545,17 +557,19 @@ def register_forum(
         parsed = _parse_iski_arg(arg)
         if isinstance(parsed, str):
             await message.answer(
-                f"❌ {parsed}\n"
-                "Примеры: /claimfill 5 · /claimfill 30д · /claimfill 21.07.2026 · "
-                "/claimfill 19.07.2026 21.07.2026"
+                resp.error(
+                    f"{parsed}\n"
+                    "Примеры: /claimfill 5 · /claimfill 30д · /claimfill 21.07.2026 · "
+                    "/claimfill 19.07.2026 21.07.2026"
+                )
             )
             return
 
         mode, value = parsed
-        await message.answer("⚙️ Claimfill: сканирую закрытые иски...")
+        await message.answer(resp.working("Claimfill: сканирую закрытые иски..."))
         judge_forum_id = await ServerRepository.get_judge_forum_id(server_id)
         if not judge_forum_id:
-            await message.answer("⛔ Раздел судебных исков не настроен для этого сервера.")
+            await message.answer(resp.denied("Раздел судебных исков не настроен для этого сервера."))
             return
         if mode == "days":
             report = await forum.fill_claim_closes(
@@ -611,7 +625,7 @@ def register_forum(
             return
 
         if not await ForumRoleRepository.can_use_forum_bot(event.user_id):
-            await event.show_snackbar("⛔ Нет доступа к боту.")
+            await event.show_snackbar(resp.denied("Нет доступа к боту."))
             return
 
         if await _forum_not_ready(event):
@@ -621,7 +635,7 @@ def register_forum(
         creator_id = payload.get("creator_id")
         created_at = payload.get("created_at")
         if not thread_id:
-            await event.show_snackbar("❌ ID темы не найден")
+            await event.show_snackbar(resp.error("ID темы не найден"))
             return
 
         if created_at and int(time.time()) - int(created_at) > 300:
@@ -631,7 +645,7 @@ def register_forum(
             await event.send_empty_answer()
             return
         if event.user_id != creator_id:
-            await event.show_snackbar("⛔ Кнопки доступны только автору команды.")
+            await event.show_snackbar(resp.denied("Кнопки доступны только автору команды."))
             return
 
         server_id = await AccessChecker.resolve_server_id(event.peer_id, event.user_id)
@@ -640,27 +654,27 @@ def register_forum(
         if not info:
             if reconnected:
                 await event.send_message(
-                    f"❌ {forum.thread_not_found_message(int(thread_id), reconnected=True)}"
+                    resp.error(f"{forum.thread_not_found_message(int(thread_id), reconnected=True)}")
                 )
             else:
-                await event.show_snackbar(f"❌ Тема {thread_id} не найдена")
+                await event.show_snackbar(resp.error(f"Тема {thread_id} не найдена"))
             await event.send_empty_answer()
             return
 
         category_id = int(info.get("category_id") or info.get("node_id") or 0)
         judge_forum_id = await ServerRepository.get_judge_forum_id(server_id)
         if not judge_forum_id:
-            await event.show_snackbar("⛔ Раздел исков не настроен для сервера")
+            await event.show_snackbar(resp.denied("Раздел исков не настроен для сервера"))
             return
         if category_id != judge_forum_id:
             await event.show_snackbar(
-                f"⛔ Только раздел {format_judge_forum_hint(judge_forum_id)}"
+                resp.denied(f"Только раздел {format_judge_forum_hint(judge_forum_id)}")
             )
             return
         if not await ForumAccessChecker.is_thread_allowed(
             event.user_id, category_id, server_id
         ):
-            await event.show_snackbar("⛔ Нет доступа к разделу форума.")
+            await event.show_snackbar(resp.denied("Нет доступа к разделу форума."))
             return
 
         try:
@@ -693,7 +707,7 @@ def register_forum(
                     source_peer_id=event.peer_id,
                 )
             else:
-                await event.send_message(f"❌ {msg or 'Ошибка'}")
+                await event.send_message(resp.error(f"{msg or 'Ошибка'}"))
                 log_action, _ = _CALLBACK_LOG[cmd]
                 await action_logger.log_user(
                     log_action,
@@ -705,7 +719,7 @@ def register_forum(
             await event.send_empty_answer()
         except Exception as exc:
             logger.exception("forum callback %s: %s", cmd, exc)
-            await event.show_snackbar("❌ Ошибка при действии с темой")
+            await event.show_snackbar(resp.error("Ошибка при действии с темой"))
             if cmd in _CALLBACK_LOG:
                 log_action, _ = _CALLBACK_LOG[cmd]
                 await action_logger.log_user(
@@ -724,16 +738,16 @@ async def _handle_claim_info(
     payload: dict,
 ) -> None:
     if not await ForumRoleRepository.can_use_forum_bot(event.user_id):
-        await event.show_snackbar("⛔ Нет доступа к боту.")
+        await event.show_snackbar(resp.denied("Нет доступа к боту."))
         return
 
     if not forum.backend or not forum.api:
-        await event.show_snackbar("❌ Форум не подключён.")
+        await event.show_snackbar(resp.error("Форум не подключён."))
         return
 
     thread_id = payload.get("thread_id")
     if not thread_id:
-        await event.show_snackbar("❌ ID темы не найден")
+        await event.show_snackbar(resp.error("ID темы не найден"))
         return
 
     server_id = int(payload.get("server_id") or 0)
@@ -751,13 +765,13 @@ async def _handle_claim_info(
     category_id = int(info.get("category_id") or info.get("node_id") or 0)
     judge_forum_id = await ServerRepository.get_judge_forum_id(server_id)
     if judge_forum_id and category_id and category_id != judge_forum_id:
-        await event.show_snackbar("⛔ Тема не из раздела исков этого сервера")
+        await event.show_snackbar(resp.denied("Тема не из раздела исков этого сервера"))
         return
 
     if category_id and not await ForumAccessChecker.is_thread_allowed(
         event.user_id, category_id, server_id
     ):
-        await event.show_snackbar("⛔ Нет доступа к разделу форума.")
+        await event.show_snackbar(resp.denied("Нет доступа к разделу форума."))
         return
 
     detail = format_claim_detail(info)
@@ -765,7 +779,7 @@ async def _handle_claim_info(
         await event.send_message(detail, disable_mentions=1)
     except Exception as exc:
         logger.warning("claim_info send failed thread=%s: %s", thread_id, exc)
-        await event.show_snackbar("❌ Не удалось отправить карточку")
+        await event.show_snackbar(resp.error("Не удалось отправить карточку"))
         await event.send_empty_answer()
         return
     await event.send_empty_answer()
@@ -777,16 +791,16 @@ async def _handle_complaint_info(
     payload: dict,
 ) -> None:
     if not await ForumRoleRepository.can_use_forum_bot(event.user_id):
-        await event.show_snackbar("⛔ Нет доступа к боту.")
+        await event.show_snackbar(resp.denied("Нет доступа к боту."))
         return
 
     if not forum.backend or not forum.api:
-        await event.show_snackbar("❌ Форум не подключён.")
+        await event.show_snackbar(resp.error("Форум не подключён."))
         return
 
     thread_id = payload.get("thread_id")
     if not thread_id:
-        await event.show_snackbar("❌ ID темы не найден")
+        await event.show_snackbar(resp.error("ID темы не найден"))
         return
 
     server_id = int(payload.get("server_id") or 0)
@@ -803,13 +817,13 @@ async def _handle_complaint_info(
 
     category_id = int(info.get("category_id") or info.get("node_id") or 0)
     if LEADER_COMPLAINT_FORUM_ID and category_id and category_id != LEADER_COMPLAINT_FORUM_ID:
-        await event.show_snackbar("⛔ Тема не из раздела жалоб на лидеров")
+        await event.show_snackbar(resp.denied("Тема не из раздела жалоб на лидеров"))
         return
 
     if category_id and not await ForumAccessChecker.is_thread_allowed(
         event.user_id, category_id, server_id
     ):
-        await event.show_snackbar("⛔ Нет доступа к разделу форума.")
+        await event.show_snackbar(resp.denied("Нет доступа к разделу форума."))
         return
 
     detail = format_claim_detail(info)
@@ -817,7 +831,7 @@ async def _handle_complaint_info(
         await event.send_message(detail, disable_mentions=1)
     except Exception as exc:
         logger.warning("complaint_info send failed thread=%s: %s", thread_id, exc)
-        await event.show_snackbar("❌ Не удалось отправить карточку")
+        await event.show_snackbar(resp.error("Не удалось отправить карточку"))
         await event.send_empty_answer()
         return
     await event.send_empty_answer()

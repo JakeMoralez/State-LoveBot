@@ -19,6 +19,7 @@ from database.repository.user_repo import UserRepository
 from middlewares.access import AccessChecker, requires_developer, requires_level
 from middlewares.congress_access import requires_msg
 from middlewares.action_logger import ActionLogger
+from services import responses as resp
 from services.command_utils import dual, dual_args, dual_with_args, strip_cmd
 from services.messaging import MessagingService
 from services.msg_keyboard import create_msg_confirm_keyboard
@@ -31,7 +32,7 @@ logger = logging.getLogger(__name__)
 async def _format_congress_msg_help(server_id: int, *, header: str) -> str:
     alias = await CongressRepository.get_congress_alias(server_id)
     if not alias:
-        return f"{header}\n\n❌ Беседа конгресса не зарегистрирована."
+        return f"{header}\n\n{resp.error('Беседа конгресса не зарегистрирована.')}"
     return (
         f"{header}\n\n"
         f"📋 Алиас конгресса: {alias}\n"
@@ -120,18 +121,18 @@ async def _resolve_msg_target(
     if msg_mode == "congress":
         congress_alias = await CongressRepository.get_congress_alias(server_id)
         if not congress_alias:
-            return None, "❌ Беседа конгресса не зарегистрирована."
+            return None, resp.error("Беседа конгресса не зарегистрирована.")
         ok, normalized = ChatRepository.validate_alias(alias)
         if not ok or normalized != congress_alias:
             return None, await _format_congress_msg_help(
                 server_id,
-                header=f"❌ Доступен только алиас «{congress_alias}».",
+                header=resp.error(f"Доступен только алиас «{congress_alias}»."),
             )
         target = await ChatRepository.get_by_alias(server_id, congress_alias)
         if not target:
             return None, await _format_congress_msg_help(
                 server_id,
-                header=f"❌ Беседа с алиасом «{congress_alias}» не найдена.",
+                header=resp.error(f"Беседа с алиасом «{congress_alias}» не найдена."),
             )
         return target, None
 
@@ -139,7 +140,7 @@ async def _resolve_msg_target(
     if not target:
         return None, await _format_aliases_message(
             server_id,
-            header=f"❌ Беседа с алиасом «{alias}» не найдена.",
+            header=resp.error(f"Беседа с алиасом «{alias}» не найдена."),
         )
     return target, None
 
@@ -173,8 +174,10 @@ def register_pools(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             await api.messages.send(
                 peer_id=source_peer_id,
                 message=(
-                    f"✅ Оповещение отправлено в «{alias}» "
-                    f"({target_title or target_peer_id})."
+                    resp.success(
+                        f"Оповещение отправлено в «{alias}» "
+                        f"({target_title or target_peer_id})."
+                    ),
                 ),
                 random_id=messaging.random_id(),
             )
@@ -189,7 +192,10 @@ def register_pools(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             logger.error("msg send failed: %s", exc)
             await api.messages.send(
                 peer_id=source_peer_id,
-                message=f"❌ Не удалось отправить: {exc}",
+                message=resp.error(
+                    "Не получилось отправить оповещение.",
+                    hint="Попробуйте ещё раз чуть позже.",
+                ),
                 random_id=messaging.random_id(),
             )
             await action_logger.log_user(
@@ -229,7 +235,7 @@ def register_pools(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         server_id: int = 0,
         access_level: int = 0,
     ) -> None:
-        await message.answer("❌ Использование: /createpool [название]")
+        await message.answer(resp.error("Использование: /createpool [название]"))
 
     @bot.on.message(text=dual_with_args("createpool", "<name>"))
     @requires_level(AccessLevel.ZGS_GOS)
@@ -241,12 +247,12 @@ def register_pools(bot: Bot, api: API, action_logger: ActionLogger) -> None:
     ) -> None:
         name = name.strip()
         if not name:
-            await message.answer("❌ Укажите название пула.")
+            await message.answer(resp.error("Укажите название пула."))
             return
         existing = await PoolRepository.get_by_name(server_id, name)
         if existing:
             num = PoolRepository.display_number(existing)
-            await message.answer(f"⚠️ Пул «{name}» уже существует (№ {num}).")
+            await message.answer(resp.warn(f"Пул «{name}» уже существует (№ {num})."))
             return
         pool = await PoolRepository.create(
             server_id=server_id,
@@ -254,7 +260,7 @@ def register_pools(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             created_by=message.from_id,
         )
         num = PoolRepository.display_number(pool)
-        await message.answer(f"✅ Пул «{pool.name}» создан (№ {num}).")
+        await message.answer(resp.success(f"Пул «{pool.name}» создан (№ {num})."))
         await action_logger.log_user(
             "create_pool",
             message.from_id,
@@ -271,8 +277,8 @@ def register_pools(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         access_level: int = 0,
     ) -> None:
         await message.answer(
-            "❌ /regchat [пул] [алиас]\n"
-            "Пример: /regchat 1 court"
+            resp.error("/regchat [пул] [алиас]\n"
+            "Пример: /regchat 1 court")
         )
 
     @bot.on.message(text=dual_with_args("regchat", "logs off"))
@@ -283,18 +289,18 @@ def register_pools(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         access_level: int = 0,
     ) -> None:
         if message.peer_id < 2_000_000_000:
-            await message.answer("❌ Команда доступна только в беседах.")
+            await message.answer(resp.error("Команда доступна только в беседах."))
             return
 
         current = await ServerRepository.get_log_peer_id(server_id)
         if current != message.peer_id:
-            await message.answer("❌ Эта беседа не зарегистрирована как logs.")
+            await message.answer(resp.error("Эта беседа не зарегистрирована как logs."))
             return
 
         await ServerRepository.set_log_peer(server_id, None)
         await message.answer(
-            "✅ Беседа логов отвязана.\n"
-            "Логи снова уходят в личные сообщения."
+            resp.success("Беседа логов отвязана.\n"
+            "Логи снова уходят в личные сообщения.")
         )
         await action_logger.log_user(
             "regchat_logs",
@@ -312,7 +318,7 @@ def register_pools(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         access_level: int = 0,
     ) -> None:
         if message.peer_id < 2_000_000_000:
-            await message.answer("❌ Команда доступна только в беседах.")
+            await message.answer(resp.error("Команда доступна только в беседах."))
             return
 
         title = None
@@ -333,8 +339,10 @@ def register_pools(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         )
         await ServerRepository.set_log_peer(server_id, message.peer_id)
         await message.answer(
-            f"✅ Беседа «{title or message.peer_id}» — канал логов.\n"
-            "Все действия бота пишутся сюда."
+            resp.success(
+                f"Беседа «{title or message.peer_id}» — канал логов.\n"
+                "Все действия бота пишутся сюда."
+            )
         )
         await action_logger.log_user(
             "regchat_logs",
@@ -354,22 +362,22 @@ def register_pools(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         access_level: int = 0,
     ) -> None:
         if message.peer_id < 2_000_000_000:
-            await message.answer("❌ Команда доступна только в беседах.")
+            await message.answer(resp.error("Команда доступна только в беседах."))
             return
 
         pool = await _resolve_pool(server_id, pool_ref)
         if not pool:
-            await message.answer("❌ Пул не найден. Список: /pools")
+            await message.answer(resp.error("Пул не найден. Список: /pools"))
             return
 
         ok, alias_result = ChatRepository.validate_alias(alias)
         if not ok:
-            await message.answer(f"❌ {alias_result}")
+            await message.answer(resp.error(f"{alias_result}"))
             return
 
         existing = await ChatRepository.get_by_alias(server_id, alias_result)
         if existing and existing.peer_id != message.peer_id:
-            await message.answer(f"❌ Алиас «{alias_result}» уже занят другой беседой.")
+            await message.answer(resp.error(f"Алиас «{alias_result}» уже занят другой беседой."))
             return
 
         title = None
@@ -389,9 +397,11 @@ def register_pools(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             registered_by=message.from_id,
         )
         await message.answer(
-            f"✅ Беседа «{title or chat.peer_id}» зарегистрирована.\n"
-            f"Пул: {pool.name} (№ {PoolRepository.display_number(pool)})\n"
-            f"Алиас: {chat.alias}"
+            resp.success(
+                f"Беседа «{title or chat.peer_id}» зарегистрирована.\n"
+                f"Пул: {pool.name} (№ {PoolRepository.display_number(pool)})\n"
+                f"Алиас: {chat.alias}"
+            )
         )
         await action_logger.log_user(
             "regchat",
@@ -409,17 +419,19 @@ def register_pools(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         access_level: int = 0,
     ) -> None:
         if message.peer_id < 2_000_000_000:
-            await message.answer("❌ Команда доступна только в беседах.")
+            await message.answer(resp.error("Команда доступна только в беседах."))
             return
 
         chat = await ChatRepository.unlink_from_pool(message.peer_id)
         if not chat:
-            await message.answer("❌ Беседа не привязана к пулу.")
+            await message.answer(resp.error("Беседа не привязана к пулу."))
             return
 
         await message.answer(
-            f"✅ Беседа отвязана от пула.\n"
-            f"Алиас снят. Peer: {chat.peer_id}"
+            resp.success(
+                f"Беседа отвязана от пула.\n"
+                f"Алиас снят. Peer: {chat.peer_id}"
+            )
         )
         await action_logger.log_user(
             "unregchat",
@@ -446,14 +458,14 @@ def register_pools(bot: Bot, api: API, action_logger: ActionLogger) -> None:
                 await message.answer(
                     await _format_congress_msg_help(
                         server_id,
-                        header="❌ /msg [алиас] [текст]",
+                        header=resp.error("/msg [алиас] [текст]"),
                     )
                 )
             else:
                 await message.answer(
                     await _format_aliases_message(
                         server_id,
-                        header="❌ /msg [алиас] [текст]",
+                        header=resp.error("/msg [алиас] [текст]"),
                     )
                 )
             return
@@ -463,7 +475,7 @@ def register_pools(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         msg_text = parts[1].strip() if len(parts) > 1 else ""
 
         if not msg_text and not attachments:
-            header = f"❌ Укажите текст: /msg {alias} [текст]"
+            header = resp.error(f"Укажите текст: /msg {alias} [текст]")
             reply = (
                 await _format_congress_msg_help(server_id, header=header)
                 if msg_mode == "congress"
@@ -532,17 +544,17 @@ def register_pools(bot: Bot, api: API, action_logger: ActionLogger) -> None:
 
         allowed, _server_id, _mode = await _can_use_msg(event.user_id, event.peer_id)
         if not allowed:
-            await event.show_snackbar("⛔ Недостаточно прав.")
+            await event.show_snackbar(resp.denied("Недостаточно прав."))
             return
 
         token = payload.get("token")
         if not token:
-            await event.show_snackbar("❌ Запрос устарел.")
+            await event.show_snackbar(resp.error("Запрос устарел."))
             return
 
         if cmd == "msg_cancel":
             pop_pending_msg(token, event.user_id)
-            await event.send_message("❌ Отправка оповещения отменена.")
+            await event.send_message(resp.error("Отправка оповещения отменена."))
             await event.send_empty_answer()
             return
 

@@ -17,6 +17,7 @@ from middlewares.access import AccessChecker, requires_level
 from middlewares.action_logger import ActionLogger
 from middlewares.ca_access import requires_ca_scope
 from middlewares.forum_access import requires_court_manager
+from services import responses as resp
 from services.command_utils import dual, dual_args, dual_with_args, strip_cmd
 from services.display_name import DisplayNameService
 from services.panel_login import (
@@ -74,7 +75,7 @@ async def _register_congress_chat(
     alias: str | None = None,
 ) -> None:
     if message.peer_id < 2_000_000_000:
-        await message.answer("❌ Регистрация только в беседе конференции.")
+        await message.answer(resp.error("Регистрация только в беседе конференции."))
         return
 
     title = None
@@ -94,14 +95,16 @@ async def _register_congress_chat(
             title=title,
         )
     except ValueError as exc:
-        await message.answer(f"❌ {exc}")
+        await message.answer(resp.error(f"{exc}"))
         return
 
     await message.answer(
-        f"✅ Беседа конгресса привязана.\n"
-        f"Алиас /msg: {normalized}\n"
-        f"Спикер и вице: /setnick, /kick, /msg {normalized} — только здесь.\n"
-        f"Назначение: /setspeaker, /setvice"
+        resp.success(
+            f"Беседа конгресса привязана.\n"
+            f"Алиас /msg: {normalized}\n"
+            f"Спикер и вице: /setnick, /kick, /msg {normalized} — только здесь.\n"
+            f"Назначение: /setspeaker, /setvice"
+        )
     )
 
 
@@ -123,9 +126,9 @@ async def _send_panel_login(
         level = await UserRepository.get_access_level(user_id, server_id)
         level_label = AccessChecker.level_name(level) if level else "нет доступа"
         await message.answer(
-            "⛔ Вход на сайт недоступен.\n"
+            resp.denied("Вход на сайт недоступен.\n"
             f"Ваш уровень: {level_label}.\n"
-            "Нужен уровень ПГС или выше."
+            "Нужен уровень ПГС или выше.")
         )
         return
 
@@ -144,7 +147,13 @@ async def _send_panel_login(
     try:
         url = build_login_url(user_id)
     except RuntimeError as exc:
-        await message.answer(f"❌ {exc}")
+        logger.error("build_login_url vk=%s: %s", user_id, exc)
+        await message.answer(
+            resp.error(
+                "Не получилось создать ссылку для входа.",
+                hint="Попробуйте позже или обратитесь к администратору.",
+            )
+        )
         return
 
     kb = Keyboard(inline=True)
@@ -192,9 +201,9 @@ def register_ca(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         )
         if not reply_id and not (target_args and target_args.strip()):
             await message.answer(
-                "❌ /raccess [@user] — снять роли.\n"
+                resp.error("/raccess [@user] — снять роли.\n"
                 "Или ответом на сообщение.\n"
-                "Нельзя снимать с себя и с равных/выше по уровню."
+                "Нельзя снимать с себя и с равных/выше по уровню.")
             )
             return
 
@@ -207,12 +216,12 @@ def register_ca(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             await message.answer(hint, disable_mentions=1)
             return
         if not resolved:
-            await message.answer("❌ Пользователь не найден.")
+            await message.answer(resp.error("Пользователь не найден."))
             return
 
         target_id = resolved.vk_id
         if target_id == actor_id:
-            await message.answer("❌ Нельзя снять роли с себя.")
+            await message.answer(resp.error("Нельзя снять роли с себя."))
             return
 
         actor_level = access_level or await UserRepository.get_access_level(
@@ -224,27 +233,29 @@ def register_ca(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             target_id,
             server_id,
             on_equal_or_higher=(
-                "❌ Нельзя снять роли с пользователя своего уровня или выше."
+                resp.error("Нельзя снять роли с пользователя своего уровня или выше.")
             ),
-            on_developer="❌ Нельзя снять роли с разработчика.",
+            on_developer=resp.error("Нельзя снять роли с разработчика."),
             skip_if_target_no_access=False,
         )
         if not allowed:
-            await message.answer(hier_err or "❌ Недостаточно прав.")
+            await message.answer(hier_err or resp.error("Недостаточно прав."))
             return
 
         removed = await revoke_accesses(target_id, server_id)
         if not removed:
             link = await names.link_user(target_id, server_id)
             await message.answer(
-                f"❌ У {link} нечего снимать.\n"
-                "Нет ролей: судья, лидер, спикер/вице, доступ ЦА / след. ЦА.",
+                resp.error(
+                    f"У {link} нечего снимать.\n"
+                    "Нет ролей: судья, лидер, спикер/вице, доступ ЦА / след. ЦА.",
+                ),
                 disable_mentions=1,
             )
             return
 
         link = await names.link_user(target_id, server_id)
-        lines = [f"✅ {link} — снято:", ""]
+        lines = [resp.success(f"{link} — снято:"), ""]
         for item in removed:
             lines.append(f"• {_RACCESS_LABELS.get(item, item)}")
         await message.answer("\n".join(lines), disable_mentions=1)
@@ -290,11 +301,11 @@ def register_ca(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         access_level: int = 0,
     ) -> None:
         await message.answer(
-            "❌ /regrole [court|congress|sledca|leader]\n"
+            resp.error("/regrole [court|congress|sledca|leader]\n"
             "• court — судьи\n"
             "• congress — конгресс\n"
             "• sledca — след. ЦА\n"
-            "• leader — руководство ЦА"
+            "• leader — руководство ЦА")
         )
 
     @bot.on.message(text=dual_with_args("regrole", "<role_type>"))
@@ -447,13 +458,13 @@ async def _handle_regrole(
     alias: str | None,
 ) -> None:
     if message.peer_id < 2_000_000_000:
-        await message.answer("❌ Команда только в беседах.")
+        await message.answer(resp.error("Команда только в беседах."))
         return
 
     kind = _normalize_regrole_type(role_type)
     if not kind:
         await message.answer(
-            "❌ Неизвестный тип. Доступно: court, congress, sledca, leader"
+            resp.error("Неизвестный тип. Доступно: court, congress, sledca, leader")
         )
         return
 
@@ -465,9 +476,9 @@ async def _handle_regrole(
             server_id,
         )
         await message.answer(
-            "✅ Беседа руководства ЦА (лидеры) привязана.\n"
+            resp.success("Беседа руководства ЦА (лидеры) привязана.\n"
             "Участники отображаются в панели (раздел «Лидеры»).\n"
-            "При выходе — снимается роль лидера."
+            "При выходе — снимается роль лидера.")
         )
         await action_logger.log_user(
             "regleader",
@@ -486,8 +497,8 @@ async def _handle_regrole(
             server_id,
         )
         await message.answer(
-            "✅ Беседа судей привязана.\n"
-            "При выходе роль судьи снимается автоматически."
+            resp.success("Беседа судей привязана.\n"
+            "При выходе роль судьи снимается автоматически.")
         )
         await action_logger.log_user(
             "regcourt",
@@ -506,9 +517,9 @@ async def _handle_regrole(
             server_id,
         )
         await message.answer(
-            "✅ Беседа след. ЦА привязана.\n"
+            resp.success("Беседа след. ЦА привязана.\n"
             "При входе: ур. 1 (ПГС) + доступ ЦА.\n"
-            "При выходе/кике — снимается."
+            "При выходе/кике — снимается.")
         )
         await action_logger.log_user(
             "regsledca",

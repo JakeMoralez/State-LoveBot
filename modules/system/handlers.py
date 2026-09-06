@@ -7,6 +7,7 @@ from vkbottle.bot import Bot, Message
 
 from database.repository.server_repo import ServerRepository
 from middlewares.access import AccessChecker, requires_developer
+from services import responses as resp
 from services.command_utils import dual, dual_args, strip_cmd
 from services.dev_server_context import (
     clear_dev_server_override,
@@ -69,19 +70,19 @@ def register_system(bot: Bot, api: API) -> None:
             clear_dev_server_override(user_id)
             effective = await AccessChecker.resolve_server_id(message.peer_id, user_id)
             await message.answer(
-                f"✅ Сброшено. Активный server_id: {effective}"
+                resp.success(f"Сброшено. Активный server_id: {effective}")
             )
             return
 
         if not arg.isdigit() or int(arg) <= 0:
-            await message.answer("❌ Укажите номер сервера, например: /meserver 30")
+            await message.answer(resp.error("Укажите номер сервера, например: /meserver 30"))
             return
 
         target_id = int(arg)
         server = await ServerRepository.get_or_create_by_id(target_id)
         set_dev_server_override(user_id, target_id)
         await message.answer(
-            f"✅ Активный сервер: {format_server_label(server, target_id)}"
+            resp.success(f"Активный сервер: {format_server_label(server, target_id)}")
         )
 
     def _format_server_settings(server_id: int, server) -> str:
@@ -127,22 +128,22 @@ def register_system(bot: Bot, api: API) -> None:
         if lower.startswith("tag "):
             value = arg[4:].strip()
             if not value:
-                await message.answer("❌ /setserver tag <имя>")
+                await message.answer(resp.error("/setserver tag <имя>"))
                 return
             server = await ServerRepository.update_settings(server_id, tag=value)
             await message.answer(
-                f"✅ Тег: {server.tag}\n{format_server_label(server, server_id)}"
+                resp.success(f"Тег: {server.tag}\n{format_server_label(server, server_id)}")
             )
             return
 
         if lower.startswith("name "):
             value = arg[5:].strip()
             if not value:
-                await message.answer("❌ /setserver name <полное имя>")
+                await message.answer(resp.error("/setserver name <полное имя>"))
                 return
             server = await ServerRepository.update_settings(server_id, name=value)
             await message.answer(
-                f"✅ Имя: {server.name}\n{format_server_label(server, server_id)}"
+                resp.success(f"Имя: {server.name}\n{format_server_label(server, server_id)}")
             )
             return
 
@@ -152,7 +153,7 @@ def register_system(bot: Bot, api: API) -> None:
                 clear_judge_forum=True,
             )
             await message.answer(
-                f"✅ Раздел исков сброшен.\n{_format_server_settings(server_id, server)}"
+                resp.success(f"Раздел исков сброшен.\n{_format_server_settings(server_id, server)}")
             )
             return
 
@@ -164,7 +165,7 @@ def register_system(bot: Bot, api: API) -> None:
             )
             raw_id = arg[len(prefix) :].strip()
             if not raw_id.isdigit() or int(raw_id) <= 0:
-                await message.answer("❌ /setserver forum <id> — число из URL forums/3423/")
+                await message.answer(resp.error("/setserver forum <id> — число из URL forums/3423/"))
                 return
             forum_id = int(raw_id)
             server = await ServerRepository.update_settings(
@@ -172,11 +173,13 @@ def register_system(bot: Bot, api: API) -> None:
                 judge_forum_id=forum_id,
             )
             await message.answer(
-                f"✅ Раздел исков: {format_judge_forum_hint(forum_id)}\n"
-                f"{format_server_label(server, server_id)}"
+                resp.success(
+                    f"Раздел исков: {format_judge_forum_hint(forum_id)}\n"
+                    f"{format_server_label(server, server_id)}"
+                )
             )
             return
 
         await message.answer(
-            "❌ Неизвестный параметр.\n\n" + _format_server_settings(server_id, server)
+            resp.error("Неизвестный параметр.\n\n" + _format_server_settings(server_id, server))
         )
