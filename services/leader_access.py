@@ -15,6 +15,12 @@ logger = logging.getLogger(__name__)
 
 
 async def get_leader_chat_server_id(peer_id: int) -> int | None:
+    from database.models.chat_kind import ChatKind
+    from services.chat_kind import resolve_kind
+
+    kind, _sphere, server_id = await resolve_kind(peer_id)
+    if kind == ChatKind.LEADER and server_id:
+        return int(server_id)
     chat = await ForumRoleRepository.get_role_chat_by_peer(peer_id)
     if chat and chat.role == ForumRoleKey.LEADER:
         return chat.server_id

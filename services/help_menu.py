@@ -142,7 +142,7 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
         "🏛 ЦА",
         (
             HelpEntry("/raccess", "Снять роли с пользователя", 2, ca=True),
-            HelpEntry("/regrole", "Привязать роль к беседе", 3, ca=True),
+            HelpEntry("/regrole", "Тип беседы — теперь /chatsettings пункт 4", 3, ca=True),
         ),
     ),
     HelpCategory(

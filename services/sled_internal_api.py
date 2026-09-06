@@ -207,6 +207,76 @@ async def handle_forum_thread_info(request: web.Request) -> web.Response:
     )
 
 
+async def handle_health(request: web.Request) -> web.Response:
+    if not _check_secret(request):
+        return web.json_response({"error": "unauthorized"}, status=401)
+    return web.json_response({"ok": True})
+
+
+async def handle_chats_list(request: web.Request) -> web.Response:
+    if not _check_secret(request):
+        return web.json_response({"error": "unauthorized"}, status=401)
+    try:
+        server_id = int(request.rel_url.query.get("server_id", "0"))
+    except ValueError:
+        return web.json_response({"error": "invalid server_id"}, status=400)
+    if server_id <= 0:
+        from config.settings import DEFAULT_SERVER_ID
+
+        server_id = DEFAULT_SERVER_ID
+    from services.internal_chats import list_chats_payload
+
+    api: API = request.app["vk_api"]
+    try:
+        payload = await list_chats_payload(api, server_id)
+    except Exception as exc:
+        logger.exception("internal chats list failed")
+        return web.json_response({"error": str(exc)}, status=500)
+    return web.json_response(payload)
+
+
+async def handle_chat_patch(request: web.Request) -> web.Response:
+    if not _check_secret(request):
+        return web.json_response({"error": "unauthorized"}, status=401)
+    try:
+        peer_id = int(request.match_info["peer_id"])
+    except (KeyError, ValueError):
+        return web.json_response({"error": "invalid peer_id"}, status=400)
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"error": "invalid json"}, status=400)
+    if not isinstance(data, dict):
+        return web.json_response({"error": "invalid json"}, status=400)
+
+    from config.settings import DEFAULT_SERVER_ID
+    from services.internal_chats import patch_chat
+
+    try:
+        server_id = int(data.get("server_id") or DEFAULT_SERVER_ID)
+        updated_by = int(data.get("updated_by") or 0)
+    except (TypeError, ValueError):
+        return web.json_response({"error": "invalid server_id or updated_by"}, status=400)
+    if not updated_by:
+        return web.json_response({"error": "updated_by required"}, status=400)
+
+    api: API = request.app["vk_api"]
+    try:
+        row = await patch_chat(
+            api,
+            peer_id,
+            server_id=server_id,
+            updated_by=updated_by,
+            body=data,
+        )
+    except ValueError as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+    except Exception as exc:
+        logger.exception("internal chat patch failed peer=%s", peer_id)
+        return web.json_response({"error": str(exc)}, status=500)
+    return web.json_response(row)
+
+
 async def handle_chat_members(request: web.Request) -> web.Response:
     if not _check_secret(request):
         return web.json_response({"error": "unauthorized"}, status=401)
@@ -235,8 +305,11 @@ async def start_sled_internal_server(api: API) -> web.AppRunner | None:
 
     app = web.Application()
     app["vk_api"] = api
+    app.router.add_get("/internal/health", handle_health)
     app.router.add_get("/internal/staff-ca", handle_staff_ca)
     app.router.add_get("/internal/staff-full", handle_staff_full)
+    app.router.add_get("/internal/chats", handle_chats_list)
+    app.router.add_patch("/internal/chats/{peer_id}", handle_chat_patch)
     app.router.add_get("/internal/chat-members", handle_chat_members)
     app.router.add_get("/internal/forum/thread-info", handle_forum_thread_info)
     app.router.add_post("/internal/notify", handle_notify)

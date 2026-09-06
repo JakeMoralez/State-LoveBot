@@ -342,6 +342,9 @@ async def _ensure_chat_settings_columns() -> None:
         "ALTER TABLE chat_peer_settings ADD COLUMN kick_on_leave VARCHAR(8) NOT NULL DEFAULT 'off'",
         "ALTER TABLE chat_peer_settings ADD COLUMN kick_on_rejoin VARCHAR(8) NOT NULL DEFAULT 'off'",
         "ALTER TABLE chat_peer_settings ADD COLUMN auto_mute_on_join VARCHAR(8) NOT NULL DEFAULT 'off'",
+        "ALTER TABLE chat_peer_settings ADD COLUMN chat_kind VARCHAR(32) NOT NULL DEFAULT 'general'",
+        "ALTER TABLE chat_peer_settings ADD COLUMN sphere VARCHAR(64) NULL",
+        "ALTER TABLE chat_peer_settings ADD COLUMN server_id INT NULL",
     ):
         try:
             await conn.execute_query(ddl)
@@ -372,6 +375,49 @@ async def _ensure_chat_settings_columns() -> None:
         pass
 
 
+async def _migrate_role_chats_unique_and_kinds() -> None:
+    """Несколько бесед одного типа + бэкофилл chat_kind из role_chats."""
+    conn = Tortoise.get_connection("default")
+    try:
+        indexes = await conn.execute_query_dict("PRAGMA index_list(role_chats)")
+    except Exception:
+        indexes = []
+    for idx in indexes:
+        name = str(idx.get("name") or "")
+        unique = int(idx.get("unique") or 0)
+        if not unique:
+            continue
+        cols = await conn.execute_query_dict(f"PRAGMA index_info({name})")
+        col_names = {str(c.get("name")) for c in cols}
+        if col_names == {"server_id", "role"}:
+            try:
+                await conn.execute_query(f"DROP INDEX {name}")
+                logger.info("Снят UNIQUE(server_id, role) с role_chats: %s", name)
+            except Exception as exc:
+                logger.warning("Не удалось снять unique role_chats: %s", exc)
+
+    from database.models.chat_kind import ChatKind
+    from database.models.role_chat import ForumRoleKey, RoleChat
+    from database.repository.chat_settings_repo import ChatSettingsRepository
+
+    role_to_kind = {
+        ForumRoleKey.LEADER: ChatKind.LEADER,
+        ForumRoleKey.JUDGE: ChatKind.JUDGE,
+        ForumRoleKey.SLED_CA: ChatKind.SLED_CA,
+        ForumRoleKey.CONGRESS: ChatKind.CONGRESS,
+    }
+    rows = await RoleChat.all()
+    for row in rows:
+        kind = role_to_kind.get(row.role)
+        if not kind:
+            continue
+        settings = await ChatSettingsRepository.get(row.peer_id)
+        if (settings.chat_kind or ChatKind.GENERAL) == ChatKind.GENERAL:
+            settings.chat_kind = kind
+            settings.server_id = row.server_id
+            await settings.save()
+
+
 async def init_db() -> None:
     await Tortoise.init(config=TORTOISE_ORM)
     await Tortoise.generate_schemas(safe=True)
@@ -392,6 +438,9 @@ async def init_db() -> None:
     if sqlite:
         await _migrate_legacy_data_to_default_server()
         await _migrate_role_chats_per_server()
+        await _migrate_role_chats_unique_and_kinds()
+    else:
+        await _migrate_role_chats_unique_and_kinds()
     await _migrate_global_nicknames_to_servers()
     await _migrate_pool_numbers()
     await _migrate_global_roles_to_servers()

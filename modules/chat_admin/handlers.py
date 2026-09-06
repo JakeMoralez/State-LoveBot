@@ -19,7 +19,12 @@ from middlewares.action_logger import ActionLogger
 from services import responses as resp
 from services.blacklist_sheets import CHECKBL_BATCH_MAX, check_blacklist_many
 from services.chat_admin import ChatAdminService
-from services.chat_settings_keyboard import create_open_edit_keyboard, create_value_keyboard
+from services.chat_settings_keyboard import (
+    create_kind_keyboard,
+    create_open_edit_keyboard,
+    create_sphere_keyboard,
+    create_value_keyboard,
+)
 from services.chat_settings_pending import clear as clear_chat_settings_session
 from services.chat_settings_pending import get as get_chat_settings_session
 from services.chat_settings_pending import is_callback_owner
@@ -441,7 +446,7 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
         session = get_chat_settings_session(message.peer_id, user_id)
         if not session or session.phase != "pick_setting":
             return False
-        return (message.text or "").strip() in {"1", "2", "3"}
+        return (message.text or "").strip() in {"1", "2", "3", "4"}
 
     @bot.on.message(FuncRule(_chat_settings_pick_rule), blocking=True)
     @requires_level(AccessLevel.ZGS)
@@ -451,11 +456,18 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
         access_level: int = 0,
     ) -> None:
         number = int((message.text or "").strip())
+        owner_id = message.from_id or 0
+        if number == 4:
+            await message.answer(
+                "⚙ Тип беседы\nВыберите тип:",
+                keyboard=create_kind_keyboard(owner_id),
+                disable_mentions=1,
+            )
+            return
         setting = CHAT_SETTINGS_BY_NUMBER.get(number)
         if not setting:
-            await message.answer(resp.error("Нет такого пункта. Укажите 1, 2 или 3."))
+            await message.answer(resp.error("Нет такого пункта. Укажите 1, 2, 3 или 4."))
             return
-        owner_id = message.from_id or 0
         await message.answer(
             f"⚙ {setting.title}\nВыберите значение:",
             keyboard=create_value_keyboard(setting.key, owner_id),
@@ -488,7 +500,9 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
         peer_id = event.peer_id
         owner_id = payload.get("owner")
 
-        if action in ("edit", "set") and not is_callback_owner(event.user_id, owner_id):
+        if action in ("edit", "set", "kind", "ksphere") and not is_callback_owner(
+            event.user_id, owner_id
+        ):
             await event.show_snackbar(resp.denied("Только автор команды."))
             await event.send_empty_answer()
             return
@@ -497,6 +511,88 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
             start_pick_setting(peer_id, event.user_id)
             panel = await format_settings_edit_panel(api, peer_id)
             await event.send_message(panel, disable_mentions=1)
+            await event.send_empty_answer()
+            return
+
+        if action == "kind":
+            kind = str(payload.get("k") or "")
+            from services.chat_kind import kind_label, spheres_for_kind
+
+            if spheres_for_kind(kind):
+                await event.send_message(
+                    f"⚙ {kind_label(kind)}\nВыберите сферу:",
+                    keyboard=create_sphere_keyboard(kind, event.user_id),
+                    disable_mentions=1,
+                )
+                await event.send_empty_answer()
+                return
+            try:
+                from services.chat_kind import apply_chat_kind
+
+                title = None
+                chat = await ChatRepository.get_by_peer_id(peer_id)
+                if chat:
+                    title = chat.title
+                await apply_chat_kind(
+                    peer_id,
+                    kind,
+                    server_id=server_id,
+                    updated_by=event.user_id,
+                    api=api,
+                    title=title,
+                )
+            except ValueError as exc:
+                await event.show_snackbar(resp.error(f"{exc}"))
+                return
+            clear_chat_settings_session(peer_id, event.user_id)
+            await event.send_message(
+                resp.success(f"Тип беседы: {kind_label(kind)}"),
+                disable_mentions=1,
+            )
+            await action_logger.log_user(
+                "chatsettings",
+                event.user_id,
+                f"chatKind={kind}",
+                "Изменено",
+                source_peer_id=peer_id,
+            )
+            await event.send_empty_answer()
+            return
+
+        if action == "ksphere":
+            kind = str(payload.get("k") or "")
+            sphere = str(payload.get("s") or "")
+            from services.chat_kind import apply_chat_kind, kind_label
+
+            try:
+                title = None
+                chat = await ChatRepository.get_by_peer_id(peer_id)
+                if chat:
+                    title = chat.title
+                await apply_chat_kind(
+                    peer_id,
+                    kind,
+                    server_id=server_id,
+                    updated_by=event.user_id,
+                    sphere=sphere,
+                    api=api,
+                    title=title,
+                )
+            except ValueError as exc:
+                await event.show_snackbar(resp.error(f"{exc}"))
+                return
+            clear_chat_settings_session(peer_id, event.user_id)
+            await event.send_message(
+                resp.success(f"Тип беседы: {kind_label(kind, sphere)}"),
+                disable_mentions=1,
+            )
+            await action_logger.log_user(
+                "chatsettings",
+                event.user_id,
+                f"chatKind={kind} sphere={sphere}",
+                "Изменено",
+                source_peer_id=peer_id,
+            )
             await event.send_empty_answer()
             return
 

@@ -22,8 +22,18 @@ class CongressRepository:
 
     @staticmethod
     async def is_congress_chat(peer_id: int, server_id: int) -> bool:
-        congress_peer = await CongressRepository.get_congress_peer_id(server_id)
-        return congress_peer is not None and peer_id == congress_peer
+        from database.models.chat_kind import ChatKind
+        from services.chat_kind import resolve_kind
+
+        kind, _sphere, kind_server = await resolve_kind(peer_id)
+        if kind == ChatKind.CONGRESS and (
+            kind_server is None or int(kind_server) == int(server_id)
+        ):
+            return True
+        peers = await ForumRoleRepository.list_role_chat_peers(
+            ForumRoleKey.CONGRESS, server_id
+        )
+        return peer_id in peers
 
     @staticmethod
     async def _ensure_access(

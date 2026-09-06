@@ -29,6 +29,15 @@ _CONGRESS_LABELS = {
 
 
 async def is_court_chat(peer_id: int, server_id: int | None = None) -> bool:
+    from database.models.chat_kind import ChatKind
+    from services.chat_kind import resolve_kind
+
+    kind, _sphere, kind_server = await resolve_kind(peer_id)
+    if kind == ChatKind.JUDGE:
+        if server_id is not None and kind_server is not None and int(kind_server) != int(server_id):
+            return False
+        return True
+
     role_chat = await ForumRoleRepository.get_role_chat_by_peer(peer_id)
     if role_chat and role_chat.role == ForumRoleKey.JUDGE:
         return True
@@ -59,6 +68,11 @@ async def revoke_judge_on_court_kick(
     )
     if not await is_court_chat(peer_id, server_id):
         return None
+    from database.models.chat_kind import ChatKind
+    from services.chat_kind import user_in_other_kind_chat
+
+    if await user_in_other_kind_chat(api, user_id, server_id, ChatKind.JUDGE, peer_id):
+        return None
     if not await ForumRoleRepository.clear_judge_role(user_id, server_id):
         return None
 
@@ -76,68 +90,22 @@ async def handle_role_chat_leave(peer_id: int, user_id: int, api: API) -> str | 
     if user_id <= 0 or peer_id < 2_000_000_000:
         return None
 
-    role_chat = await ForumRoleRepository.get_role_chat_by_peer(peer_id)
-    chat = await ChatRepository.get_by_peer_id(peer_id)
-    if not role_chat and not await is_court_chat(peer_id):
+    from services.chat_kind import handle_peer_leave
+
+    notice = await handle_peer_leave(peer_id, user_id, api)
+    if notice:
+        return notice
+
+    # Алиас court без нового типа — как раньше, но с проверкой других судейских.
+    if not await is_court_chat(peer_id):
         return None
+    server_id = await AccessChecker.resolve_server_id(peer_id, user_id)
+    from database.models.chat_kind import ChatKind
+    from services.chat_kind import user_in_other_kind_chat
 
-    server_id = (
-        role_chat.server_id
-        if role_chat
-        else chat.server_id
-        if chat
-        else await AccessChecker.resolve_server_id(peer_id, user_id)
-    )
-    names = DisplayNameService(api, server_id)
-    link = await names.link_user(user_id, server_id)
-    notices: list[str] = []
-
-    if role_chat:
-        congress_role = await CongressRepository.revoke_officer_on_leave(
-            peer_id,
-            user_id,
-            server_id,
-        )
-        if congress_role:
-            label = _CONGRESS_LABELS.get(congress_role, congress_role)
-            notices.append(f"🏛 {link} — снят доступ {label} (выход из беседы).")
-            logger.info(
-                "congress %s revoked: vk_id=%s peer=%s server=%s",
-                congress_role,
-                user_id,
-                peer_id,
-                server_id,
-            )
-
-    if await is_court_chat(peer_id, server_id):
-        if await ForumRoleRepository.clear_judge_role(user_id, server_id):
-            notices.append(f"🔰 {link} — доступ судьи снят (выход из беседы court).")
-            logger.info(
-                "judge role revoked: vk_id=%s peer=%s server=%s",
-                user_id,
-                peer_id,
-                server_id,
-            )
-
-    if role_chat:
-        role = role_chat.role
-        if role in _ROLE_LABELS and role != ForumRoleKey.JUDGE:
-            if await ForumRoleRepository.revoke_role_on_leave(
-                user_id,
-                role,
-                server_id,
-            ):
-                notices.append(
-                    f"🔰 {link} — доступ {_ROLE_LABELS[role]} снят (выход из беседы)."
-                )
-                logger.info(
-                    "%s role revoked: vk_id=%s peer=%s server=%s",
-                    role,
-                    user_id,
-                    peer_id,
-                    server_id,
-                )
-
-    if not notices:
+    if await user_in_other_kind_chat(api, user_id, server_id, ChatKind.JUDGE, peer_id):
         return None
-    return "\n".join(notices)
+    if not await ForumRoleRepository.clear_judge_role(user_id, server_id):
+        return None
+    link = await DisplayNameService(api, server_id).link_user(user_id, server_id)
+    return f"🔰 {link} — доступ судьи снят (выход из беседы)."

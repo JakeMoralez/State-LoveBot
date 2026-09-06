@@ -352,6 +352,15 @@ def register_chat(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             logger.warning("leader join failed peer=%s member=%s: %s", peer_id, member_id, exc)
 
         try:
+            from services.chat_kind import handle_peer_join
+
+            extra = await handle_peer_join(peer_id, member_id, api)
+            if extra:
+                await _send_text(peer_id, extra)
+        except Exception as exc:
+            logger.warning("chat kind join failed peer=%s member=%s: %s", peer_id, member_id, exc)
+
+        try:
             server_id = await AccessChecker.resolve_server_id(peer_id)
             welcome = await messaging.format_welcome_notice(
                 member_id,

@@ -147,6 +147,9 @@ async def format_settings_overview(api: API, peer_id: int) -> str:
         "Кик при возвращении: если участник сам выходил — кикнуть или пропустить.",
         "Автомут: бессрочный мут новым участникам при входе в беседу.",
     ]
+    from services.chat_kind import format_kind_line
+
+    lines.insert(7, await format_kind_line(peer_id))
     return "\n".join(lines)
 
 
@@ -160,6 +163,9 @@ async def format_settings_edit_panel(api: API, peer_id: int) -> str:
     ]
     for number in sorted(CHAT_SETTINGS_BY_NUMBER):
         lines.append(CHAT_SETTINGS_BY_NUMBER[number].format_line(settings))
+    from services.chat_kind import format_kind_line
+
+    lines.append(f"⚙️ [№4 / chatKind] — Тип беседы — {(await format_kind_line(peer_id)).split('—', 1)[-1].strip()}")
     lines.extend(
         [
             "",

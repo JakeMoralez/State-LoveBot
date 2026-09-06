@@ -30,7 +30,7 @@ class RoleChat(Model):
 
     class Meta:
         table = "role_chats"
-        unique_together = (("server_id", "role"),)
+        unique_together = (("peer_id",),)
 
     def __str__(self) -> str:
         return f"{self.role}@{self.server_id}"

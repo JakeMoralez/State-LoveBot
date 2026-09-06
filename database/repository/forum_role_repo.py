@@ -203,23 +203,34 @@ class ForumRoleRepository:
         server_id: int,
     ) -> RoleChat:
         server = await Server.get(id=server_id)
-        chat, _ = await RoleChat.get_or_create(
-            server=server,
+        existing = await RoleChat.get_or_none(peer_id=peer_id)
+        if existing:
+            existing.role = role
+            existing.server = server
+            existing.registered_by = registered_by
+            await existing.save()
+            return existing
+        return await RoleChat.create(
             role=role,
-            defaults={
-                "peer_id": peer_id,
-                "registered_by": registered_by,
-            },
+            server=server,
+            peer_id=peer_id,
+            registered_by=registered_by,
         )
-        chat.peer_id = peer_id
-        chat.registered_by = registered_by
-        await chat.save()
-        return chat
 
     @staticmethod
     async def get_role_chat(role: str, server_id: int) -> int | None:
-        chat = await RoleChat.get_or_none(server_id=server_id, role=role)
+        chat = await RoleChat.filter(server_id=server_id, role=role).first()
         return chat.peer_id if chat else None
+
+    @staticmethod
+    async def list_role_chat_peers(role: str, server_id: int) -> list[int]:
+        rows = await RoleChat.filter(server_id=server_id, role=role)
+        return [int(row.peer_id) for row in rows]
+
+    @staticmethod
+    async def delete_role_chat_by_peer(peer_id: int) -> bool:
+        deleted = await RoleChat.filter(peer_id=peer_id).delete()
+        return deleted > 0
 
     @staticmethod
     async def get_role_chat_by_peer(peer_id: int) -> RoleChat | None:

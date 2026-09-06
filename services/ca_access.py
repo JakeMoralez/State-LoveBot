@@ -18,11 +18,23 @@ logger = logging.getLogger(__name__)
 
 
 async def is_sled_ca_chat(peer_id: int) -> bool:
+    from database.models.chat_kind import ChatKind
+    from services.chat_kind import resolve_kind
+
+    kind, _sphere, _server = await resolve_kind(peer_id)
+    if kind == ChatKind.SLED_CA:
+        return True
     chat = await ForumRoleRepository.get_role_chat_by_peer(peer_id)
     return chat is not None and chat.role == ForumRoleKey.SLED_CA
 
 
 async def get_sled_ca_server_id(peer_id: int) -> int | None:
+    from database.models.chat_kind import ChatKind
+    from services.chat_kind import resolve_kind
+
+    kind, _sphere, server_id = await resolve_kind(peer_id)
+    if kind == ChatKind.SLED_CA and server_id:
+        return int(server_id)
     chat = await ForumRoleRepository.get_role_chat_by_peer(peer_id)
     if chat and chat.role == ForumRoleKey.SLED_CA:
         return chat.server_id
@@ -87,6 +99,14 @@ async def handle_sled_ca_leave(peer_id: int, user_id: int, api: API) -> str | No
         return None
     server_id = await get_sled_ca_server_id(peer_id)
     if not server_id:
+        return None
+
+    from database.models.chat_kind import ChatKind
+    from services.chat_kind import user_in_other_kind_chat
+
+    if await user_in_other_kind_chat(
+        api, user_id, server_id, ChatKind.SLED_CA, peer_id
+    ):
         return None
 
     changed, detail = await UserRepository.revoke_sled_ca_from_chat(

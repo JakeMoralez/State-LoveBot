@@ -457,9 +457,13 @@ async def _handle_regrole(
     role_type: str,
     alias: str | None,
 ) -> None:
-    if message.peer_id < 2_000_000_000:
-        await message.answer(resp.error("Команда только в беседах."))
-        return
+    await message.answer(
+        resp.info(
+            "Тип беседы теперь задаётся в /chatsettings → пункт 4.",
+            hint="Лидерская, судейская, след. ЦА, следящие, главная след. админ. структуры, конгресс.",
+        )
+    )
+    return
 
     kind = _normalize_regrole_type(role_type)
     if not kind:

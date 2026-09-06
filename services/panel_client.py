@@ -115,6 +115,40 @@ async def set_discord_link(vk_id: int, discord_id: str | None) -> tuple[bool, st
     return await set_discord_link_local(vk_id, normalized, actor_vk_id=vk_id)
 
 
+async def sync_staff_sphere(
+    vk_id: int,
+    sphere: str,
+    *,
+    grant: bool,
+    server_id: int | None = None,
+) -> tuple[bool, str]:
+    """Системный sync одной сферы (беседа следящих) — без actor hierarchy."""
+    if not panel_api_configured():
+        return True, ""
+    url = f"{PANEL_INTERNAL_URL}/internal/staff-spheres/{vk_id}"
+    payload: dict = {"grant_sphere": sphere} if grant else {"revoke_sphere": sphere}
+    params = {}
+    if server_id is not None:
+        params["server_id"] = server_id
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.put(
+                url,
+                json=payload,
+                params=params,
+                headers=_headers(),
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                if resp.status == 200:
+                    return True, ""
+                data = await resp.json(content_type=None)
+                detail = data.get("detail") if isinstance(data, dict) else None
+                return False, str(detail or resp.reason or "Ошибка панели")
+    except Exception as exc:
+        logger.warning("sync_staff_sphere vk=%s %s: %s", vk_id, sphere, exc)
+        return False, "Не удалось связаться с панелью."
+
+
 async def sync_staff_spheres(
     vk_id: int,
     *,

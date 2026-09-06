@@ -21,6 +21,9 @@ class ChatPeerSettings(Model):
     kick_on_leave = fields.CharField(max_length=8, default=GuardMode.OFF)
     kick_on_rejoin = fields.CharField(max_length=8, default=GuardMode.OFF)
     auto_mute_on_join = fields.CharField(max_length=8, default=GuardMode.OFF)
+    chat_kind = fields.CharField(max_length=32, default="general")
+    sphere = fields.CharField(max_length=64, null=True)
+    server_id = fields.IntField(null=True)
     updated_by = fields.BigIntField(null=True)
     updated_at = fields.DatetimeField(auto_now=True)
 

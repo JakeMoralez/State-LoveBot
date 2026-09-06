@@ -43,6 +43,7 @@ CONGRESS_ROLES: frozenset[str] = frozenset(
 )
 
 JUDGE_ROLE = "Judge"
+ADVISOR_TAGS: frozenset[str] = frozenset({"Advisor", "Adv"})
 
 MINISTER_TAGS: frozenset[str] = frozenset(
     {
@@ -158,6 +159,18 @@ class NicknameValidator:
 
         first_inner = m_tag.group(1).strip()
         rest_after_first = raw[m_tag.end() :].lstrip()
+
+        advisor = next(
+            (tag for tag in ADVISOR_TAGS if first_inner.casefold() == tag.casefold()),
+            None,
+        )
+        if advisor is not None:
+            if rest_after_first.startswith("["):
+                return None, "У советника ранг не указывается."
+            name_err = _validate_name(rest_after_first)
+            if name_err:
+                return None, name_err
+            return f"[{advisor}] {rest_after_first}", None
 
         minister = _canon_minister(first_inner)
         if minister is not None:
