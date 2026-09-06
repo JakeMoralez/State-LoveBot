@@ -63,7 +63,7 @@ _TAG_CHUNK_RE = re.compile(r"^\[([^\]]+)\]")
 _RANK_RE = re.compile(r"^\[(9|10)\]\s*")
 
 _FORMAT_HINT = (
-    "Формат: [фракция] [9|10] Name_Surname\n"
+    "Формат: [фракция][9|10] Name_Surname\n"
     "Или: [Speaker] / [Speaker | LSPD][10] Name_Surname\n"
     "Или: [Judge] Name_Surname\n"
     "Или: [Pr.Min] Name_Surname"
@@ -228,4 +228,4 @@ class NicknameValidator:
         name_err = _validate_name(name)
         if name_err:
             return None, name_err
-        return f"[{faction}] [{rank}] {name}", None
+        return f"[{faction}][{rank}] {name}", None

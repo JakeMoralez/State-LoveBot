@@ -8,6 +8,8 @@ from vkbottle import API
 
 from database.models.chat_kind import (
     KIND_LABELS,
+    STAFF_ACCESS_SPHERE_KEYS,
+    STAFF_SPHERE_KEYS,
     STRUCTURE_SPHERE_KEYS,
     ChatKind,
 )
@@ -17,7 +19,7 @@ from database.repository.chat_repo import ChatRepository
 from database.repository.chat_settings_repo import ChatSettingsRepository
 from database.repository.forum_role_repo import ForumRoleRepository
 from database.repository.user_repo import UserRepository
-from database.spheres import ALL_SPHERE_KEYS, SPHERE_LABELS, format_spheres_display
+from database.spheres import CENTRAL_APPARATUS, SPHERE_LABELS, format_spheres_display
 from middlewares.access import AccessChecker
 from services.panel_client import sync_staff_sphere
 
@@ -33,7 +35,20 @@ KIND_TO_ROLE: dict[str, str] = {
 ROLE_TO_KIND: dict[str, str] = {role: kind for kind, role in KIND_TO_ROLE.items()}
 
 
+def coerce_chat_kind(kind: str, sphere: str | None = None) -> tuple[str, str | None]:
+    """След. ЦА = следящие · Центральный аппарат."""
+    if kind == ChatKind.SLED_CA:
+        return ChatKind.STAFF, sphere or CENTRAL_APPARATUS
+    return kind, sphere
+
+
+def is_staff_ca(kind: str, sphere: str | None) -> bool:
+    coerced, coerced_sphere = coerce_chat_kind(kind, sphere)
+    return coerced == ChatKind.STAFF and coerced_sphere == CENTRAL_APPARATUS
+
+
 def kind_label(kind: str, sphere: str | None = None) -> str:
+    kind, sphere = coerce_chat_kind(kind, sphere)
     base = KIND_LABELS.get(kind, kind)
     if kind in (ChatKind.STAFF, ChatKind.STRUCTURE_LEAD) and sphere:
         return f"{base} · {SPHERE_LABELS.get(sphere, sphere)}"
@@ -42,7 +57,7 @@ def kind_label(kind: str, sphere: str | None = None) -> str:
 
 def spheres_for_kind(kind: str) -> tuple[str, ...]:
     if kind == ChatKind.STAFF:
-        return ALL_SPHERE_KEYS
+        return STAFF_SPHERE_KEYS
     if kind == ChatKind.STRUCTURE_LEAD:
         return STRUCTURE_SPHERE_KEYS
     return ()
@@ -56,15 +71,25 @@ async def resolve_kind(
     kind = (settings.chat_kind or "").strip() or ChatKind.GENERAL
     sphere = (settings.sphere or "").strip() or None
     server_id = settings.server_id
+    dirty = False
 
     if kind == ChatKind.GENERAL:
         role_chat = await ForumRoleRepository.get_role_chat_by_peer(peer_id)
         if role_chat and role_chat.role in ROLE_TO_KIND:
             kind = ROLE_TO_KIND[role_chat.role]
             server_id = server_id or role_chat.server_id
-            settings.chat_kind = kind
-            settings.server_id = server_id
-            await settings.save()
+            dirty = True
+
+    coerced, coerced_sphere = coerce_chat_kind(kind, sphere)
+    if (coerced, coerced_sphere) != (kind, sphere):
+        kind, sphere = coerced, coerced_sphere
+        dirty = True
+
+    if dirty:
+        settings.chat_kind = kind
+        settings.sphere = sphere
+        settings.server_id = server_id
+        await settings.save()
     return kind, sphere, server_id
 
 
@@ -82,9 +107,14 @@ async def list_kind_peers(
             peers.add(int(row.peer_id))
 
     role = KIND_TO_ROLE.get(kind)
+    if is_staff_ca(kind, sphere):
+        role = ForumRoleKey.SLED_CA
+        for row in await ChatPeerSettings.filter(chat_kind=ChatKind.SLED_CA):
+            if row.server_id is None or int(row.server_id) == int(server_id):
+                peers.add(int(row.peer_id))
     if role:
         for peer in await ForumRoleRepository.list_role_chat_peers(role, server_id):
-            if sphere:
+            if sphere and not is_staff_ca(kind, sphere):
                 settings = await ChatPeerSettings.get_or_none(peer_id=peer)
                 if settings and (settings.sphere or "") != sphere:
                     continue
@@ -127,6 +157,7 @@ async def apply_chat_kind(
     api: API | None = None,
     title: str | None = None,
 ) -> tuple[str, str | None]:
+    kind, sphere = coerce_chat_kind(kind, sphere)
     if kind not in ChatKind.ALL:
         raise ValueError("Неизвестный тип беседы")
 
@@ -151,6 +182,7 @@ async def apply_chat_kind(
         server_id=server_id,
         registered_by=updated_by,
         title=title,
+        sphere=sphere,
     )
 
     if api is not None and (old_kind, old_sphere) != (kind, sphere):
@@ -173,8 +205,11 @@ async def _sync_role_binding(
     server_id: int,
     registered_by: int,
     title: str | None,
+    sphere: str | None = None,
 ) -> None:
     role = KIND_TO_ROLE.get(kind)
+    if is_staff_ca(kind, sphere):
+        role = ForumRoleKey.SLED_CA
     if role:
         await ForumRoleRepository.save_role_chat(
             role, peer_id, registered_by, server_id
@@ -232,6 +267,7 @@ async def apply_join_effects(
 ) -> str | None:
     if user_id <= 0:
         return None
+    kind, sphere = coerce_chat_kind(kind, sphere)
     if kind == ChatKind.LEADER:
         await UserRepository.ensure_user(vk_id=user_id)
         changed, _ = await UserRepository.grant_leader_from_chat(user_id, server_id)
@@ -243,7 +279,7 @@ async def apply_join_effects(
             access.is_judge = True
             await access.save()
         return None
-    if kind == ChatKind.SLED_CA:
+    if is_staff_ca(kind, sphere):
         await UserRepository.ensure_user(vk_id=user_id)
         changed, _detail = await UserRepository.grant_sled_ca_from_chat(
             user_id, server_id, peer_id
@@ -255,7 +291,7 @@ async def apply_join_effects(
                 user_id, grant_central_apparatus=True, server_id=server_id
             )
         return None
-    if kind == ChatKind.STAFF and sphere:
+    if kind == ChatKind.STAFF and sphere in STAFF_ACCESS_SPHERE_KEYS:
         await sync_staff_sphere(user_id, sphere, grant=True, server_id=server_id)
     return None
 
@@ -268,11 +304,16 @@ async def apply_leave_effects(
     kind: str,
     sphere: str | None,
 ) -> str | None:
+    kind, sphere = coerce_chat_kind(kind, sphere)
     if user_id <= 0 or kind in (ChatKind.GENERAL, ChatKind.STRUCTURE_LEAD, ChatKind.CONGRESS):
         if kind == ChatKind.CONGRESS:
             from database.repository.congress_repo import CongressRepository
 
             await CongressRepository.revoke_officer_on_leave(peer_id, user_id, server_id)
+        return None
+    if kind == ChatKind.STAFF and sphere not in STAFF_ACCESS_SPHERE_KEYS and not is_staff_ca(
+        kind, sphere
+    ):
         return None
 
     still = await user_in_other_kind_chat(
@@ -287,18 +328,22 @@ async def apply_leave_effects(
     if kind == ChatKind.JUDGE:
         await ForumRoleRepository.clear_judge_role(user_id, server_id)
         return None
-    if kind == ChatKind.SLED_CA:
-        changed, _detail = await UserRepository.revoke_sled_ca_from_chat(
+    if is_staff_ca(kind, sphere):
+        changed, detail = await UserRepository.revoke_sled_ca_from_chat(
             user_id, server_id, peer_id
         )
-        if changed:
-            from services.panel_client import sync_staff_spheres
+        if not changed:
+            return None
+        from services.display_name import DisplayNameService
+        from services.panel_client import sync_staff_spheres
 
+        if detail == "ур. 1 и доступ ЦА":
             await sync_staff_spheres(
                 user_id, grant_central_apparatus=False, server_id=server_id
             )
-        return None
-    if kind == ChatKind.STAFF and sphere:
+        link = await DisplayNameService(api, server_id).link_user(user_id, server_id)
+        return f"🔰 {link} — снят {detail} (выход из беседы следящих ЦА)."
+    if kind == ChatKind.STAFF and sphere in STAFF_ACCESS_SPHERE_KEYS:
         await sync_staff_sphere(user_id, sphere, grant=False, server_id=server_id)
     return None
 

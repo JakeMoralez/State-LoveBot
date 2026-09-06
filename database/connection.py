@@ -397,25 +397,45 @@ async def _migrate_role_chats_unique_and_kinds() -> None:
                 logger.warning("Не удалось снять unique role_chats: %s", exc)
 
     from database.models.chat_kind import ChatKind
+    from database.models.chat_settings import ChatPeerSettings
     from database.models.role_chat import ForumRoleKey, RoleChat
     from database.repository.chat_settings_repo import ChatSettingsRepository
 
     role_to_kind = {
         ForumRoleKey.LEADER: ChatKind.LEADER,
         ForumRoleKey.JUDGE: ChatKind.JUDGE,
-        ForumRoleKey.SLED_CA: ChatKind.SLED_CA,
         ForumRoleKey.CONGRESS: ChatKind.CONGRESS,
     }
     rows = await RoleChat.all()
     for row in rows:
+        settings = await ChatSettingsRepository.get(row.peer_id)
+        current = (settings.chat_kind or ChatKind.GENERAL)
+        if current == ChatKind.SLED_CA:
+            settings.chat_kind = ChatKind.STAFF
+            settings.sphere = settings.sphere or "central_apparatus"
+            settings.server_id = settings.server_id or row.server_id
+            await settings.save()
+            continue
+        if current != ChatKind.GENERAL:
+            continue
+        if row.role == ForumRoleKey.SLED_CA:
+            settings.chat_kind = ChatKind.STAFF
+            settings.sphere = "central_apparatus"
+            settings.server_id = row.server_id
+            await settings.save()
+            continue
         kind = role_to_kind.get(row.role)
         if not kind:
             continue
-        settings = await ChatSettingsRepository.get(row.peer_id)
-        if (settings.chat_kind or ChatKind.GENERAL) == ChatKind.GENERAL:
-            settings.chat_kind = kind
-            settings.server_id = row.server_id
-            await settings.save()
+        settings.chat_kind = kind
+        settings.server_id = row.server_id
+        await settings.save()
+
+    leftover = await ChatPeerSettings.filter(chat_kind=ChatKind.SLED_CA)
+    for settings in leftover:
+        settings.chat_kind = ChatKind.STAFF
+        settings.sphere = settings.sphere or "central_apparatus"
+        await settings.save()
 
 
 async def init_db() -> None:

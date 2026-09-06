@@ -17,7 +17,6 @@ class ChatKind:
         LEADER,
         JUDGE,
         STAFF,
-        SLED_CA,
         STRUCTURE_LEAD,
         CONGRESS,
     )
@@ -37,4 +36,20 @@ STRUCTURE_SPHERE_KEYS: tuple[str, ...] = (
     "gov_structures",
     "illegal_structures",
     "server",
+)
+
+# Следящие: без «сервер». ГОС / нелег только метка, доступ не выдают.
+STAFF_SPHERE_KEYS: tuple[str, ...] = (
+    "central_apparatus",
+    "justice",
+    "defense",
+    "health",
+    "gov_structures",
+    "illegal_structures",
+)
+
+STAFF_ACCESS_SPHERE_KEYS: tuple[str, ...] = (
+    "justice",
+    "defense",
+    "health",
 )

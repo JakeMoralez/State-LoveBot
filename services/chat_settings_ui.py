@@ -180,7 +180,6 @@ KIND_PICK_ITEMS: tuple[tuple[str, str], ...] = (
     ("leader", "Лидерская"),
     ("judge", "Судейская"),
     ("staff", "Следящие"),
-    ("sled_ca", "След. ЦА"),
     ("structure_lead", "Главная следящая администрация"),
     ("congress", "Конгресс"),
 )

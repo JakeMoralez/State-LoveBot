@@ -13,7 +13,14 @@ from database.models.chat_settings import ChatPeerSettings
 from database.models.role_chat import RoleChat
 from database.repository.chat_settings_repo import ChatSettingsRepository
 from database.spheres import SPHERE_LABELS
-from services.chat_kind import apply_chat_kind, kind_label, peer_member_ids, resolve_kind, spheres_for_kind
+from services.chat_kind import (
+    apply_chat_kind,
+    coerce_chat_kind,
+    kind_label,
+    peer_member_ids,
+    resolve_kind,
+    spheres_for_kind,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +43,7 @@ def _kind_meta() -> list[dict]:
 def _serialize_settings(settings: ChatPeerSettings) -> dict:
     kind = (settings.chat_kind or "").strip() or ChatKind.GENERAL
     sphere = (settings.sphere or "").strip() or None
+    kind, sphere = coerce_chat_kind(kind, sphere)
     return {
         "chat_kind": kind,
         "kind_label": kind_label(kind, sphere),
@@ -75,6 +83,8 @@ async def _collect_peer_ids(server_id: int) -> dict[int, dict]:
 
 async def list_chats_payload(api: API, server_id: int) -> dict:
     peers = await _collect_peer_ids(server_id)
+    for peer_id in list(peers):
+        await resolve_kind(peer_id)
     settings_by_peer = {
         int(row.peer_id): row
         for row in await ChatPeerSettings.filter(peer_id__in=list(peers) or [-1])
