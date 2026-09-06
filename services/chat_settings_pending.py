@@ -53,6 +53,27 @@ def start_pick_setting(peer_id: int, user_id: int) -> None:
     )
 
 
+def start_pick_kind(peer_id: int, user_id: int) -> None:
+    _cleanup()
+    _sessions[_key(peer_id, user_id)] = ChatSettingsSession(
+        peer_id=peer_id,
+        user_id=user_id,
+        phase="pick_kind",
+        created_at=time.time(),
+    )
+
+
+def start_pick_sphere(peer_id: int, user_id: int, kind: str) -> None:
+    _cleanup()
+    _sessions[_key(peer_id, user_id)] = ChatSettingsSession(
+        peer_id=peer_id,
+        user_id=user_id,
+        phase="pick_sphere",
+        setting_key=kind,
+        created_at=time.time(),
+    )
+
+
 def get(peer_id: int, user_id: int) -> ChatSettingsSession | None:
     _cleanup()
     return _sessions.get(_key(peer_id, user_id))

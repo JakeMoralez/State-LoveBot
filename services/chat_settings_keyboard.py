@@ -46,27 +46,28 @@ def create_value_keyboard(setting_key: str, owner_id: int) -> str:
     return kb.get_json()
 
 
-def create_kind_keyboard(owner_id: int) -> str:
-    from database.models.chat_kind import KIND_LABELS, ChatKind
+# VK inline: не больше 6 кнопок, иначе messages.send падает.
+_INLINE_MAX = 6
+
+
+def create_kind_keyboard(owner_id: int, *, page: int = 1) -> str:
+    from services.chat_settings_ui import KIND_PICK_ITEMS
 
     kb = Keyboard(inline=True)
-    items = (
-        (ChatKind.GENERAL, KIND_LABELS[ChatKind.GENERAL]),
-        (ChatKind.LEADER, KIND_LABELS[ChatKind.LEADER]),
-        (ChatKind.JUDGE, KIND_LABELS[ChatKind.JUDGE]),
-        (ChatKind.STAFF, KIND_LABELS[ChatKind.STAFF]),
-        (ChatKind.SLED_CA, KIND_LABELS[ChatKind.SLED_CA]),
-        (ChatKind.STRUCTURE_LEAD, "Гл. след. админ."),
-        (ChatKind.CONGRESS, KIND_LABELS[ChatKind.CONGRESS]),
-    )
+    if page <= 1:
+        shown = KIND_PICK_ITEMS[:5]
+        extra = ("kpage", "Ещё")
+    else:
+        shown = KIND_PICK_ITEMS[5:]
+        extra = ("kpage1", "Назад")
     first = True
-    for kind, label in items:
+    for kind, label in shown:
         if not first:
             kb.row()
         first = False
         kb.add(
             Callback(
-                label,
+                label[:40],
                 payload={
                     "cmd": "chat_cfg",
                     "action": "kind",
@@ -74,26 +75,45 @@ def create_kind_keyboard(owner_id: int) -> str:
                     "owner": owner_id,
                 },
             ),
-            color=KeyboardButtonColor.PRIMARY
-            if kind != ChatKind.GENERAL
-            else KeyboardButtonColor.SECONDARY,
+            color=KeyboardButtonColor.PRIMARY if kind != "general" else KeyboardButtonColor.SECONDARY,
         )
+    kb.row()
+    kb.add(
+        Callback(
+            extra[1],
+            payload={
+                "cmd": "chat_cfg",
+                "action": extra[0],
+                "owner": owner_id,
+            },
+        ),
+        color=KeyboardButtonColor.SECONDARY,
+    )
     return kb.get_json()
 
 
-def create_sphere_keyboard(kind: str, owner_id: int) -> str:
+def create_sphere_keyboard(kind: str, owner_id: int, *, page: int = 0) -> str:
     from database.spheres import SPHERE_LABELS
     from services.chat_kind import spheres_for_kind
 
+    keys = list(spheres_for_kind(kind))
     kb = Keyboard(inline=True)
+    if len(keys) <= _INLINE_MAX:
+        chunk = keys
+        more = None
+    else:
+        size = _INLINE_MAX - 1
+        start = page * size
+        chunk = keys[start : start + size]
+        more = "spage" if start + size < len(keys) else "spage0"
     first = True
-    for key in spheres_for_kind(kind):
+    for key in chunk:
         if not first:
             kb.row()
         first = False
         kb.add(
             Callback(
-                SPHERE_LABELS.get(key, key),
+                (SPHERE_LABELS.get(key, key))[:40],
                 payload={
                     "cmd": "chat_cfg",
                     "action": "ksphere",
@@ -103,5 +123,20 @@ def create_sphere_keyboard(kind: str, owner_id: int) -> str:
                 },
             ),
             color=KeyboardButtonColor.PRIMARY,
+        )
+    if more:
+        kb.row()
+        kb.add(
+            Callback(
+                "Ещё" if more == "spage" else "Назад",
+                payload={
+                    "cmd": "chat_cfg",
+                    "action": more,
+                    "k": kind,
+                    "p": page + 1 if more == "spage" else 0,
+                    "owner": owner_id,
+                },
+            ),
+            color=KeyboardButtonColor.SECONDARY,
         )
     return kb.get_json()

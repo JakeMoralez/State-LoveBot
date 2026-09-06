@@ -175,6 +175,34 @@ async def format_settings_edit_panel(api: API, peer_id: int) -> str:
     return "\n".join(lines)
 
 
+KIND_PICK_ITEMS: tuple[tuple[str, str], ...] = (
+    ("general", "Общая"),
+    ("leader", "Лидерская"),
+    ("judge", "Судейская"),
+    ("staff", "Следящие"),
+    ("sled_ca", "След. ЦА"),
+    ("structure_lead", "Главная следящая администрация"),
+    ("congress", "Конгресс"),
+)
+
+
+def format_kind_pick_text() -> str:
+    lines = ["⚙ Тип беседы", "Напишите номер:"]
+    for index, (_kind, label) in enumerate(KIND_PICK_ITEMS, start=1):
+        lines.append(f"{index} — {label}")
+    return "\n".join(lines)
+
+
+def format_sphere_pick_text(kind: str) -> str:
+    from database.spheres import SPHERE_LABELS
+    from services.chat_kind import kind_label, spheres_for_kind
+
+    lines = [f"⚙ {kind_label(kind)}", "Выберите сферу — напишите номер:"]
+    for index, key in enumerate(spheres_for_kind(kind), start=1):
+        lines.append(f"{index} — {SPHERE_LABELS.get(key, key)}")
+    return "\n".join(lines)
+
+
 def format_setting_updated(field: str, mode: str) -> str:
     title = CHAT_SETTINGS.get(field)
     name = title.title if title else field

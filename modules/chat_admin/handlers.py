@@ -29,14 +29,19 @@ from services.chat_settings_pending import clear as clear_chat_settings_session
 from services.chat_settings_pending import get as get_chat_settings_session
 from services.chat_settings_pending import is_callback_owner
 from services.chat_settings_pending import register_owner
+from services.chat_settings_pending import start_pick_kind
 from services.chat_settings_pending import start_pick_setting
+from services.chat_settings_pending import start_pick_sphere
 from services.chat_settings_ui import (
     CHAT_SETTINGS,
     CHAT_SETTINGS_BY_NUMBER,
+    KIND_PICK_ITEMS,
     apply_setting,
+    format_kind_pick_text,
     format_setting_updated,
     format_settings_edit_panel,
     format_settings_overview,
+    format_sphere_pick_text,
 )
 from services.command_utils import dual, dual_with_args, strip_cmd
 from services.display_name import DisplayNameService
@@ -444,9 +449,64 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
             return False
         user_id = message.from_id or 0
         session = get_chat_settings_session(message.peer_id, user_id)
-        if not session or session.phase != "pick_setting":
+        if not session:
             return False
-        return (message.text or "").strip() in {"1", "2", "3", "4"}
+        text = (message.text or "").strip()
+        if not text.isdigit():
+            return False
+        number = int(text)
+        if session.phase == "pick_setting":
+            return number in {1, 2, 3, 4}
+        if session.phase == "pick_kind":
+            return 1 <= number <= len(KIND_PICK_ITEMS)
+        if session.phase == "pick_sphere":
+            from services.chat_kind import spheres_for_kind
+
+            return 1 <= number <= len(spheres_for_kind(session.setting_key or ""))
+        return False
+
+    async def _apply_chat_kind_from_message(
+        message: Message,
+        *,
+        kind: str,
+        sphere: str | None,
+        server_id: int,
+    ) -> None:
+        from services.chat_kind import apply_chat_kind, kind_label
+
+        try:
+            title = None
+            chat = await ChatRepository.get_by_peer_id(message.peer_id)
+            if chat:
+                title = chat.title
+            await apply_chat_kind(
+                message.peer_id,
+                kind,
+                server_id=server_id,
+                updated_by=message.from_id or 0,
+                sphere=sphere,
+                api=api,
+                title=title,
+            )
+        except ValueError as exc:
+            await message.answer(resp.error(f"{exc}"))
+            return
+        except Exception:
+            logger.exception("apply_chat_kind failed peer=%s kind=%s", message.peer_id, kind)
+            await message.answer(resp.error("Не удалось сменить тип беседы. Попробуйте ещё раз."))
+            return
+        clear_chat_settings_session(message.peer_id, message.from_id or 0)
+        await message.answer(
+            resp.success(f"Тип беседы: {kind_label(kind, sphere)}"),
+            disable_mentions=1,
+        )
+        await action_logger.log_user(
+            "chatsettings",
+            message.from_id or 0,
+            f"chatKind={kind}" + (f" sphere={sphere}" if sphere else ""),
+            "Изменено",
+            source_peer_id=message.peer_id,
+        )
 
     @bot.on.message(FuncRule(_chat_settings_pick_rule), blocking=True)
     @requires_level(AccessLevel.ZGS)
@@ -457,12 +517,41 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
     ) -> None:
         number = int((message.text or "").strip())
         owner_id = message.from_id or 0
-        if number == 4:
-            await message.answer(
-                "⚙ Тип беседы\nВыберите тип:",
-                keyboard=create_kind_keyboard(owner_id),
-                disable_mentions=1,
+        session = get_chat_settings_session(message.peer_id, owner_id)
+        phase = session.phase if session else "pick_setting"
+
+        if phase == "pick_kind":
+            if not (1 <= number <= len(KIND_PICK_ITEMS)):
+                await message.answer(resp.error("Нет такого типа. Укажите номер из списка."))
+                return
+            kind, _label = KIND_PICK_ITEMS[number - 1]
+            from services.chat_kind import spheres_for_kind
+
+            if spheres_for_kind(kind):
+                start_pick_sphere(message.peer_id, owner_id, kind)
+                await message.answer(format_sphere_pick_text(kind), disable_mentions=1)
+                return
+            await _apply_chat_kind_from_message(
+                message, kind=kind, sphere=None, server_id=server_id
             )
+            return
+
+        if phase == "pick_sphere":
+            from services.chat_kind import spheres_for_kind
+
+            kind = session.setting_key if session else ""
+            keys = list(spheres_for_kind(kind))
+            if not kind or not (1 <= number <= len(keys)):
+                await message.answer(resp.error("Нет такой сферы. Укажите номер из списка."))
+                return
+            await _apply_chat_kind_from_message(
+                message, kind=kind, sphere=keys[number - 1], server_id=server_id
+            )
+            return
+
+        if number == 4:
+            start_pick_kind(message.peer_id, owner_id)
+            await message.answer(format_kind_pick_text(), disable_mentions=1)
             return
         setting = CHAT_SETTINGS_BY_NUMBER.get(number)
         if not setting:
@@ -514,6 +603,28 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
             await event.send_empty_answer()
             return
 
+        if action in ("kpage", "kpage1"):
+            await event.send_message(
+                "⚙ Тип беседы\nВыберите тип:",
+                keyboard=create_kind_keyboard(event.user_id, page=1 if action == "kpage1" else 2),
+                disable_mentions=1,
+            )
+            await event.send_empty_answer()
+            return
+
+        if action in ("spage", "spage0"):
+            kind = str(payload.get("k") or "")
+            page = int(payload.get("p") or 0)
+            from services.chat_kind import kind_label
+
+            await event.send_message(
+                f"⚙ {kind_label(kind)}\nВыберите сферу:",
+                keyboard=create_sphere_keyboard(kind, event.user_id, page=page),
+                disable_mentions=1,
+            )
+            await event.send_empty_answer()
+            return
+
         if action == "kind":
             kind = str(payload.get("k") or "")
             from services.chat_kind import kind_label, spheres_for_kind
@@ -543,6 +654,11 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
                 )
             except ValueError as exc:
                 await event.show_snackbar(resp.error(f"{exc}"))
+                return
+            except Exception:
+                logger.exception("apply_chat_kind callback failed peer=%s", peer_id)
+                await event.send_message(resp.error("Не удалось сменить тип беседы."))
+                await event.send_empty_answer()
                 return
             clear_chat_settings_session(peer_id, event.user_id)
             await event.send_message(
@@ -580,6 +696,11 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
                 )
             except ValueError as exc:
                 await event.show_snackbar(resp.error(f"{exc}"))
+                return
+            except Exception:
+                logger.exception("apply_chat_kind sphere failed peer=%s", peer_id)
+                await event.send_message(resp.error("Не удалось сменить тип беседы."))
+                await event.send_empty_answer()
                 return
             clear_chat_settings_session(peer_id, event.user_id)
             await event.send_message(
