@@ -6,6 +6,7 @@ from vkbottle import API
 from vkbottle.bot import Bot
 
 from middlewares.action_logger import ActionLogger
+from modules.academy.handlers import register_academy
 from modules.administration.handlers import register_administration
 from modules.ca.handlers import register_ca
 from modules.chat.handlers import register_chat
@@ -32,6 +33,7 @@ def register_all_modules(
     register_pools(bot, api, action_logger)
     register_profile(bot, api, action_logger)
     register_staff_reg(bot, api, action_logger)
+    register_academy(bot, api, action_logger)
     register_administration(bot, api, action_logger)
     register_forum_roles(bot, api, action_logger)
     register_ca(bot, api, action_logger)

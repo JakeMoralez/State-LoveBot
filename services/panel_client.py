@@ -333,3 +333,103 @@ async def assign_staff_via_panel(
     except Exception as exc:
         logger.warning("assign_staff_via_panel vk=%s: %s", vk_id, exc)
         return False, "Не удалось связаться с панелью."
+
+
+async def academy_me(vk_id: int, server_id: int) -> tuple[bool, dict | str]:
+    if not panel_api_configured():
+        return False, "Панель не настроена"
+    url = f"{PANEL_INTERNAL_URL}/internal/academy/me/{vk_id}"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                url,
+                params={"server_id": server_id},
+                headers=_headers(),
+                timeout=aiohttp.ClientTimeout(total=12),
+            ) as resp:
+                data = await resp.json(content_type=None)
+                if resp.status == 200 and isinstance(data, dict):
+                    return True, data
+                detail = data.get("detail") if isinstance(data, dict) else None
+                return False, str(detail or resp.reason or "Ошибка панели")
+    except Exception as exc:
+        logger.warning("academy_me vk=%s: %s", vk_id, exc)
+        return False, "Не удалось связаться с панелью."
+
+
+async def academy_student(actor_vk_id: int, vk_id: int, server_id: int) -> tuple[bool, dict | str]:
+    if not panel_api_configured():
+        return False, "Панель не настроена"
+    url = f"{PANEL_INTERNAL_URL}/internal/academy/student/{vk_id}"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                url,
+                params={"actor_vk_id": actor_vk_id, "server_id": server_id},
+                headers=_headers(),
+                timeout=aiohttp.ClientTimeout(total=12),
+            ) as resp:
+                data = await resp.json(content_type=None)
+                if resp.status == 200 and isinstance(data, dict):
+                    return True, data
+                detail = data.get("detail") if isinstance(data, dict) else None
+                return False, str(detail or resp.reason or "Ошибка панели")
+    except Exception as exc:
+        logger.warning("academy_student vk=%s: %s", vk_id, exc)
+        return False, "Не удалось связаться с панелью."
+
+
+async def academy_leaderboard(actor_vk_id: int, server_id: int) -> tuple[bool, dict | str]:
+    if not panel_api_configured():
+        return False, "Панель не настроена"
+    url = f"{PANEL_INTERNAL_URL}/internal/academy/leaderboard"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                url,
+                params={"actor_vk_id": actor_vk_id, "server_id": server_id},
+                headers=_headers(),
+                timeout=aiohttp.ClientTimeout(total=12),
+            ) as resp:
+                data = await resp.json(content_type=None)
+                if resp.status == 200 and isinstance(data, dict):
+                    return True, data
+                detail = data.get("detail") if isinstance(data, dict) else None
+                return False, str(detail or resp.reason or "Ошибка панели")
+    except Exception as exc:
+        logger.warning("academy_leaderboard actor=%s: %s", actor_vk_id, exc)
+        return False, "Не удалось связаться с панелью."
+
+
+async def academy_submit_report(
+    actor_vk_id: int,
+    assignment_id: int,
+    server_id: int,
+    body: str,
+    proof_urls: list[str] | None = None,
+) -> tuple[bool, dict | str]:
+    if not panel_api_configured():
+        return False, "Панель не настроена"
+    url = f"{PANEL_INTERNAL_URL}/internal/academy/report"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                url,
+                json={
+                    "actor_vk_id": actor_vk_id,
+                    "assignment_id": assignment_id,
+                    "body": body,
+                    "proof_urls": proof_urls or [],
+                },
+                params={"server_id": server_id},
+                headers=_headers(),
+                timeout=aiohttp.ClientTimeout(total=15),
+            ) as resp:
+                data = await resp.json(content_type=None)
+                if resp.status == 200 and isinstance(data, dict) and data.get("ok"):
+                    return True, data
+                detail = data.get("detail") if isinstance(data, dict) else None
+                return False, str(detail or resp.reason or "Ошибка панели")
+    except Exception as exc:
+        logger.warning("academy_submit actor=%s: %s", actor_vk_id, exc)
+        return False, "Не удалось связаться с панелью."
