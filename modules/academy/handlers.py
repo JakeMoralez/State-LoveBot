@@ -1,4 +1,4 @@
-"""Команды Академии следящих: профиль, задания, сдача, рейтинг."""
+"""Команды Академии следящих: профиль, задания, сдача."""
 
 from __future__ import annotations
 
@@ -15,7 +15,6 @@ from middlewares.action_logger import ActionLogger
 from services import responses as resp
 from services.command_utils import matches_cmd, strip_cmd
 from services.panel_client import (
-    academy_leaderboard,
     academy_me,
     academy_student,
     academy_submit_report,
@@ -25,20 +24,26 @@ from services.vk_resolver import VKResolver
 
 logger = logging.getLogger(__name__)
 
+_URL_RE = re.compile(r"https?://[^\s<>]+", re.IGNORECASE)
+
 
 def _cadet_card(cadet: dict) -> str:
     metrics = cadet.get("metrics") or {}
+    avg = metrics.get("average_score")
+    avg_label = f"{avg}/10" if avg is not None else "—"
     lines = [
         f"{cadet.get('nickname') or 'Академик'}",
         f"Статус: {cadet.get('display_status') or '—'}",
         f"Направление: {cadet.get('direction_label') or '—'}",
         f"Этап: {cadet.get('stage_label') or '—'}",
         f"Наставник: {cadet.get('mentor_name') or 'не назначен'}",
-        f"Прогресс: {metrics.get('progress', 0)}%",
-        f"Рейтинг: {metrics.get('rating', 0)}/100",
         f"Задания: {metrics.get('assignments_done', 0)}/{metrics.get('assignments_total', 0)}",
         f"Просрочено: {metrics.get('overdue', 0)}",
-        f"Посещаемость: {metrics.get('attendance_pct') if metrics.get('attendance_pct') is not None else '—'}%",
+        f"Средняя оценка: {avg_label}",
+        (
+            "Прогресс этапа: "
+            f"{metrics.get('stage_required_done', 0)}/{metrics.get('stage_required_total', 0)} обяз."
+        ),
     ]
     rec = cadet.get("recommendation_label")
     if cadet.get("recommendation") and cadet.get("recommendation") != "none" and rec:
@@ -46,13 +51,72 @@ def _cadet_card(cadet: dict) -> str:
     return "\n".join(lines)
 
 
+def _open_tasks_text(opens: list) -> str:
+    if not opens:
+        return "Открытых заданий нет."
+    lines = ["Открытые задания:"]
+    for item in opens:
+        due = (item.get("due_at") or "")[:10] or "—"
+        status = item.get("viewer_status_label") or "Не сдано"
+        lines.append(f"#{item.get('id')} {item.get('title')} · {status} · до {due}")
+    lines.append("Сдать: /academy submit <id> текст")
+    lines.append("Можно ответить на сообщение или приложить фото.")
+    return "\n".join(lines)
+
+
+def _proof_urls_from_message(message: Message) -> list[str]:
+    urls: list[str] = []
+    sources = [message]
+    reply = getattr(message, "reply_message", None)
+    if reply is not None:
+        sources.append(reply)
+    for src in sources:
+        for att in getattr(src, "attachments", None) or []:
+            photo = getattr(att, "photo", None)
+            sizes = getattr(photo, "sizes", None) if photo is not None else None
+            if sizes:
+                best = max(
+                    sizes,
+                    key=lambda s: (getattr(s, "width", 0) or 0) * (getattr(s, "height", 0) or 0),
+                )
+                url = getattr(best, "url", None)
+                if url:
+                    urls.append(str(url))
+            doc = getattr(att, "doc", None)
+            if doc is not None:
+                url = getattr(doc, "url", None)
+                if url:
+                    urls.append(str(url))
+            link = getattr(att, "link", None)
+            if link is not None:
+                url = getattr(link, "url", None)
+                if url:
+                    urls.append(str(url))
+        try:
+            strings = src.get_attachment_strings() or []
+        except Exception:
+            strings = []
+        for item in strings:
+            if item.startswith("photo") or item.startswith("doc"):
+                urls.append(f"https://vk.com/{item}")
+        text = getattr(src, "text", None) or ""
+        urls.extend(_URL_RE.findall(text))
+    seen: set[str] = set()
+    out: list[str] = []
+    for url in urls:
+        clean = url.rstrip(").,;")
+        if clean not in seen:
+            seen.add(clean)
+            out.append(clean)
+    return out
+
+
 def register_academy(bot: Bot, api: API, action_logger: ActionLogger) -> None:
     del action_logger
 
     @bot.on.message(FuncRule(lambda m: matches_cmd(m.text or "", "academy")))
-    @requires_level(AccessLevel.SUPERVISOR)
+    @requires_level(AccessLevel.PGS)
     async def academy_cmd(message: Message, server_id: int = 0, access_level: int = 0):
-        del access_level
         if not panel_api_configured():
             await message.answer(resp.error("Панель академии не настроена."))
             return
@@ -76,12 +140,14 @@ def register_academy(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             if roster:
                 lines = ["Состав Академии:"]
                 for row in roster:
-                    lines.append(
-                        f"• {row.get('nickname')} — {row.get('stage_label')} · {row.get('metrics', {}).get('rating', 0)}"
-                    )
+                    avg = (row.get("metrics") or {}).get("average_score")
+                    score = f"{avg}/10" if avg is not None else "—"
+                    lines.append(f"• {row.get('nickname')} — {row.get('stage_label')} · {score}")
                 await message.answer(resp.ok("\n".join(lines)))
                 return
-            await message.answer(resp.error("Вы не состоите в Академии. Зачисление — в карточке следящего на сайте."))
+            await message.answer(
+                resp.error("Вы не состоите в Академии. Зачисление — в карточке следящего на сайте.")
+            )
             return
 
         if sub in {"tasks", "task", "задания"}:
@@ -91,27 +157,37 @@ def register_academy(bot: Bot, api: API, action_logger: ActionLogger) -> None:
                 return
             cadet = data.get("cadet") if isinstance(data, dict) else None
             opens = (cadet or {}).get("open_assignments") or []
-            if not opens:
-                await message.answer(resp.ok("Открытых заданий нет."))
-                return
-            lines = ["Задания Академии:"]
-            for item in opens:
-                due = (item.get("due_at") or "")[:10] or "—"
-                lines.append(f"#{item.get('id')} {item.get('title')} · до {due}")
-            lines.append("Сдать: /academy submit <id> текст")
-            await message.answer(resp.ok("\n".join(lines)))
+            await message.answer(resp.ok(_open_tasks_text(opens)))
             return
 
         if sub in {"submit", "сдать", "areport"}:
             match = re.match(r"^(\d+)\s*(.*)$", rest.strip(), re.DOTALL)
             if not match:
-                await message.answer(resp.error("/academy submit <id> текст отчёта"))
+                ok, data = await academy_me(message.from_id, server_id)
+                if not ok:
+                    await message.answer(resp.error(str(data)))
+                    return
+                cadet = data.get("cadet") if isinstance(data, dict) else None
+                opens = (cadet or {}).get("open_assignments") or []
+                await message.answer(resp.ok(_open_tasks_text(opens)))
                 return
             assignment_id = int(match.group(1))
             body = (match.group(2) or "").strip()
             if message.reply_message and not body:
                 body = (message.reply_message.text or "").strip()
-            ok, data = await academy_submit_report(message.from_id, assignment_id, server_id, body)
+            proof_urls = _proof_urls_from_message(message)
+            if not body and not proof_urls:
+                await message.answer(
+                    resp.error("Напишите текст, ответьте на сообщение или приложите фото.")
+                )
+                return
+            ok, data = await academy_submit_report(
+                message.from_id,
+                assignment_id,
+                server_id,
+                body,
+                proof_urls,
+            )
             if not ok:
                 await message.answer(resp.error(str(data)))
                 return
@@ -119,23 +195,15 @@ def register_academy(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             return
 
         if sub in {"leaderboard", "top", "рейтинг"}:
-            ok, data = await academy_leaderboard(message.from_id, server_id)
-            if not ok:
-                await message.answer(resp.error(str(data)))
-                return
-            members = data.get("members") if isinstance(data, dict) else []
-            if not members:
-                await message.answer(resp.ok("Пока нет академиков в рейтинге."))
-                return
-            lines = ["Топ Академии:"]
-            for i, row in enumerate(members, start=1):
-                lines.append(
-                    f"{i}. {row.get('nickname')} — {row.get('metrics', {}).get('rating', 0)} · {row.get('progress', row.get('metrics', {}).get('progress', 0))}%"
-                )
-            await message.answer(resp.ok("\n".join(lines)))
+            await message.answer(
+                resp.ok("Отдельный рейтинг убран. Оценка академика — в карточке и в составе.")
+            )
             return
 
         if sub in {"student", "card", "кто"}:
+            if access_level < AccessLevel.SUPERVISOR:
+                await message.answer(resp.error("Карточку академика смотрит наставник или ЗГС."))
+                return
             reply_id = message.reply_message.from_id if message.reply_message else None
             resolver = VKResolver(api, server_id)
             resolved, hint = await resolver.resolve_from_message_with_hint(
@@ -164,8 +232,7 @@ def register_academy(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             resp.error(
                 "/academy — свой прогресс\n"
                 "/academy tasks — задания\n"
-                "/academy submit <id> текст\n"
-                "/academy leaderboard — рейтинг\n"
-                "/academy student @user — карточка"
+                "/academy submit — список открытых заданий\n"
+                "/academy submit <id> текст — сдать отчёт"
             )
         )

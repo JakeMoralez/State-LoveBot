@@ -33,6 +33,29 @@ def _headers() -> dict[str, str]:
     return {"X-Sled-Secret": SLED_BOT_SECRET}
 
 
+def _panel_detail(data: object, fallback: str = "Ошибка панели") -> str:
+    if not isinstance(data, dict):
+        return fallback
+    detail = data.get("detail")
+    if isinstance(detail, str) and detail.strip():
+        return detail.strip()
+    if isinstance(detail, list) and detail:
+        first = detail[0]
+        if isinstance(first, dict):
+            return str(first.get("msg") or first.get("message") or fallback)
+        return str(first)
+    if isinstance(detail, dict):
+        return str(detail.get("msg") or detail.get("message") or fallback)
+    return fallback
+
+
+def _panel_unreachable() -> str:
+    return (
+        "Не удалось связаться с панелью. "
+        "Проверьте PANEL_INTERNAL_URL (локально панель часто на порту 8013)."
+    )
+
+
 @dataclass(frozen=True)
 class DiscordProfile:
     discord_id: str | None
@@ -350,11 +373,10 @@ async def academy_me(vk_id: int, server_id: int) -> tuple[bool, dict | str]:
                 data = await resp.json(content_type=None)
                 if resp.status == 200 and isinstance(data, dict):
                     return True, data
-                detail = data.get("detail") if isinstance(data, dict) else None
-                return False, str(detail or resp.reason or "Ошибка панели")
+                return False, _panel_detail(data, resp.reason or "Ошибка панели")
     except Exception as exc:
         logger.warning("academy_me vk=%s: %s", vk_id, exc)
-        return False, "Не удалось связаться с панелью."
+        return False, _panel_unreachable()
 
 
 async def academy_student(actor_vk_id: int, vk_id: int, server_id: int) -> tuple[bool, dict | str]:
@@ -372,11 +394,10 @@ async def academy_student(actor_vk_id: int, vk_id: int, server_id: int) -> tuple
                 data = await resp.json(content_type=None)
                 if resp.status == 200 and isinstance(data, dict):
                     return True, data
-                detail = data.get("detail") if isinstance(data, dict) else None
-                return False, str(detail or resp.reason or "Ошибка панели")
+                return False, _panel_detail(data, resp.reason or "Ошибка панели")
     except Exception as exc:
         logger.warning("academy_student vk=%s: %s", vk_id, exc)
-        return False, "Не удалось связаться с панелью."
+        return False, _panel_unreachable()
 
 
 async def academy_leaderboard(actor_vk_id: int, server_id: int) -> tuple[bool, dict | str]:
@@ -394,11 +415,10 @@ async def academy_leaderboard(actor_vk_id: int, server_id: int) -> tuple[bool, d
                 data = await resp.json(content_type=None)
                 if resp.status == 200 and isinstance(data, dict):
                     return True, data
-                detail = data.get("detail") if isinstance(data, dict) else None
-                return False, str(detail or resp.reason or "Ошибка панели")
+                return False, _panel_detail(data, resp.reason or "Ошибка панели")
     except Exception as exc:
         logger.warning("academy_leaderboard actor=%s: %s", actor_vk_id, exc)
-        return False, "Не удалось связаться с панелью."
+        return False, _panel_unreachable()
 
 
 async def academy_submit_report(
@@ -428,8 +448,7 @@ async def academy_submit_report(
                 data = await resp.json(content_type=None)
                 if resp.status == 200 and isinstance(data, dict) and data.get("ok"):
                     return True, data
-                detail = data.get("detail") if isinstance(data, dict) else None
-                return False, str(detail or resp.reason or "Ошибка панели")
+                return False, _panel_detail(data, resp.reason or "Ошибка панели")
     except Exception as exc:
         logger.warning("academy_submit actor=%s: %s", actor_vk_id, exc)
-        return False, "Не удалось связаться с панелью."
+        return False, _panel_unreachable()

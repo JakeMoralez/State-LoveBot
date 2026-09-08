@@ -75,7 +75,7 @@ def register_staff_reg(bot: Bot, api: API, action_logger: ActionLogger) -> None:
     names = DisplayNameService(api)
 
     @bot.on.message(text=dual("reg"))
-    @requires_level(AccessLevel.ZGS)
+    @requires_level(AccessLevel.STRUCTURE_SUPERVISOR)
     async def reg_usage(
         message: Message,
         server_id: int = 0,
@@ -84,7 +84,7 @@ def register_staff_reg(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         await message.answer(_REG_USAGE)
 
     @bot.on.message(text=dual_args("reg", "<args>"))
-    @requires_level(AccessLevel.ZGS)
+    @requires_level(AccessLevel.STRUCTURE_SUPERVISOR)
     async def reg_staff(
         message: Message,
         args: str,
