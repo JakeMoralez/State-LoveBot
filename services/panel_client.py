@@ -452,3 +452,43 @@ async def academy_submit_report(
     except Exception as exc:
         logger.warning("academy_submit actor=%s: %s", actor_vk_id, exc)
         return False, _panel_unreachable()
+
+
+async def create_issuance(
+    actor_vk_id: int,
+    server_id: int,
+    *,
+    kind: str,
+    nickname: str,
+    amount: str | int,
+    role_title: str,
+    reason: str,
+    proof_url: str = "",
+) -> tuple[bool, dict | str]:
+    if not panel_api_configured():
+        return False, "Панель не настроена"
+    url = f"{PANEL_INTERNAL_URL}/internal/issuance"
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                url,
+                json={
+                    "actor_vk_id": actor_vk_id,
+                    "kind": kind,
+                    "nickname": nickname,
+                    "amount": amount,
+                    "role_title": role_title,
+                    "reason": reason,
+                    "proof_url": proof_url,
+                },
+                params={"server_id": server_id},
+                headers=_headers(),
+                timeout=aiohttp.ClientTimeout(total=15),
+            ) as resp:
+                data = await resp.json(content_type=None)
+                if resp.status == 200 and isinstance(data, dict) and data.get("ok"):
+                    return True, data
+                return False, _panel_detail(data, resp.reason or "Ошибка панели")
+    except Exception as exc:
+        logger.warning("create_issuance actor=%s: %s", actor_vk_id, exc)
+        return False, _panel_unreachable()

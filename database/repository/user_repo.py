@@ -229,17 +229,25 @@ class UserRepository:
         level: int,
         granted_by: int | None = None,
     ) -> UserServerAccess:
+        from datetime import UTC, datetime
+
         user = await User.get(vk_id=vk_id)
         server = await Server.get(id=server_id)
-        access, _ = await UserServerAccess.get_or_create(
+        access, created = await UserServerAccess.get_or_create(
             user=user,
             server=server,
             defaults={"access_level": level, "granted_by": granted_by},
         )
-        access.access_level = level
-        access.granted_by = granted_by
-        await access.save()
-        return access
+        old_level = 0 if created else int(access.access_level or 0)
+        payload: dict = {"access_level": level, "granted_by": granted_by}
+        if level > 0 and old_level != level:
+            payload["promoted_at"] = datetime.now(UTC)
+        try:
+            await UserServerAccess.filter(user_id=vk_id, server_id=server_id).update(**payload)
+        except Exception:
+            payload.pop("promoted_at", None)
+            await UserServerAccess.filter(user_id=vk_id, server_id=server_id).update(**payload)
+        return await UserServerAccess.get(user_id=vk_id, server_id=server_id)
 
     @staticmethod
     async def has_ca_access(vk_id: int, server_id: int) -> bool:

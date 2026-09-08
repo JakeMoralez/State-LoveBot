@@ -88,7 +88,9 @@ async def format_user_profile_card(
 
     access = await UserRepository.get_server_access(vk_id, server_id)
     appointed = access.granted_at if access else None
+    promoted = getattr(access, "promoted_at", None) if access else None
     appointed_label = format_appointed_date(appointed)
+    promoted_label = format_appointed_date(promoted) or appointed_label
     days = days_on_post(appointed)
 
     lines = [
@@ -105,10 +107,12 @@ async def format_user_profile_card(
 
     if appointed_label:
         lines.append(f"📅 Дата назначения: {appointed_label}")
+        lines.append(f"📈 Дата повышения: {promoted_label}")
         if days is not None:
             lines.append(f"🚀 Дней на посту: {days}")
     else:
         lines.append("📅 Дата назначения: не указана")
+        lines.append("📈 Дата повышения: не указана")
         lines.append("🚀 Дней на посту: —")
 
     if await ForumRoleRepository.is_judge_effective(vk_id, server_id):

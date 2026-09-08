@@ -93,6 +93,7 @@ class UserServerAccess(Model):
     ca_auto_peer_id = fields.BigIntField(null=True)
     is_senior = fields.BooleanField(default=False)
     senior_spheres = fields.JSONField(default=list)
+    promoted_at = fields.DatetimeField(null=True)
 
     class Meta:
         table = "user_server_access"

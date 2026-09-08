@@ -116,6 +116,17 @@ async def _migrate_global_nicknames_to_servers() -> None:
         )
 
 
+async def _ensure_promoted_at_column() -> None:
+    conn = Tortoise.get_connection("default")
+    try:
+        await conn.execute_query(
+            "ALTER TABLE user_server_access ADD COLUMN promoted_at TIMESTAMP NULL"
+        )
+        logger.info("Добавлена колонка user_server_access.promoted_at")
+    except Exception:
+        pass
+
+
 async def _ensure_server_role_columns() -> None:
     conn = Tortoise.get_connection("default")
     for column in (
@@ -442,6 +453,7 @@ async def init_db() -> None:
     await Tortoise.init(config=TORTOISE_ORM)
     await Tortoise.generate_schemas(safe=True)
     await _ensure_chat_settings_columns()
+    await _ensure_promoted_at_column()
     sqlite = is_sqlite_url(DATABASE_URL)
     if sqlite:
         await _ensure_chat_alias_column()

@@ -86,6 +86,8 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
             HelpEntry("/academy", "Академия: профиль и задания", AccessLevel.PGS),
             HelpEntry("/academy submit", "Сдать задание академии", AccessLevel.PGS),
             HelpEntry("/academy student", "Карточка академика", AccessLevel.SUPERVISOR),
+            HelpEntry("/giveaz · /givedonate", "Заявка на выдачу AZ", AccessLevel.ZGS),
+            HelpEntry("/givemoney · /givecash", "Заявка на выдачу виртов", AccessLevel.ZGS),
             HelpEntry("/panelcheck", "Кто не зарегистрирован на сайте", AccessLevel.ZGS),
             HelpEntry("/panelcheck chat", "Проверка только этой беседы", AccessLevel.ZGS),
             HelpEntry("/setsphere", "Назначить сферы", AccessLevel.ZGS),
