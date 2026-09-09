@@ -119,7 +119,7 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
             HelpEntry("/regchat", "Привязать беседу к пулу", AccessLevel.ZGS_GOS),
             HelpEntry("/unregchat", "Отвязать беседу от пула", AccessLevel.ZGS_GOS),
             HelpEntry("/setlevel", "Изменить уровень доступа", AccessLevel.ZGS),
-            HelpEntry("/reg", "Назначить следящего", AccessLevel.STRUCTURE_SUPERVISOR),
+            HelpEntry("/reg", "Назначить следящего", AccessLevel.ZGS),
         ),
     ),
     HelpCategory(
