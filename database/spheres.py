@@ -1,37 +1,41 @@
-"""Сферы следящих — ключи совпадают с панелью State-LoveAdmin."""
+"""Сферы следящих — ключи и правила из единого канона sphere_grant_rules."""
 
 from __future__ import annotations
 
-CENTRAL_APPARATUS = "central_apparatus"
-JUSTICE = "justice"
-DEFENSE = "defense"
-HEALTH = "health"
-GOV_STRUCTURES = "gov_structures"
-ILLEGAL_STRUCTURES = "illegal_structures"
-SERVER = "server"
-
-SPHERE_LABELS: dict[str, str] = {
-    CENTRAL_APPARATUS: "Центральный аппарат",
-    JUSTICE: "Министерство Юстиции",
-    DEFENSE: "Министерство Обороны",
-    HEALTH: "Министерство Здравоохранения",
-    GOV_STRUCTURES: "Государственные структуры",
-    ILLEGAL_STRUCTURES: "Нелегальные структуры",
-    SERVER: "Сервер",
-}
-
-ALL_SPHERE_KEYS: tuple[str, ...] = (
+from database.sphere_grant_rules import (  # noqa: F401 — re-export
+    ALL_SPHERE_KEYS,
     CENTRAL_APPARATUS,
-    JUSTICE,
+    CURATOR_LEVEL,
     DEFENSE,
-    HEALTH,
     GOV_STRUCTURES,
+    HEALTH,
     ILLEGAL_STRUCTURES,
+    JUSTICE,
+    MINISTRY_SPHERE_KEYS,
     SERVER,
+    SPHERE_LABELS,
+    STRUCTURE_SPHERE_KEYS,
+    STRUCTURE_SUPERVISOR_LEVEL,
+    allowed_sphere_keys_for_level,
+    effective_grantable_sphere_keys,
+    format_spheres_display,
 )
 
-
-def format_spheres_display(spheres: list[str]) -> str:
-    if not spheres:
-        return "—"
-    return ", ".join(SPHERE_LABELS.get(k, k) for k in spheres)
+__all__ = [
+    "ALL_SPHERE_KEYS",
+    "CENTRAL_APPARATUS",
+    "CURATOR_LEVEL",
+    "DEFENSE",
+    "GOV_STRUCTURES",
+    "HEALTH",
+    "ILLEGAL_STRUCTURES",
+    "JUSTICE",
+    "MINISTRY_SPHERE_KEYS",
+    "SERVER",
+    "SPHERE_LABELS",
+    "STRUCTURE_SPHERE_KEYS",
+    "STRUCTURE_SUPERVISOR_LEVEL",
+    "allowed_sphere_keys_for_level",
+    "effective_grantable_sphere_keys",
+    "format_spheres_display",
+]

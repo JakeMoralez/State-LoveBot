@@ -1,6 +1,7 @@
-"""Access level constants (shared by bot and web).
+"""Access level IntEnum stub (wave-0).
 
-Must stay compatible with `user_server_access.access_level` and Admin mirror.
+Канон имён/чисел: database/access_levels.py (= panel domain/access_levels.py).
+Не дублировать правки здесь — правь канон и проверь parity-скрипт панели.
 """
 
 from __future__ import annotations
@@ -9,8 +10,6 @@ from enum import IntEnum
 
 
 class AccessLevel(IntEnum):
-    """Числовые уровни доступа (1–11)."""
-
     PGS = 1
     SUPERVISOR = 2
     ZGS = 3
@@ -24,6 +23,7 @@ class AccessLevel(IntEnum):
     DEVELOPER = 11
 
 
+# Должно совпадать с database.access_levels.SHORT_NAMES
 ACCESS_LEVEL_NAMES: dict[int, str] = {
     1: "ПГС",
     2: "Следящий",

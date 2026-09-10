@@ -51,24 +51,49 @@ def _postgres_dsn(url: str) -> str:
     return raw
 
 
-async def _pg_fetchrow(query: str, *args: Any) -> Any | None:
-    import asyncpg
+_pg_pool = None
+_pg_pool_lock = asyncio.Lock()
 
-    conn = await asyncpg.connect(_postgres_dsn(PANEL_DATABASE_URL))
-    try:
+
+async def _get_pg_pool():
+    """Ленивый shared asyncpg pool для fallback-чтения panel.db (postgres)."""
+    global _pg_pool
+    if _pg_pool is not None:
+        return _pg_pool
+    async with _pg_pool_lock:
+        if _pg_pool is not None:
+            return _pg_pool
+        import asyncpg
+
+        _pg_pool = await asyncpg.create_pool(
+            dsn=_postgres_dsn(PANEL_DATABASE_URL),
+            min_size=1,
+            max_size=4,
+            command_timeout=30,
+        )
+        logger.debug("Shared asyncpg panel pool created")
+        return _pg_pool
+
+
+async def close_panel_pg_pool() -> None:
+    global _pg_pool
+    async with _pg_pool_lock:
+        if _pg_pool is not None:
+            await _pg_pool.close()
+            logger.debug("Shared asyncpg panel pool closed")
+            _pg_pool = None
+
+
+async def _pg_fetchrow(query: str, *args: Any) -> Any | None:
+    pool = await _get_pg_pool()
+    async with pool.acquire() as conn:
         return await conn.fetchrow(query, *args)
-    finally:
-        await conn.close()
 
 
 async def _pg_execute(query: str, *args: Any) -> None:
-    import asyncpg
-
-    conn = await asyncpg.connect(_postgres_dsn(PANEL_DATABASE_URL))
-    try:
+    pool = await _get_pg_pool()
+    async with pool.acquire() as conn:
         await conn.execute(query, *args)
-    finally:
-        await conn.close()
 
 
 def _read_staff_note_sync(vk_id: int, server_id: int) -> dict[str, str] | None:
@@ -143,24 +168,24 @@ def _read_staff_spheres_sync(vk_id: int, server_id: int) -> list[str]:
 
 
 async def read_staff_spheres(vk_id: int, server_id: int) -> list[str]:
-    if is_postgres_url(PANEL_DATABASE_URL):
-        try:
-            row = await _pg_fetchrow(
-                """
-                SELECT spheres
-                FROM staff_notes
-                WHERE vk_id = $1 AND server_id = $2
-                """,
-                vk_id,
-                server_id,
-            )
-        except Exception as exc:
-            logger.debug("panel staff_notes spheres pg read failed vk_id=%s: %s", vk_id, exc)
-            return []
-        if not row:
-            return []
-        return _parse_spheres_json(row["spheres"])
-    return await asyncio.to_thread(_read_staff_spheres_sync, vk_id, server_id)
+    """Сферы сотрудника: только через panel HTTP (SoT). Без raw SQL."""
+    from services.panel_client import fetch_staff_spheres, panel_api_configured
+
+    if not panel_api_configured():
+        logger.warning(
+            "read_staff_spheres: PANEL_INTERNAL_URL/SLED_BOT_SECRET не заданы — сферы пустые vk=%s",
+            vk_id,
+        )
+        return []
+    spheres = await fetch_staff_spheres(vk_id, server_id)
+    if spheres is None:
+        logger.warning(
+            "read_staff_spheres: панель недоступна vk=%s server=%s — сферы пустые",
+            vk_id,
+            server_id,
+        )
+        return []
+    return spheres
 
 
 async def read_staff_note(vk_id: int, server_id: int) -> dict[str, str] | None:
@@ -247,13 +272,9 @@ def _discord_links_for_vk_ids_sync(vk_ids: list[int]) -> dict[int, str]:
 
 
 async def _pg_fetch(query: str, *args: Any) -> list[Any]:
-    import asyncpg
-
-    conn = await asyncpg.connect(_postgres_dsn(PANEL_DATABASE_URL))
-    try:
+    pool = await _get_pg_pool()
+    async with pool.acquire() as conn:
         return await conn.fetch(query, *args)
-    finally:
-        await conn.close()
 
 
 async def discord_links_for_vk_ids(vk_ids: list[int]) -> dict[int, str]:

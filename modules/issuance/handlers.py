@@ -59,61 +59,57 @@ def parse_issuance_args(raw: str) -> tuple[str, str, str, str, str] | None:
     return nick, amount, role, reason, proof
 
 
+async def _run_issuance(
+    message: Message,
+    *,
+    server_id: int,
+    primary: str,
+    kind: str,
+) -> None:
+    text = message.text or ""
+    parsed = parse_issuance_args(strip_cmd(text, primary))
+    if not parsed:
+        await message.answer(resp.error("Не хватает данных.", hint=_usage(kind)))
+        return
+    if not panel_api_configured():
+        await message.answer(resp.error("Панель выдач не настроена."))
+        return
+    nick, amount, role, reason, proof = parsed
+    ok, data = await create_issuance(
+        message.from_id,
+        server_id,
+        kind=kind,
+        nickname=nick,
+        amount=amount,
+        role_title=role,
+        reason=reason,
+        proof_url=proof,
+    )
+    if not ok:
+        await message.answer(resp.error(str(data)))
+        return
+    item = data.get("item") if isinstance(data, dict) else None
+    label = item.get("amount_label") if isinstance(item, dict) else amount
+    action = "передачу" if kind == "az" else "выдачу"
+    await message.answer(
+        resp.success(
+            f"Заявка на {action} отправлена: {nick} · {label}.",
+            hint="Проверить можно на сайте в разделе «Выдачи».",
+        )
+    )
+
+
 def register_issuance(bot: Bot, api: API, action_logger: ActionLogger) -> None:
     del api, action_logger
 
-    @bot.on.message(
-        FuncRule(
-            lambda m: matches_cmd(m.text or "", "az") or matches_cmd(m.text or "", "money")
-        )
-    )
-    @requires_level(AccessLevel.ZGS)
-    async def issuance_cmd(message: Message, server_id: int = 0, access_level: int = 0):
-        text = message.text or ""
-        kind = "az" if matches_cmd(text, "az") else "virts"
-        primary = "az" if kind == "az" else "money"
-        from services.command_access import effective_min_level
-        from middlewares.access import AccessChecker
+    @bot.on.message(FuncRule(lambda m: matches_cmd(m.text or "", "az")))
+    @requires_level(AccessLevel.ZGS, command="az")
+    async def az_cmd(message: Message, server_id: int = 0, access_level: int = 0):
+        del access_level
+        await _run_issuance(message, server_id=server_id, primary="az", kind="az")
 
-        need = await effective_min_level(server_id, primary, AccessLevel.ZGS)
-        if access_level < need:
-            await message.answer(
-                resp.denied(
-                    "Недостаточно прав для этой команды.",
-                    hint=(
-                        f"Нужен уровень: {AccessChecker.level_name(need)}\n"
-                        f"Ваш уровень: {AccessChecker.level_name(access_level)}"
-                    ),
-                )
-            )
-            return
-        parsed = parse_issuance_args(strip_cmd(text, primary))
-        if not parsed:
-            await message.answer(resp.error("Не хватает данных.", hint=_usage(kind)))
-            return
-        if not panel_api_configured():
-            await message.answer(resp.error("Панель выдач не настроена."))
-            return
-        nick, amount, role, reason, proof = parsed
-        ok, data = await create_issuance(
-            message.from_id,
-            server_id,
-            kind=kind,
-            nickname=nick,
-            amount=amount,
-            role_title=role,
-            reason=reason,
-            proof_url=proof,
-        )
-        if not ok:
-            await message.answer(resp.error(str(data)))
-            return
-        item = data.get("item") if isinstance(data, dict) else None
-        label = item.get("amount_label") if isinstance(item, dict) else amount
-        action = "передачу" if kind == "az" else "выдачу"
-        await message.answer(
-            resp.success(
-                f"Заявка на {action} отправлена: {nick} · {label}.",
-                hint="Проверить можно на сайте в разделе «Выдачи».",
-            )
-        )
+    @bot.on.message(FuncRule(lambda m: matches_cmd(m.text or "", "money")))
+    @requires_level(AccessLevel.ZGS, command="money")
+    async def money_cmd(message: Message, server_id: int = 0, access_level: int = 0):
+        del access_level
+        await _run_issuance(message, server_id=server_id, primary="money", kind="virts")

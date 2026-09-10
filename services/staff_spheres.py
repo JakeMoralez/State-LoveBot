@@ -1,19 +1,27 @@
-"""Разбор и валидация сфер следящих — parity с панелью."""
+"""Разбор и валидация сфер следящих.
+
+Правила выдачи/tier — только database.sphere_grant_rules
+(зеркало State-LoveAdmin/backend/app/domain/sphere_grant_rules.py).
+"""
 
 from __future__ import annotations
 
 import re
 
 from database.models.user import AccessLevel
-from database.spheres import (
+from database.sphere_grant_rules import (
     ALL_SPHERE_KEYS,
     CENTRAL_APPARATUS,
+    CURATOR_LEVEL,
     DEFENSE,
     GOV_STRUCTURES,
     HEALTH,
     ILLEGAL_STRUCTURES,
     JUSTICE,
     SERVER,
+    STRUCTURE_SUPERVISOR_LEVEL,
+    allowed_sphere_keys_for_level,
+    effective_grantable_sphere_keys,
     format_spheres_display,
 )
 
@@ -63,27 +71,6 @@ _POOL_TO_SPHERE: dict[str, str] = {
 # Короткие алиасы для подсказок пользователю (без англ. ключей).
 _SPHERE_HINT = "ца, мю, мо, мз, гос, нелег, сервер"
 _CLEAR_TOKENS = frozenset({"-", "—", "–", "нет", "0", "off"})
-
-
-def allowed_sphere_keys_for_level(level: int) -> tuple[str, ...]:
-    """1–4: министерства; 5–7: структуры; 8+: сервер. Как в панели."""
-    if level >= AccessLevel.CURATOR:
-        return (SERVER,)
-    if level >= AccessLevel.STRUCTURE_SUPERVISOR:
-        return (GOV_STRUCTURES, ILLEGAL_STRUCTURES)
-    return (CENTRAL_APPARATUS, JUSTICE, DEFENSE, HEALTH)
-
-
-def effective_grantable_sphere_keys(actor_level: int, actor_spheres: list[str]) -> set[str]:
-    grantable = set(actor_spheres or [])
-    if actor_level >= AccessLevel.CURATOR:
-        grantable |= set(allowed_sphere_keys_for_level(AccessLevel.CURATOR))
-    elif actor_level >= AccessLevel.STRUCTURE_SUPERVISOR:
-        grantable |= {GOV_STRUCTURES, ILLEGAL_STRUCTURES}
-    elif actor_level >= AccessLevel.ZGS:
-        # ЗГС/ГС могут править свои сферы + tier министерств, которые у них есть
-        grantable |= set(actor_spheres or [])
-    return grantable
 
 
 def pool_alias_to_sphere(alias: str | None, pool_name: str | None = None) -> str | None:
@@ -218,9 +205,9 @@ def validate_spheres(spheres: list[str], access_level: int | None = None) -> lis
         allowed = set(allowed_sphere_keys_for_level(access_level))
         bad = [k for k in result if k not in allowed]
         if bad:
-            if access_level >= AccessLevel.CURATOR:
+            if access_level >= CURATOR_LEVEL:
                 tier = "сервер"
-            elif access_level >= AccessLevel.STRUCTURE_SUPERVISOR:
+            elif access_level >= STRUCTURE_SUPERVISOR_LEVEL:
                 tier = "государственные или нелегальные структуры"
             else:
                 tier = "сферы министерств (ЦА, МЮ, МО, МЗ)"

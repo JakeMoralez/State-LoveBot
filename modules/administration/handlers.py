@@ -332,7 +332,7 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
             pop_poolkick_flow(flow_token, actor_id)
 
     @bot.on.message(text=dual("kick"))
-    @requires_level(AccessLevel.SUPERVISOR)
+    @requires_level(AccessLevel.SUPERVISOR, command="kick")
     async def kick_usage(
         message: Message,
         server_id: int = 0,
@@ -447,7 +447,7 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
             )
 
     @bot.on.message(text=dual("poolkick"))
-    @requires_level(AccessLevel.SUPERVISOR)
+    @requires_level(AccessLevel.SUPERVISOR, command="poolkick")
     async def poolkick_usage(
         message: Message,
         server_id: int = 0,
@@ -460,7 +460,7 @@ def register_administration(bot: Bot, api: API, action_logger: ActionLogger) -> 
         )
 
     @bot.on.message(text=dual_with_args("poolkick", "<args>"))
-    @requires_level(AccessLevel.SUPERVISOR)
+    @requires_level(AccessLevel.SUPERVISOR, command="poolkick")
     async def poolkick(
         message: Message,
         args: str,

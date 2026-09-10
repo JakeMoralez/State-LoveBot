@@ -268,7 +268,7 @@ def register_ca(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         )
 
     @bot.on.message(text=dual("raccess"))
-    @requires_level(AccessLevel.SUPERVISOR)
+    @requires_level(AccessLevel.SUPERVISOR, command="raccess")
     @requires_ca_scope
     async def raccess_usage(
         message: Message,
@@ -280,7 +280,7 @@ def register_ca(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         )
 
     @bot.on.message(text=dual_args("raccess"))
-    @requires_level(AccessLevel.SUPERVISOR)
+    @requires_level(AccessLevel.SUPERVISOR, command="raccess")
     @requires_ca_scope
     async def raccess_target(
         message: Message,
@@ -293,7 +293,7 @@ def register_ca(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         )
 
     @bot.on.message(text=dual("regrole"))
-    @requires_level(AccessLevel.ZGS)
+    @requires_level(AccessLevel.ZGS, command="regrole")
     @requires_ca_scope
     async def regrole_usage(
         message: Message,
@@ -309,7 +309,7 @@ def register_ca(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         )
 
     @bot.on.message(text=dual_with_args("regrole", "<role_type>"))
-    @requires_level(AccessLevel.ZGS)
+    @requires_level(AccessLevel.ZGS, command="regrole")
     @requires_ca_scope
     async def regrole_type_only(
         message: Message,
@@ -327,7 +327,7 @@ def register_ca(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         )
 
     @bot.on.message(text=dual_with_args("regrole", "<role_type> <alias>"))
-    @requires_level(AccessLevel.ZGS)
+    @requires_level(AccessLevel.ZGS, command="regrole")
     @requires_ca_scope
     async def regrole_with_alias(
         message: Message,
@@ -353,7 +353,7 @@ def register_ca(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         )
 
     @bot.on.message(text=dual("regsledco"))
-    @requires_level(AccessLevel.ZGS)
+    @requires_level(AccessLevel.ZGS, command="regrole")
     @requires_ca_scope
     async def regsledco_legacy(message: Message, server_id: int = 0) -> None:
         await _handle_regrole(
@@ -361,7 +361,7 @@ def register_ca(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         )
 
     @bot.on.message(text=dual("regcongress"))
-    @requires_level(AccessLevel.ZGS)
+    @requires_level(AccessLevel.ZGS, command="regrole")
     @requires_ca_scope
     async def regcongress_legacy(
         message: Message,
@@ -378,7 +378,7 @@ def register_ca(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         )
 
     @bot.on.message(text=dual_with_args("regcongress", "<alias>"))
-    @requires_level(AccessLevel.ZGS)
+    @requires_level(AccessLevel.ZGS, command="regrole")
     @requires_ca_scope
     async def regcongress_alias_legacy(
         message: Message,

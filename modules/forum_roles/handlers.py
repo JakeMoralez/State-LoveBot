@@ -150,7 +150,7 @@ def register_forum_roles(bot: Bot, api: API, action_logger: ActionLogger) -> Non
         )
 
     @bot.on.message(text=dual_args("addleader"))
-    @requires_level(AccessLevel.SUPERVISOR)
+    @requires_level(AccessLevel.SUPERVISOR, command="addleader")
     @requires_ca_scope
     async def add_leader(
         message: Message,
@@ -225,7 +225,7 @@ def register_forum_roles(bot: Bot, api: API, action_logger: ActionLogger) -> Non
         )
 
     @bot.on.message(text=dual_args("removeleader"))
-    @requires_level(AccessLevel.SUPERVISOR)
+    @requires_level(AccessLevel.SUPERVISOR, command="removeleader")
     @requires_ca_scope
     async def remove_leader(
         message: Message,

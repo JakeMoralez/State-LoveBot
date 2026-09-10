@@ -5,39 +5,29 @@ from __future__ import annotations
 from tortoise import fields
 from tortoise.models import Model
 
+from database import access_levels as _al
+
 
 class AccessLevel:
-    """Числовые уровни доступа (1–11)."""
+    """Числовые уровни доступа (1–11). Канон: database/access_levels.py (= panel domain)."""
 
-    PGS = 1
-    SUPERVISOR = 2
-    ZGS = 3
-    GS = 4
-    STRUCTURE_SUPERVISOR = 5  # Следящий структуры (между ГС сферы и ЗГС структуры)
-    ZGS_GOS = 6
-    GS_GOS = 7
-    CURATOR = 8
-    ZGA = 9
-    GA = 10
-    DEVELOPER = 11
+    PGS = _al.PGS
+    SUPERVISOR = _al.SUPERVISOR
+    ZGS = _al.ZGS
+    GS = _al.GS
+    STRUCTURE_SUPERVISOR = _al.STRUCTURE_SUPERVISOR  # между ГС сферы и ЗГС структуры
+    ZGS_GOS = _al.ZGS_GOS
+    GS_GOS = _al.GS_GOS
+    CURATOR = _al.CURATOR
+    ZGA = _al.ZGA
+    GA = _al.GA
+    DEVELOPER = _al.DEVELOPER
 
-    NAMES: dict[int, str] = {
-        1: "ПГС",
-        2: "Следящий",
-        3: "ЗГС",
-        4: "ГС",
-        5: "Следящий структуры",
-        6: "ЗГС ГОС",
-        7: "ГС ГОС",
-        8: "Куратор",
-        9: "ЗГА",
-        10: "ГА",
-        11: "Разработчик",
-    }
+    NAMES: dict[int, str] = dict(_al.SHORT_NAMES)
 
     @classmethod
     def title(cls, level: int) -> str:
-        return cls.NAMES.get(level, f"Уровень {level}")
+        return _al.short_name(level)
 
 
 class User(Model):

@@ -98,7 +98,7 @@ def register_congress(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         )
 
     @bot.on.message(text=dual_args("setspeaker"))
-    @requires_level(AccessLevel.SUPERVISOR)
+    @requires_level(AccessLevel.SUPERVISOR, command="setspeaker")
     @requires_ca_scope
     async def set_speaker(
         message: Message,
@@ -169,7 +169,7 @@ def register_congress(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         )
 
     @bot.on.message(text=dual_args("setvice"))
-    @requires_level(AccessLevel.SUPERVISOR)
+    @requires_level(AccessLevel.SUPERVISOR, command="setvice")
     @requires_ca_scope
     async def set_vice(
         message: Message,
@@ -240,7 +240,7 @@ def register_congress(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         )
 
     @bot.on.message(text=dual("removespeaker"))
-    @requires_level(AccessLevel.SUPERVISOR)
+    @requires_level(AccessLevel.SUPERVISOR, command="removespeaker")
     @requires_ca_scope
     async def remove_speaker(
         message: Message,
@@ -263,7 +263,7 @@ def register_congress(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         await message.answer(resp.success("Спикер снят.") if ok else resp.error("Спикер не был назначен."))
 
     @bot.on.message(text=dual("removevice"))
-    @requires_level(AccessLevel.SUPERVISOR)
+    @requires_level(AccessLevel.SUPERVISOR, command="removevice")
     @requires_ca_scope
     async def remove_vice(
         message: Message,

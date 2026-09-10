@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hmac
 import logging
 import os
 
@@ -9,10 +10,11 @@ from aiohttp import web
 from vkbottle import API
 
 from database.models.court_form import CourtForm
-from database.models.user import User, UserServerAccess
+from database.models.user import AccessLevel, User, UserServerAccess
 from database.repository.user_repo import UserRepository
 from middlewares.access import AccessChecker
 from services.court_form_notify import CourtFormNotifier
+from services.request_id import REQUEST_ID_HEADER, get_or_create_request_id, set_request_id
 
 logger = logging.getLogger(__name__)
 
@@ -23,10 +25,36 @@ SLED_INTERNAL_PORT = int(os.getenv("SLED_INTERNAL_PORT", "8081"))
 def _check_secret(request: web.Request) -> bool:
     if not SLED_BOT_SECRET:
         return False
-    return request.headers.get("X-Sled-Secret") == SLED_BOT_SECRET
+    provided = request.headers.get("X-Sled-Secret")
+    if provided is None:
+        return False
+    a = provided.encode("utf-8")
+    b = SLED_BOT_SECRET.encode("utf-8")
+    if len(a) != len(b):
+        hmac.compare_digest(b, b)
+        return False
+    return hmac.compare_digest(a, b)
+
+
+@web.middleware
+async def request_id_middleware(request: web.Request, handler):
+    set_request_id(request.headers.get(REQUEST_ID_HEADER))
+    rid = get_or_create_request_id()
+    try:
+        response = await handler(request)
+    except Exception:
+        logger.exception("internal API error request_id=%s path=%s", rid, request.path)
+        raise
+    if isinstance(response, web.StreamResponse):
+        response.headers[REQUEST_ID_HEADER] = rid
+    return response
 
 
 async def handle_notify(request: web.Request) -> web.Response:
+    """Отправка VK-уведомления от панели.
+
+    Произвольный спам запрещён: нужен category из allowlist, лимит длины и rate-limit.
+    """
     if not _check_secret(request):
         return web.json_response({"error": "unauthorized"}, status=401)
     try:
@@ -34,21 +62,64 @@ async def handle_notify(request: web.Request) -> web.Response:
     except Exception:
         return web.json_response({"error": "invalid json"}, status=400)
 
+    from services.notify_guard import (
+        ALLOWED_NOTIFY_CATEGORIES,
+        check_notify_rate_limit,
+        normalize_notify_message,
+    )
+
     vk_id = data.get("vk_id")
     message = data.get("message")
-    if not vk_id or not message:
+    category = str(data.get("category") or "").strip().lower()
+    if not vk_id or message is None:
         return web.json_response({"error": "vk_id and message required"}, status=400)
+    if category not in ALLOWED_NOTIFY_CATEGORIES:
+        return web.json_response(
+            {
+                "error": "invalid category",
+                "allowed": sorted(ALLOWED_NOTIFY_CATEGORIES),
+            },
+            status=400,
+        )
+    try:
+        peer = int(vk_id)
+    except (TypeError, ValueError):
+        return web.json_response({"error": "invalid vk_id"}, status=400)
+    if peer <= 0:
+        return web.json_response({"error": "invalid vk_id"}, status=400)
+
+    text, err = normalize_notify_message(message)
+    if err:
+        return web.json_response({"error": err}, status=400)
+
+    ok_rate, rate_err = check_notify_rate_limit(peer)
+    if not ok_rate:
+        return web.json_response({"error": rate_err}, status=429)
 
     api: API = request.app["vk_api"]
+    rid = get_or_create_request_id()
     try:
         await api.messages.send(
-            peer_id=int(vk_id),
-            message=str(message),
+            peer_id=peer,
+            message=text,
             random_id=0,
         )
-        return web.json_response({"ok": True})
+        logger.info(
+            "sled notify ok vk_id=%s category=%s request_id=%s len=%s",
+            peer,
+            category,
+            rid,
+            len(text),
+        )
+        return web.json_response({"ok": True, "request_id": rid})
     except Exception as exc:
-        logger.warning("sled notify failed vk_id=%s: %s", vk_id, exc)
+        logger.warning(
+            "sled notify failed vk_id=%s category=%s request_id=%s: %s",
+            peer,
+            category,
+            rid,
+            exc,
+        )
         return web.json_response({"error": str(exc)}, status=500)
 
 
@@ -95,7 +166,7 @@ async def handle_staff_full(request: web.Request) -> web.Response:
     staff = []
     for user, level, access in rows:
         if await UserRepository.is_developer(user.vk_id):
-            level = max(level, 10)
+            level = max(level, AccessLevel.DEVELOPER)
         badges: list[str] = []
         if access and access.has_ca_access:
             badges.append("ЦА")
@@ -458,7 +529,7 @@ async def start_sled_internal_server(
         logger.info("SLED_BOT_SECRET not set — internal API disabled")
         return None
 
-    app = web.Application()
+    app = web.Application(middlewares=[request_id_middleware])
     app["vk_api"] = api
     if forum_service is not None:
         app["forum_service"] = forum_service

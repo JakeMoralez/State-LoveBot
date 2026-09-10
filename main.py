@@ -29,9 +29,12 @@ from services.chat_admin import ChatAdminService
 from services.command_utils import matches_cmd
 from services.court_claim_watch import CourtClaimWatcher
 from services.leader_complaint_watch import LeaderComplaintWatcher
+from services.forum_session_watch import ForumSessionWatcher
 from services.edit_link_handlers import register_edit_link_commands
 from services.forum_api import ForumService, _ARIZONA_IMPORT_ERROR, _HAS_ARIZONA
 from services.help_menu import build_dev_help_text, build_help_text_for_user
+from services.http_session import close_http_session
+from services.panel_db import close_panel_pg_pool
 from services.sled_internal_api import start_sled_internal_server, stop_sled_internal_server
 
 logger = logging.getLogger(__name__)
@@ -40,6 +43,7 @@ _forum_service = ForumService()
 _bot_started_at: float | None = None
 _claim_watcher: CourtClaimWatcher | None = None
 _complaint_watcher: LeaderComplaintWatcher | None = None
+_forum_watcher: ForumSessionWatcher | None = None
 
 
 def get_claim_watcher() -> CourtClaimWatcher | None:
@@ -91,7 +95,35 @@ def create_bot(token: str, group_id: int) -> tuple[Bot, API, ActionLogger]:
         # Непойманное исключение: логируем полностью, пользователю — мягкий текст
         # вместо тишины или сырого {exc}.
         logger.exception("Необработанная ошибка при обработке события VK: %s", error)
-        await _maybe_answer(_event_from_args(args), resp.error(resp.GENERIC_ERROR_TEXT))
+        event = _event_from_args(args)
+        try:
+            import traceback
+
+            from services.panel_client import report_bot_error
+            from services.request_id import get_or_create_request_id
+
+            user_vk_id = None
+            if event is not None:
+                user_vk_id = getattr(event, "from_id", None) or getattr(event, "user_id", None)
+                try:
+                    user_vk_id = int(user_vk_id) if user_vk_id else None
+                except (TypeError, ValueError):
+                    user_vk_id = None
+            await report_bot_error(
+                message=str(error) or error.__class__.__name__,
+                stack="".join(
+                    traceback.format_exception(type(error), error, error.__traceback__)
+                ),
+                user_vk_id=user_vk_id,
+                url="vk:event",
+                context={
+                    "request_id": get_or_create_request_id(),
+                    "error_type": type(error).__name__,
+                },
+            )
+        except Exception:
+            logger.debug("Не удалось отправить ошибку бота в DevErrorLog панели", exc_info=True)
+        await _maybe_answer(event, resp.error(resp.GENERIC_ERROR_TEXT))
 
     @bot.on.message(text=["/help", "/start", "!help", "!start"])
     @requires_level(0, command="help", require_registered=False)
@@ -170,11 +202,12 @@ def create_bot(token: str, group_id: int) -> tuple[Bot, API, ActionLogger]:
 
 
 async def run_bot() -> None:
-    global _claim_watcher, _complaint_watcher
+    global _claim_watcher, _complaint_watcher, _forum_watcher
     bot, api, _ = create_bot(VK_GROUP_TOKEN, VK_GROUP_ID)
     sled_runner = None
     _claim_watcher = CourtClaimWatcher(api, _forum_service)
     _complaint_watcher = LeaderComplaintWatcher(api, _forum_service)
+    _forum_watcher = ForumSessionWatcher(_forum_service)
 
     try:
         await init_db()
@@ -199,6 +232,7 @@ async def run_bot() -> None:
         if _forum_service.backend:
             _claim_watcher.start()
             _complaint_watcher.start()
+        _forum_watcher.start()
         logger.info("Бот запущен (async architecture)")
         global _bot_started_at
         _bot_started_at = time.monotonic()
@@ -214,6 +248,9 @@ async def run_bot() -> None:
                 )
             raise
     finally:
+        if _forum_watcher:
+            await _forum_watcher.stop()
+            _forum_watcher = None
         if _claim_watcher:
             await _claim_watcher.stop()
             _claim_watcher = None
@@ -223,6 +260,8 @@ async def run_bot() -> None:
         await stop_sled_internal_server(sled_runner)
         if _forum_service.available:
             await _forum_service.close()
+        await close_http_session()
+        await close_panel_pg_pool()
         await close_db()
         logger.info("Бот остановлен")
 
