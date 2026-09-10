@@ -398,7 +398,12 @@ def register_ca(bot: Bot, api: API, action_logger: ActionLogger) -> None:
     _PANEL_CMDS = list(dual("panel")) + ["/вход", "!вход"]
 
     @bot.on.message(text=_PANEL_CMDS)
-    async def panel_login(message: Message, server_id: int = 0) -> None:
+    @requires_level(AccessLevel.PGS, command="panel")
+    async def panel_login(
+        message: Message,
+        server_id: int = 0,
+        access_level: int = 0,
+    ) -> None:
         user_id = message.from_id
         if not user_id or user_id <= 0:
             return

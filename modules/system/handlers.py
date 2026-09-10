@@ -6,7 +6,7 @@ from vkbottle import API
 from vkbottle.bot import Bot, Message
 
 from database.repository.server_repo import ServerRepository
-from middlewares.access import AccessChecker, requires_developer
+from middlewares.access import AccessChecker, requires_developer, requires_level
 from services import responses as resp
 from services.command_utils import dual, dual_args, strip_cmd
 from services.dev_server_context import (
@@ -20,7 +20,12 @@ from services.server_display import format_judge_forum_hint, format_server_label
 
 def register_system(bot: Bot, api: API) -> None:
     @bot.on.message(text=dual("getid"))
-    async def show_chat_id(message: Message) -> None:
+    @requires_level(0, command="getid", require_registered=False)
+    async def show_chat_id(
+        message: Message,
+        server_id: int = 0,
+        access_level: int = 0,
+    ) -> None:
         peer_id = message.peer_id
         if peer_id >= 2_000_000_000:
             chat_id = peer_id - 2_000_000_000
@@ -36,9 +41,13 @@ def register_system(bot: Bot, api: API) -> None:
             )
 
     @bot.on.message(text=dual("me"))
-    async def show_me(message: Message) -> None:
+    @requires_level(0, command="me", require_registered=False)
+    async def show_me(
+        message: Message,
+        server_id: int = 0,
+        access_level: int = 0,
+    ) -> None:
         user_id = message.from_id or 0
-        server_id = await AccessChecker.resolve_server_id(message.peer_id, user_id)
         card = await format_user_profile_card(user_id, api, server_id)
         await message.answer(card, disable_mentions=True)
 

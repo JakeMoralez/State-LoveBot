@@ -115,7 +115,7 @@ def register_academy(bot: Bot, api: API, action_logger: ActionLogger) -> None:
     del action_logger
 
     @bot.on.message(FuncRule(lambda m: matches_cmd(m.text or "", "academy")))
-    @requires_level(AccessLevel.PGS)
+    @requires_level(AccessLevel.PGS, command="academy")
     async def academy_cmd(message: Message, server_id: int = 0, access_level: int = 0):
         if not panel_api_configured():
             await message.answer(resp.error("Панель академии не настроена."))

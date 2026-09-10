@@ -55,8 +55,6 @@ COMMAND_ALIASES: dict[str, tuple[str, ...]] = {
     "complaintwatch": ("checkcomplaints", "watchcomplaints"),
     "panel": ("login",),
     "academy": ("areport", "acad"),
-    "giveaz": ("givedonate",),
-    "givemoney": ("givecash",),
     "panelcheck": ("checkpanel", "sitecheck", "nopanel"),
     "editmydiscord": ("mydiscord", "discordid", "dsid"),
     "editmyforum": ("myforum", "forumid", "forumlink"),

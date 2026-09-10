@@ -369,7 +369,7 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         )
 
     @bot.on.message(text=dual("staff") + dual("admins"))
-    @requires_level(AccessLevel.PGS, require_registered=True)
+    @requires_level(AccessLevel.PGS, command="staff", require_registered=True)
     async def staff(
         message: Message,
         server_id: int = 0,
@@ -381,7 +381,7 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
     _PANELCHECK_CHAT_ARGS = frozenset({"chat", "беседа", "here", "здесь"})
 
     @bot.on.message(text=dual_args("panelcheck"))
-    @requires_level(AccessLevel.ZGS, require_registered=True)
+    @requires_level(AccessLevel.ZGS, command="panelcheck", require_registered=True)
     async def panelcheck(
         message: Message,
         server_id: int = 0,
@@ -428,7 +428,7 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         await message.answer(card, disable_mentions=1)
 
     @bot.on.message(text=dual("setlevel"))
-    @requires_level(AccessLevel.ZGS)
+    @requires_level(AccessLevel.ZGS, command="setlevel")
     async def setlevel_usage(
         message: Message,
         server_id: int = 0,
@@ -443,7 +443,7 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         )
 
     @bot.on.message(text=dual_with_args("setlevel", "<target> <level>"))
-    @requires_level(AccessLevel.ZGS)
+    @requires_level(AccessLevel.ZGS, command="setlevel")
     async def set_level(
         message: Message,
         target: str,
@@ -572,7 +572,7 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         )
 
     @bot.on.message(FuncRule(lambda m: matches_cmd(m.text or "", "setsphere")))
-    @requires_level(AccessLevel.ZGS)
+    @requires_level(AccessLevel.ZGS, command="setsphere")
     async def set_sphere(
         message: Message,
         server_id: int = 0,
@@ -795,8 +795,8 @@ def register_profile(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         )
 
     @bot.on.message(FuncRule(lambda m: is_user_info_cmd(m.text or "")))
-    @requires_public
-    async def user_info(message: Message, server_id: int = 0) -> None:
+    @requires_level(0, command="info", require_registered=False)
+    async def user_info(message: Message, server_id: int = 0, access_level: int = 0) -> None:
         target_id, err = await _parse_profile_target(message, api, "info")
         if err:
             await message.answer(err)

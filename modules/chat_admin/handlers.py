@@ -74,7 +74,7 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
         return resolved.vk_id if resolved else None
 
     @bot.on.message(text=dual("find"))
-    @requires_public
+    @requires_level(0, command="find", require_registered=False)
     async def find_usage(message: Message, server_id: int = 0, access_level: int = 0) -> None:
         await message.answer(
             resp.error("/find [ник / @user / ссылка]\n"
@@ -82,7 +82,7 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
         )
 
     @bot.on.message(text=dual_with_args("find", "<query>"))
-    @requires_public
+    @requires_level(0, command="find", require_registered=False)
     async def find_user(
         message: Message,
         query: str,
@@ -196,7 +196,7 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
             await message.answer(chunk, disable_mentions=1)
 
     @bot.on.message(text=dual("online"))
-    @requires_public
+    @requires_level(0, command="online", require_registered=False)
     async def online_members(
         message: Message,
         server_id: int = 0,
@@ -240,7 +240,7 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
         await message.answer(text, disable_mentions=1)
 
     @bot.on.message(text=dual("mute"))
-    @requires_level(AccessLevel.SUPERVISOR)
+    @requires_level(AccessLevel.SUPERVISOR, command="mute")
     async def mute_usage(
         message: Message,
         server_id: int = 0,
@@ -253,7 +253,7 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
         )
 
     @bot.on.message(text=dual_with_args("mute", "<args>"))
-    @requires_level(AccessLevel.SUPERVISOR)
+    @requires_level(AccessLevel.SUPERVISOR, command="mute")
     async def mute_user(
         message: Message,
         args: str,
@@ -331,7 +331,7 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
             await message.answer(resp.error(f"Не удалось выдать мут.\n{err}"))
 
     @bot.on.message(text=dual("unmute"))
-    @requires_level(AccessLevel.SUPERVISOR)
+    @requires_level(AccessLevel.SUPERVISOR, command="unmute")
     async def unmute_usage(
         message: Message,
         server_id: int = 0,
@@ -340,7 +340,7 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
         await message.answer(resp.error("/unmute [@user] — или ответом на сообщение."))
 
     @bot.on.message(text=dual_with_args("unmute", "<target>"))
-    @requires_level(AccessLevel.SUPERVISOR)
+    @requires_level(AccessLevel.SUPERVISOR, command="unmute")
     async def unmute_user(
         message: Message,
         target: str,
@@ -388,7 +388,7 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
             await message.answer(resp.error(f"Не удалось снять мут.\n{err}"))
 
     @bot.on.message(text=dual("stitle"))
-    @requires_level(AccessLevel.ZGS)
+    @requires_level(AccessLevel.ZGS, command="stitle")
     async def stitle_usage(
         message: Message,
         server_id: int = 0,
@@ -397,7 +397,7 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
         await message.answer(resp.error("/stitle [новое название беседы]"))
 
     @bot.on.message(text=dual_with_args("stitle", "<title>"))
-    @requires_level(AccessLevel.ZGS)
+    @requires_level(AccessLevel.ZGS, command="stitle")
     async def set_title(
         message: Message,
         title: str,
@@ -426,7 +426,7 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
             await message.answer(resp.error(f"{result}"))
 
     @bot.on.message(text=dual("chatsettings"))
-    @requires_level(AccessLevel.ZGS)
+    @requires_level(AccessLevel.ZGS, command="chatsettings")
     async def show_settings(
         message: Message,
         server_id: int = 0,
@@ -509,7 +509,7 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
         )
 
     @bot.on.message(FuncRule(_chat_settings_pick_rule), blocking=True)
-    @requires_level(AccessLevel.ZGS)
+    @requires_level(AccessLevel.ZGS, command="chatsettings")
     async def chat_settings_pick_number(
         message: Message,
         server_id: int = 0,
@@ -751,7 +751,7 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
 
     def _register_rejoin(cmd: str, field: str) -> None:
         @bot.on.message(text=dual(cmd))
-        @requires_level(AccessLevel.ZGS)
+        @requires_level(AccessLevel.ZGS, command="rejoinkick")
         async def _usage(
             message: Message,
             server_id: int = 0,
@@ -762,7 +762,7 @@ def register_chat_admin(bot: Bot, api: API, action_logger: ActionLogger) -> None
             await message.answer(resp.error(f"/{_cmd} on|off|ask"))
 
         @bot.on.message(text=dual_with_args(cmd, "<mode>"))
-        @requires_level(AccessLevel.ZGS)
+        @requires_level(AccessLevel.ZGS, command="rejoinkick")
         async def _set(
             message: Message,
             mode: str,

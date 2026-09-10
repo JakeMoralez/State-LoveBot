@@ -1,3 +1,4 @@
+from database.models.command_access import CommandAccessOverride
 from database.models.chat import Chat
 from database.models.court_claim import CourtClaimClose, CourtClaimSeen
 from database.models.leader_complaint import LeaderComplaintSeen
@@ -11,6 +12,7 @@ from database.models.user import AccessLevel, User, UserServerAccess
 __all__ = [
     "AccessLevel",
     "Chat",
+    "CommandAccessOverride",
     "CourtClaimClose",
     "CourtClaimSeen",
     "LeaderComplaintSeen",

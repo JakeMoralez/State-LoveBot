@@ -17,14 +17,8 @@ from services.panel_client import create_issuance, panel_api_configured
 
 _URL_RE = re.compile(r"https?://\S+", re.IGNORECASE)
 
-_USAGE_AZ = (
-    "/giveaz Ник 5000 Должность | За что\n"
-    "/givedonate Ник 5000 Должность | За что"
-)
-_USAGE_VIRTS = (
-    "/givemoney Ник 70000000 Должность | За что\n"
-    "/givecash Ник 70000000 Должность | За что"
-)
+_USAGE_AZ = "/az Ник 5000 Должность | За что"
+_USAGE_VIRTS = "/money Ник 70000000 Должность | За что"
 
 
 def _usage(kind: str) -> str:
@@ -70,15 +64,29 @@ def register_issuance(bot: Bot, api: API, action_logger: ActionLogger) -> None:
 
     @bot.on.message(
         FuncRule(
-            lambda m: matches_cmd(m.text or "", "giveaz") or matches_cmd(m.text or "", "givemoney")
+            lambda m: matches_cmd(m.text or "", "az") or matches_cmd(m.text or "", "money")
         )
     )
     @requires_level(AccessLevel.ZGS)
     async def issuance_cmd(message: Message, server_id: int = 0, access_level: int = 0):
-        del access_level
         text = message.text or ""
-        kind = "az" if matches_cmd(text, "giveaz") else "virts"
-        primary = "giveaz" if kind == "az" else "givemoney"
+        kind = "az" if matches_cmd(text, "az") else "virts"
+        primary = "az" if kind == "az" else "money"
+        from services.command_access import effective_min_level
+        from middlewares.access import AccessChecker
+
+        need = await effective_min_level(server_id, primary, AccessLevel.ZGS)
+        if access_level < need:
+            await message.answer(
+                resp.denied(
+                    "Недостаточно прав для этой команды.",
+                    hint=(
+                        f"Нужен уровень: {AccessChecker.level_name(need)}\n"
+                        f"Ваш уровень: {AccessChecker.level_name(access_level)}"
+                    ),
+                )
+            )
+            return
         parsed = parse_issuance_args(strip_cmd(text, primary))
         if not parsed:
             await message.answer(resp.error("Не хватает данных.", hint=_usage(kind)))
@@ -102,9 +110,10 @@ def register_issuance(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             return
         item = data.get("item") if isinstance(data, dict) else None
         label = item.get("amount_label") if isinstance(item, dict) else amount
+        action = "передачу" if kind == "az" else "выдачу"
         await message.answer(
             resp.success(
-                f"Заявка на выдачу отправлена: {nick} · {label}.",
+                f"Заявка на {action} отправлена: {nick} · {label}.",
                 hint="Проверить можно на сайте в разделе «Выдачи».",
             )
         )

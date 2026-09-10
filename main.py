@@ -22,7 +22,7 @@ from packages.domain.errors import DomainError
 from services import responses as resp
 from config.logging_setup import setup_logging
 from database import close_db, init_db
-from middlewares.access import AccessChecker, requires_developer
+from middlewares.access import AccessChecker, requires_developer, requires_level
 from middlewares.action_logger import ActionLogger
 from modules import register_all_modules
 from services.chat_admin import ChatAdminService
@@ -94,12 +94,13 @@ def create_bot(token: str, group_id: int) -> tuple[Bot, API, ActionLogger]:
         await _maybe_answer(_event_from_args(args), resp.error(resp.GENERIC_ERROR_TEXT))
 
     @bot.on.message(text=["/help", "/start", "!help", "!start"])
-    async def help_handler(message: Message) -> None:
+    @requires_level(0, command="help", require_registered=False)
+    async def help_handler(
+        message: Message,
+        server_id: int = 0,
+        access_level: int = 0,
+    ) -> None:
         user_id = message.from_id or 0
-        if user_id <= 0:
-            await message.answer("⛔ Команда доступна только пользователям VK.")
-            return
-        server_id = await AccessChecker.resolve_server_id(message.peer_id, user_id)
         await message.answer(await build_help_text_for_user(user_id, server_id))
 
     @bot.on.message(text=["/devhelp", "!devhelp"])
@@ -112,7 +113,12 @@ def create_bot(token: str, group_id: int) -> tuple[Bot, API, ActionLogger]:
         await message.answer(build_dev_help_text())
 
     @bot.on.message(text=["/ping", "!ping"])
-    async def ping_handler(message: Message) -> None:
+    @requires_level(0, command="ping", require_registered=False)
+    async def ping_handler(
+        message: Message,
+        server_id: int = 0,
+        access_level: int = 0,
+    ) -> None:
         if _bot_started_at is None:
             await message.answer("🏓 pong")
             return
@@ -172,7 +178,7 @@ async def run_bot() -> None:
 
     try:
         await init_db()
-        sled_runner = await start_sled_internal_server(api)
+        sled_runner = await start_sled_internal_server(api, forum_service=_forum_service)
         if _forum_service.available:
             try:
                 logger.info("Подключение к форуму...")

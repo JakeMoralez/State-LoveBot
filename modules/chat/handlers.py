@@ -66,7 +66,7 @@ def register_chat(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         await message.answer(text, disable_mentions=1)
 
     @bot.on.message(text=["/pin", "!pin"])
-    @requires_level(AccessLevel.SUPERVISOR)
+    @requires_level(AccessLevel.SUPERVISOR, command="pin")
     async def pin_message(
         message: Message,
         server_id: int = 0,
@@ -104,7 +104,7 @@ def register_chat(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             )
 
     @bot.on.message(text=dual("del"))
-    @requires_level(AccessLevel.SUPERVISOR)
+    @requires_level(AccessLevel.SUPERVISOR, command="del")
     async def delete_message(
         message: Message,
         server_id: int = 0,
@@ -194,7 +194,7 @@ def register_chat(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             source_peer_id=message.peer_id,
         )
     @bot.on.message(text=["/unpin", "!unpin"])
-    @requires_level(AccessLevel.SUPERVISOR)
+    @requires_level(AccessLevel.SUPERVISOR, command="unpin")
     async def unpin_message(
         message: Message,
         server_id: int = 0,

@@ -298,13 +298,170 @@ async def handle_chat_members(request: web.Request) -> web.Response:
     return web.json_response({"peer_id": peer_id, "member_ids": member_ids, "count": len(member_ids)})
 
 
-async def start_sled_internal_server(api: API) -> web.AppRunner | None:
+async def handle_forum_status(request: web.Request) -> web.Response:
+    if not _check_secret(request):
+        return web.json_response({"error": "unauthorized"}, status=401)
+    forum = request.app.get("forum_service")
+    if forum is None:
+        from services.forum_api import ForumService
+
+        forum = ForumService()
+    try:
+        report = await forum.check_health()
+    except Exception as exc:
+        return web.json_response({"error": str(exc)}, status=500)
+    cookies = forum.cookies_status() if hasattr(forum, "cookies_status") else {}
+    return web.json_response(
+        {
+            "configured": report.configured,
+            "connected": report.connected,
+            "logged_in": report.logged_in,
+            "username": report.username,
+            "error": report.error,
+            "ok": report.ok,
+            "cookies": cookies,
+        }
+    )
+
+
+async def handle_forum_reconnect(request: web.Request) -> web.Response:
+    if not _check_secret(request):
+        return web.json_response({"error": "unauthorized"}, status=401)
+    forum = request.app.get("forum_service")
+    if forum is None:
+        return web.json_response({"error": "forum service unavailable"}, status=503)
+    try:
+        report = await forum.reconnect()
+    except Exception as exc:
+        return web.json_response({"error": str(exc)}, status=500)
+    cookies = forum.cookies_status() if hasattr(forum, "cookies_status") else {}
+    return web.json_response(
+        {
+            "ok": report.ok,
+            "configured": report.configured,
+            "connected": report.connected,
+            "logged_in": report.logged_in,
+            "username": report.username,
+            "error": report.error,
+            "cookies": cookies,
+        }
+    )
+
+
+async def handle_forum_cookies(request: web.Request) -> web.Response:
+    if not _check_secret(request):
+        return web.json_response({"error": "unauthorized"}, status=401)
+    forum = request.app.get("forum_service")
+    if forum is None:
+        return web.json_response({"error": "forum service unavailable"}, status=503)
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"error": "invalid json"}, status=400)
+    if not isinstance(data, dict):
+        return web.json_response({"error": "invalid json"}, status=400)
+    cookies = {
+        key: str(data[key]).strip()
+        for key in ("xf_user", "xf_session", "xf_tfa_trust")
+        if data.get(key)
+    }
+    if not cookies.get("xf_user") or not cookies.get("xf_session"):
+        return web.json_response({"error": "Нужны xf_user и xf_session"}, status=400)
+    try:
+        report = await forum.apply_cookies(cookies)
+    except Exception as exc:
+        return web.json_response({"error": str(exc)}, status=500)
+    cookies_meta = forum.cookies_status() if hasattr(forum, "cookies_status") else {}
+    return web.json_response(
+        {
+            "ok": report.ok,
+            "configured": report.configured,
+            "connected": report.connected,
+            "logged_in": report.logged_in,
+            "username": report.username,
+            "error": report.error,
+            "cookies": cookies_meta,
+        }
+    )
+
+
+async def handle_forum_sync_judges(request: web.Request) -> web.Response:
+    if not _check_secret(request):
+        return web.json_response({"error": "unauthorized"}, status=401)
+    forum = request.app.get("forum_service")
+    if forum is None:
+        return web.json_response({"error": "forum service unavailable"}, status=503)
+    try:
+        server_id = int(request.rel_url.query.get("server_id", "0") or "0")
+    except ValueError:
+        return web.json_response({"error": "invalid server_id"}, status=400)
+    if not server_id:
+        from config.settings import DEFAULT_SERVER_ID
+
+        server_id = DEFAULT_SERVER_ID
+    from services.judge_forum_sync import sync_judge_list
+
+    ok, msg = await sync_judge_list(server_id, forum)
+    return web.json_response({"ok": ok, "message": msg}, status=200 if ok else 400)
+
+
+async def handle_command_access_get(request: web.Request) -> web.Response:
+    if not _check_secret(request):
+        return web.json_response({"error": "unauthorized"}, status=401)
+    try:
+        server_id = int(request.rel_url.query.get("server_id", "0") or "0")
+    except ValueError:
+        return web.json_response({"error": "invalid server_id"}, status=400)
+    if not server_id:
+        from config.settings import DEFAULT_SERVER_ID
+
+        server_id = DEFAULT_SERVER_ID
+    from services.command_access import list_command_access
+
+    return web.json_response(await list_command_access(server_id))
+
+
+async def handle_command_access_put(request: web.Request) -> web.Response:
+    if not _check_secret(request):
+        return web.json_response({"error": "unauthorized"}, status=401)
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"error": "invalid json"}, status=400)
+    try:
+        server_id = int(data.get("server_id") or request.rel_url.query.get("server_id") or "0")
+    except (TypeError, ValueError):
+        return web.json_response({"error": "invalid server_id"}, status=400)
+    if not server_id:
+        from config.settings import DEFAULT_SERVER_ID
+
+        server_id = DEFAULT_SERVER_ID
+    updates = data.get("updates")
+    if not isinstance(updates, list):
+        return web.json_response({"error": "updates must be a list"}, status=400)
+    from services.command_access import save_command_access
+
+    try:
+        result = await save_command_access(server_id, updates)
+    except ValueError as exc:
+        return web.json_response({"error": str(exc)}, status=400)
+    except Exception as exc:
+        return web.json_response({"error": str(exc)}, status=500)
+    return web.json_response(result)
+
+
+async def start_sled_internal_server(
+    api: API,
+    forum_service: object | None = None,
+) -> web.AppRunner | None:
     if not SLED_BOT_SECRET:
         logger.info("SLED_BOT_SECRET not set — internal API disabled")
         return None
 
     app = web.Application()
     app["vk_api"] = api
+    if forum_service is not None:
+        app["forum_service"] = forum_service
     app.router.add_get("/internal/health", handle_health)
     app.router.add_get("/internal/staff-ca", handle_staff_ca)
     app.router.add_get("/internal/staff-full", handle_staff_full)
@@ -312,6 +469,12 @@ async def start_sled_internal_server(api: API) -> web.AppRunner | None:
     app.router.add_patch("/internal/chats/{peer_id}", handle_chat_patch)
     app.router.add_get("/internal/chat-members", handle_chat_members)
     app.router.add_get("/internal/forum/thread-info", handle_forum_thread_info)
+    app.router.add_get("/internal/forum/status", handle_forum_status)
+    app.router.add_post("/internal/forum/reconnect", handle_forum_reconnect)
+    app.router.add_post("/internal/forum/cookies", handle_forum_cookies)
+    app.router.add_post("/internal/forum/sync-judges", handle_forum_sync_judges)
+    app.router.add_get("/internal/command-access", handle_command_access_get)
+    app.router.add_put("/internal/command-access", handle_command_access_put)
     app.router.add_post("/internal/notify", handle_notify)
     app.router.add_post("/internal/form-decision", handle_form_decision)
 

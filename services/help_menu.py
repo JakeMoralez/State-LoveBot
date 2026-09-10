@@ -86,8 +86,8 @@ HELP_CATEGORIES: tuple[HelpCategory, ...] = (
             HelpEntry("/academy", "Академия: профиль и задания", AccessLevel.PGS),
             HelpEntry("/academy submit", "Сдать задание академии", AccessLevel.PGS),
             HelpEntry("/academy student", "Карточка академика", AccessLevel.SUPERVISOR),
-            HelpEntry("/giveaz · /givedonate", "Заявка на выдачу AZ", AccessLevel.ZGS),
-            HelpEntry("/givemoney · /givecash", "Заявка на выдачу виртов", AccessLevel.ZGS),
+            HelpEntry("/az", "Заявка на передачу AZ (ГА/ЗГА)", AccessLevel.ZGS),
+            HelpEntry("/money", "Заявка на выдачу виртов", AccessLevel.ZGS),
             HelpEntry("/panelcheck", "Кто не зарегистрирован на сайте", AccessLevel.ZGS),
             HelpEntry("/panelcheck chat", "Проверка только этой беседы", AccessLevel.ZGS),
             HelpEntry("/setsphere", "Назначить сферы", AccessLevel.ZGS),
@@ -273,10 +273,36 @@ def _entry_visible(entry: HelpEntry, ctx: HelpContext) -> bool:
 
 async def build_help_text_for_user(user_id: int, server_id: int) -> str:
     ctx = await build_help_context(user_id, server_id)
+    from services.command_access import effective_min_level
+    from services.command_catalog import get_command_entry
+
+    async def entry_need(entry: HelpEntry) -> int | str:
+        if not isinstance(entry.level, int):
+            return entry.level
+        cmd = entry.cmd.strip().split()[0].split("·")[0].strip().lstrip("/!")
+        if get_command_entry(cmd):
+            return await effective_min_level(server_id, cmd, entry.level)
+        return entry.level
+
     visible: set[tuple[str, str]] = set()
     for category in HELP_CATEGORIES:
         for entry in category.entries:
-            if _entry_visible(entry, ctx):
+            need = await entry_need(entry)
+            if isinstance(need, str):
+                if _entry_visible(entry, ctx):
+                    visible.add((category.title, entry.cmd))
+                continue
+            # temporary level swap for visibility check
+            patched = HelpEntry(
+                entry.cmd,
+                entry.desc,
+                need,
+                ca=entry.ca,
+                public=entry.public and need <= 0,
+                judge_only=entry.judge_only,
+                ca_forms=entry.ca_forms,
+            )
+            if _entry_visible(patched, ctx):
                 visible.add((category.title, entry.cmd))
 
     level_name = (

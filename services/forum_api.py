@@ -171,6 +171,53 @@ class ForumService:
         self._backend = "arizona"
         logger.info("✅ Подключение к форуму установлено (arizona_forum_async)")
 
+    async def apply_cookies(self, cookies: dict[str, str]) -> ForumHealthReport:
+        """Сохранить cookies (из панели) и переподключиться."""
+        await self.close()
+        merged = merge_cookie_sources(self._read_cookies_from_env(), cookies)
+        if not merged.get("xf_user") or not merged.get("xf_session"):
+            return ForumHealthReport(
+                configured=False,
+                connected=False,
+                logged_in=False,
+                error="Нужны xf_user и xf_session",
+            )
+        save_persisted_cookies(merged)
+        self._cookies_ok = True
+        self._available = True
+        if not _HAS_ARIZONA or ArizonaAPI is None:
+            return ForumHealthReport(
+                configured=True,
+                connected=False,
+                logged_in=False,
+                error=_ARIZONA_IMPORT_ERROR or "arizona_forum_async не установлен",
+            )
+        try:
+            self._api = ArizonaAPI(FORUM_USER_AGENT or None, merged)
+            await self._api.connect()
+            await self._persist_session_cookies()
+            self._backend = "arizona"
+            logger.info("✅ Форум: cookies из панели применены")
+        except Exception as exc:
+            logger.error("Форум: apply_cookies failed: %s", exc)
+            return ForumHealthReport(
+                configured=True,
+                connected=False,
+                logged_in=False,
+                error=str(exc),
+            )
+        return await self.check_health()
+
+    def cookies_status(self) -> dict[str, bool]:
+        env = self._read_cookies_from_env()
+        file_cookies = load_persisted_cookies()
+        return {
+            "env_xf_user": bool(env.get("xf_user")),
+            "env_xf_session": bool(env.get("xf_session")),
+            "env_xf_tfa_trust": bool(env.get("xf_tfa_trust")),
+            "file_present": bool(file_cookies.get("xf_user") and file_cookies.get("xf_session")),
+        }
+
     async def reconnect(self) -> ForumHealthReport:
         """Перечитать .env и переподключиться (после обновления cookies)."""
         await self.close()

@@ -207,7 +207,7 @@ def register_pools(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             )
 
     @bot.on.message(text=dual("pools"))
-    @requires_level(AccessLevel.PGS)
+    @requires_level(AccessLevel.PGS, command="pools")
     async def list_pools(
         message: Message,
         server_id: int = 0,
@@ -229,7 +229,7 @@ def register_pools(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         await message.answer("\n".join(lines))
 
     @bot.on.message(text=dual("createpool"))
-    @requires_level(AccessLevel.ZGS_GOS)
+    @requires_level(AccessLevel.ZGS_GOS, command="createpool")
     async def create_pool_usage(
         message: Message,
         server_id: int = 0,
@@ -238,7 +238,7 @@ def register_pools(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         await message.answer(resp.error("Использование: /createpool [название]"))
 
     @bot.on.message(text=dual_with_args("createpool", "<name>"))
-    @requires_level(AccessLevel.ZGS_GOS)
+    @requires_level(AccessLevel.ZGS_GOS, command="createpool")
     async def create_pool(
         message: Message,
         name: str,
@@ -270,7 +270,7 @@ def register_pools(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         )
 
     @bot.on.message(text=dual("regchat"))
-    @requires_level(AccessLevel.ZGS_GOS)
+    @requires_level(AccessLevel.ZGS_GOS, command="regchat")
     async def regchat_usage(
         message: Message,
         server_id: int = 0,
@@ -353,7 +353,7 @@ def register_pools(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         )
 
     @bot.on.message(text=dual_with_args("regchat", "<pool_ref> <alias>"))
-    @requires_level(AccessLevel.ZGS_GOS)
+    @requires_level(AccessLevel.ZGS_GOS, command="regchat")
     async def regchat(
         message: Message,
         pool_ref: str,
@@ -412,7 +412,7 @@ def register_pools(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         )
 
     @bot.on.message(text=dual("unregchat"))
-    @requires_level(AccessLevel.ZGS_GOS)
+    @requires_level(AccessLevel.ZGS_GOS, command="unregchat")
     async def unregchat(
         message: Message,
         server_id: int = 0,

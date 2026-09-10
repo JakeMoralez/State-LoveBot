@@ -163,10 +163,13 @@ def requires_msg(
             return None
 
         level = await AccessChecker.get_level(user_id, server_id)
-        if level < AccessLevel.PGS and not await UserRepository.is_developer(user_id):
+        from services.command_access import effective_min_level
+
+        need = await effective_min_level(server_id, "msg", AccessLevel.PGS)
+        if level < need and not await UserRepository.is_developer(user_id):
             await message.answer(
                 "⛔ Недостаточно прав.\n"
-                f"Нужен уровень: ПГС\n"
+                f"Нужен уровень: {AccessChecker.level_name(need)}\n"
                 f"Ваш уровень: {AccessChecker.level_name(level) if level else 'нет доступа'}"
             )
             return None

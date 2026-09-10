@@ -42,7 +42,19 @@ def days_on_post(dt: datetime | None) -> int | None:
         dt = dt.replace(tzinfo=UTC)
     appointed = dt.astimezone(MSK).date()
     today = datetime.now(MSK).date()
-    return max(0, (today - appointed).days) + 1
+    return max(0, (today - appointed).days)
+
+
+def format_dated_with_days(dt: datetime | None, *, fallback: datetime | None = None) -> str | None:
+    """«29.04.2026 [134 д.]» — дата и сколько дней прошло."""
+    source = dt or fallback
+    label = format_appointed_date(source)
+    if not label:
+        return None
+    days = days_on_post(source)
+    if days is None:
+        return label
+    return f"{label} [{days} д.]"
 
 
 def format_discord_line(profile: DiscordProfileView | None) -> str:
@@ -89,9 +101,8 @@ async def format_user_profile_card(
     access = await UserRepository.get_server_access(vk_id, server_id)
     appointed = access.granted_at if access else None
     promoted = getattr(access, "promoted_at", None) if access else None
-    appointed_label = format_appointed_date(appointed)
-    promoted_label = format_appointed_date(promoted) or appointed_label
-    days = days_on_post(appointed)
+    appointed_line = format_dated_with_days(appointed)
+    promoted_line = format_dated_with_days(promoted, fallback=appointed)
 
     lines = [
         "📝 Основная информация о пользователе ⬇",
@@ -105,15 +116,12 @@ async def format_user_profile_card(
         "",
     ]
 
-    if appointed_label:
-        lines.append(f"📅 Дата назначения: {appointed_label}")
-        lines.append(f"📈 Дата повышения: {promoted_label}")
-        if days is not None:
-            lines.append(f"🚀 Дней на посту: {days}")
+    if appointed_line:
+        lines.append(f"📅 Дата назначения: {appointed_line}")
+        lines.append(f"📅 Последнее повышение: {promoted_line or 'не указана'}")
     else:
         lines.append("📅 Дата назначения: не указана")
-        lines.append("📈 Дата повышения: не указана")
-        lines.append("🚀 Дней на посту: —")
+        lines.append("📅 Последнее повышение: не указана")
 
     if await ForumRoleRepository.is_judge_effective(vk_id, server_id):
         total = await CourtClaimRepository.count_total(vk_id, server_id)

@@ -88,6 +88,7 @@ TORTOISE_ORM: dict = {
                 "database.models.judge_forum_list",
                 "database.models.court_claim",
                 "database.models.leader_complaint",
+                "database.models.command_access",
             ],
             "default_connection": "default",
         },

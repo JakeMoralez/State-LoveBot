@@ -77,6 +77,7 @@ class AccessChecker:
 def requires_level(
     min_level: int,
     *,
+    command: str | None = None,
     server_scoped: bool = True,
     require_registered: bool = True,
 ) -> Callable[[Callable[P, Awaitable[R]]], Callable[P, Awaitable[R | None]]]:
@@ -109,8 +110,14 @@ def requires_level(
             )
             level = await AccessChecker.get_level(user_id, server_id)
 
-            if level < min_level:
-                required = AccessChecker.level_name(min_level)
+            need = min_level
+            if command:
+                from services.command_access import effective_min_level
+
+                need = await effective_min_level(server_id, command, min_level)
+
+            if level < need:
+                required = AccessChecker.level_name(need)
                 current = AccessChecker.level_name(level) if level else "нет доступа"
                 await message.answer(
                     resp.denied(
@@ -122,7 +129,7 @@ def requires_level(
                     "Отказ в доступе: user=%s server=%s need=%s have=%s cmd=%s",
                     user_id,
                     server_id,
-                    min_level,
+                    need,
                     level,
                     func.__name__,
                 )
