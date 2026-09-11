@@ -134,7 +134,7 @@ def register_academy(bot: Bot, api: API, action_logger: ActionLogger) -> None:
                 return
             cadet = data.get("cadet") if isinstance(data, dict) else None
             if cadet:
-                await message.answer(resp.ok(_cadet_card(cadet)))
+                await message.answer(resp.success(_cadet_card(cadet)))
                 return
             roster = data.get("roster") if isinstance(data, dict) else None
             if roster:
@@ -143,7 +143,7 @@ def register_academy(bot: Bot, api: API, action_logger: ActionLogger) -> None:
                     avg = (row.get("metrics") or {}).get("average_score")
                     score = f"{avg}/10" if avg is not None else "—"
                     lines.append(f"• {row.get('nickname')} — {row.get('stage_label')} · {score}")
-                await message.answer(resp.ok("\n".join(lines)))
+                await message.answer(resp.success("\n".join(lines)))
                 return
             await message.answer(
                 resp.error("Вы не состоите в Академии. Зачисление — в карточке следящего на сайте.")
@@ -157,7 +157,7 @@ def register_academy(bot: Bot, api: API, action_logger: ActionLogger) -> None:
                 return
             cadet = data.get("cadet") if isinstance(data, dict) else None
             opens = (cadet or {}).get("open_assignments") or []
-            await message.answer(resp.ok(_open_tasks_text(opens)))
+            await message.answer(resp.success(_open_tasks_text(opens)))
             return
 
         if sub in {"submit", "сдать", "areport"}:
@@ -169,7 +169,7 @@ def register_academy(bot: Bot, api: API, action_logger: ActionLogger) -> None:
                     return
                 cadet = data.get("cadet") if isinstance(data, dict) else None
                 opens = (cadet or {}).get("open_assignments") or []
-                await message.answer(resp.ok(_open_tasks_text(opens)))
+                await message.answer(resp.success(_open_tasks_text(opens)))
                 return
             assignment_id = int(match.group(1))
             body = (match.group(2) or "").strip()
@@ -191,12 +191,12 @@ def register_academy(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             if not ok:
                 await message.answer(resp.error(str(data)))
                 return
-            await message.answer(resp.ok(f"Отчёт по заданию #{assignment_id} отправлен на проверку."))
+            await message.answer(resp.success(f"Отчёт по заданию #{assignment_id} отправлен на проверку."))
             return
 
         if sub in {"leaderboard", "top", "рейтинг"}:
             await message.answer(
-                resp.ok("Отдельный рейтинг убран. Оценка академика — в карточке и в составе.")
+                resp.success("Отдельный рейтинг убран. Оценка академика — в карточке и в составе.")
             )
             return
 
@@ -225,7 +225,7 @@ def register_academy(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             if not cadet:
                 await message.answer(resp.error("Академик не найден."))
                 return
-            await message.answer(resp.ok(_cadet_card(cadet)))
+            await message.answer(resp.success(_cadet_card(cadet)))
             return
 
         await message.answer(
