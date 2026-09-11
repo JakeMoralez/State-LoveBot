@@ -182,6 +182,7 @@ KIND_PICK_ITEMS: tuple[tuple[str, str], ...] = (
     ("staff", "Следящие"),
     ("structure_lead", "Главная следящая администрация"),
     ("congress", "Конгресс"),
+    ("managers", "Управляющие"),
 )
 
 

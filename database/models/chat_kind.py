@@ -11,6 +11,7 @@ class ChatKind:
     SLED_CA = "sled_ca"
     STRUCTURE_LEAD = "structure_lead"
     CONGRESS = "congress"
+    MANAGERS = "managers"
 
     ALL = (
         GENERAL,
@@ -19,6 +20,7 @@ class ChatKind:
         STAFF,
         STRUCTURE_LEAD,
         CONGRESS,
+        MANAGERS,
     )
 
 
@@ -30,6 +32,7 @@ KIND_LABELS: dict[str, str] = {
     ChatKind.SLED_CA: "След. ЦА",
     ChatKind.STRUCTURE_LEAD: "Главная следящая администрация",
     ChatKind.CONGRESS: "Конгресс",
+    ChatKind.MANAGERS: "Управляющие",
 }
 
 STRUCTURE_SPHERE_KEYS: tuple[str, ...] = (

@@ -365,7 +365,12 @@ async def apply_leave_effects(
     sphere: str | None,
 ) -> str | None:
     kind, sphere = coerce_chat_kind(kind, sphere)
-    if user_id <= 0 or kind in (ChatKind.GENERAL, ChatKind.STRUCTURE_LEAD, ChatKind.CONGRESS):
+    if user_id <= 0 or kind in (
+        ChatKind.GENERAL,
+        ChatKind.STRUCTURE_LEAD,
+        ChatKind.CONGRESS,
+        ChatKind.MANAGERS,
+    ):
         if kind == ChatKind.CONGRESS:
             from database.repository.congress_repo import CongressRepository
 

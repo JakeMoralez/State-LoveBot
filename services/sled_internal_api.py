@@ -199,6 +199,28 @@ async def handle_staff_full(request: web.Request) -> web.Response:
     return web.json_response({"server_id": server_id, "staff": staff})
 
 
+async def handle_issuance_notify(request: web.Request) -> web.Response:
+    """Панель → беседа «Управляющие»: новая заявка на выдачу."""
+    if not _check_secret(request):
+        return web.json_response({"error": "unauthorized"}, status=401)
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"error": "invalid json"}, status=400)
+    if not isinstance(data, dict):
+        return web.json_response({"error": "invalid body"}, status=400)
+
+    api: API = request.app["vk_api"]
+    from services.issuance_notify import notify_managers_issuance
+
+    try:
+        result = await notify_managers_issuance(api, data)
+    except Exception as exc:
+        logger.exception("issuance notify failed: %s", exc)
+        return web.json_response({"error": str(exc)}, status=500)
+    return web.json_response(result)
+
+
 async def handle_form_decision(request: web.Request) -> web.Response:
     if not _check_secret(request):
         return web.json_response({"error": "unauthorized"}, status=401)
@@ -547,6 +569,7 @@ async def start_sled_internal_server(
     app.router.add_get("/internal/command-access", handle_command_access_get)
     app.router.add_put("/internal/command-access", handle_command_access_put)
     app.router.add_post("/internal/notify", handle_notify)
+    app.router.add_post("/internal/issuance-notify", handle_issuance_notify)
     app.router.add_post("/internal/form-decision", handle_form_decision)
 
     runner = web.AppRunner(app)
