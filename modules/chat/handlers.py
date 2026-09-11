@@ -26,7 +26,7 @@ from services import responses as resp
 from services.display_name import DisplayNameService
 from services.messaging import MessagingService
 from services.moderation import ModerationService
-from services.ca_access import handle_sled_ca_join, handle_sled_ca_leave
+from services.chat_kind import handle_peer_join, handle_peer_leave
 from services.chat_admin import ChatAdminService
 from services.leader_access import handle_leader_chat_join
 from services.random_reactions import maybe_add_reaction
@@ -268,9 +268,9 @@ def register_chat(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             role_notice = await handle_role_chat_leave(peer_id, user_id, api)
             if role_notice:
                 notices.append(role_notice)
-            sled_notice = await handle_sled_ca_leave(peer_id, user_id, api)
-            if sled_notice:
-                notices.append(sled_notice)
+            kind_notice = await handle_peer_leave(peer_id, user_id, api)
+            if kind_notice:
+                notices.append(kind_notice)
             if voluntary:
                 for rejoink_notice in await handle_voluntary_leave(
                     api, peer_id, user_id
@@ -340,20 +340,11 @@ def register_chat(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         asyncio.create_task(_apply_auto_mute_on_join(peer_id, member_id))
 
         try:
-            sled_notice = await handle_sled_ca_join(peer_id, member_id, api)
-            if sled_notice:
-                await _send_text(peer_id, sled_notice)
-        except Exception as exc:
-            logger.warning("sled_ca join failed peer=%s member=%s: %s", peer_id, member_id, exc)
-
-        try:
             await handle_leader_chat_join(peer_id, member_id, api)
         except Exception as exc:
             logger.warning("leader join failed peer=%s member=%s: %s", peer_id, member_id, exc)
 
         try:
-            from services.chat_kind import handle_peer_join
-
             extra = await handle_peer_join(peer_id, member_id, api)
             if extra:
                 await _send_text(peer_id, extra)

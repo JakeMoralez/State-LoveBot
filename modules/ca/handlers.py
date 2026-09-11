@@ -128,7 +128,7 @@ async def _send_panel_login(
         await message.answer(
             resp.denied("Вход на сайт недоступен.\n"
             f"Ваш уровень: {level_label}.\n"
-            "Нужен уровень ПГС или выше.")
+            "Нужен уровень ПС или выше.")
         )
         return
 
@@ -447,7 +447,7 @@ def register_ca(bot: Bot, api: API, action_logger: ActionLogger) -> None:
         await message.answer(
             "👋 Добро пожаловать в State Love Bot!\n\n"
             "Бот для следящих государственных структур штата Love.\n\n"
-            "• /panel — вход на портал (нужен уровень ПГС+)\n"
+            "• /panel — вход на портал (нужен уровень ПС+)\n"
             "• /help — список команд\n\n"
             "Если доступ должен быть — обратитесь к руководству вашей структуры."
         )
@@ -527,7 +527,7 @@ async def _handle_regrole(
         )
         await message.answer(
             resp.success("Беседа след. ЦА привязана.\n"
-            "При входе: ур. 1 (ПГС) + доступ ЦА.\n"
+            "При входе: ур. 1 (ПС) + доступ ЦА.\n"
             "При выходе/кике — снимается.")
         )
         await action_logger.log_user(

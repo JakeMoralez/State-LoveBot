@@ -25,7 +25,7 @@ class AccessLevel(IntEnum):
 
 # Должно совпадать с database.access_levels.SHORT_NAMES
 ACCESS_LEVEL_NAMES: dict[int, str] = {
-    1: "ПГС",
+    1: "ПС",
     2: "Следящий",
     3: "ЗГС",
     4: "ГС",

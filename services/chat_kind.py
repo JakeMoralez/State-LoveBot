@@ -15,10 +15,12 @@ from database.models.chat_kind import (
 )
 from database.models.chat_settings import ChatPeerSettings
 from database.models.role_chat import ForumRoleKey
+from database.models.user import AccessLevel
 from database.repository.chat_repo import ChatRepository
 from database.repository.chat_settings_repo import ChatSettingsRepository
 from database.repository.forum_role_repo import ForumRoleRepository
 from database.repository.user_repo import UserRepository
+from database.models.user import AccessLevel
 from database.spheres import CENTRAL_APPARATUS, SPHERE_LABELS, format_spheres_display
 from middlewares.access import AccessChecker
 from services.panel_client import sync_staff_sphere
@@ -279,21 +281,79 @@ async def apply_join_effects(
             access.is_judge = True
             await access.save()
         return None
-    if is_staff_ca(kind, sphere):
-        await UserRepository.ensure_user(vk_id=user_id)
-        changed, _detail = await UserRepository.grant_sled_ca_from_chat(
+
+    is_ca = is_staff_ca(kind, sphere)
+    if not (is_ca or (kind == ChatKind.STAFF and sphere in STAFF_ACCESS_SPHERE_KEYS)):
+        return None
+
+    from services.ca_access import (
+        format_staff_sphere_grant_message,
+        has_staff_registration_profile,
+    )
+    from services.display_name import DisplayNameService
+    from services.panel_client import sync_staff_spheres
+    from services.staff_nickname_sync import sync_staff_nickname_tag
+
+    if not await has_staff_registration_profile(user_id, server_id):
+        logger.info(
+            "staff join skip (not registered on panel) vk=%s peer=%s sphere=%s",
+            user_id,
+            peer_id,
+            sphere,
+        )
+        return None
+
+    await UserRepository.ensure_user(vk_id=user_id)
+    granted_level = False
+    granted_sphere = False
+    level_before = await UserRepository.get_access_level(user_id, server_id)
+
+    if is_ca:
+        changed, detail = await UserRepository.grant_sled_ca_from_chat(
             user_id, server_id, peer_id
         )
         if changed:
-            from services.panel_client import sync_staff_spheres
-
+            granted_level = "ур." in detail or "ПС" in detail or "ПГС" in detail
+            granted_sphere = "ЦА" in detail
             await sync_staff_spheres(
                 user_id, grant_central_apparatus=True, server_id=server_id
             )
-        return None
-    if kind == ChatKind.STAFF and sphere in STAFF_ACCESS_SPHERE_KEYS:
+    else:
+        assert sphere is not None
+        from services.panel_db import read_staff_spheres
+
+        before = set(await read_staff_spheres(user_id, server_id) or [])
         await sync_staff_sphere(user_id, sphere, grant=True, server_id=server_id)
-    return None
+        after = set(await read_staff_spheres(user_id, server_id) or [])
+        granted_sphere = sphere not in before and sphere in after
+        if not granted_sphere and sphere not in before:
+            # sync мог пройти, но read ещё старый — считаем выдачу успешной
+            granted_sphere = True
+
+    level = await UserRepository.get_access_level(user_id, server_id)
+    if level > level_before:
+        granted_level = True
+
+    nick = await sync_staff_nickname_tag(user_id, server_id, level)
+    if nick:
+        logger.info(
+            "staff join nick adapted vk=%s peer=%s nick=%s",
+            user_id,
+            peer_id,
+            nick,
+        )
+
+    if not granted_level and not granted_sphere:
+        return None
+
+    link = await DisplayNameService(api, server_id).link_user(user_id, server_id)
+    return format_staff_sphere_grant_message(
+        link,
+        level=level,
+        sphere=sphere,
+        granted_level=granted_level,
+        granted_sphere=granted_sphere,
+    )
 
 
 async def apply_leave_effects(
@@ -345,6 +405,16 @@ async def apply_leave_effects(
         return f"🔰 {link} — снят {detail} (выход из беседы следящих ЦА)."
     if kind == ChatKind.STAFF and sphere in STAFF_ACCESS_SPHERE_KEYS:
         await sync_staff_sphere(user_id, sphere, grant=False, server_id=server_id)
+        from services.ca_access import sphere_access_label
+        from services.display_name import DisplayNameService
+        from services.staff_nickname_sync import sync_staff_nickname_tag
+
+        level = await UserRepository.get_access_level(user_id, server_id)
+        if level >= AccessLevel.PGS:
+            await sync_staff_nickname_tag(user_id, server_id, level)
+        link = await DisplayNameService(api, server_id).link_user(user_id, server_id)
+        label = sphere_access_label(sphere)
+        return f"🔰 {link} — снят доступ к {label}."
     return None
 
 

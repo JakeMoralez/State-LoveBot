@@ -48,7 +48,7 @@ def requires_setnick(
         if level < AccessLevel.PGS and not await UserRepository.is_developer(user_id):
             await message.answer(
                 "⛔ Недостаточно прав.\n"
-                f"Нужен уровень: ПГС\n"
+                f"Нужен уровень: ПС\n"
                 f"Ваш уровень: {AccessChecker.level_name(level) if level else 'нет доступа'}"
             )
             return None
@@ -138,7 +138,7 @@ def requires_chat_kick(
 def requires_msg(
     func: Callable[P, Awaitable[R]],
 ) -> Callable[P, Awaitable[R | None]]:
-    """ПГС+ или спикер/вице — /msg только алиас конгресса (конфа или ЛС)."""
+    """ПС+ или спикер/вице — /msg только алиас конгресса (конфа или ЛС)."""
 
     @functools.wraps(func)
     async def wrapper(message: Message, *args: P.args, **kwargs: P.kwargs) -> R | None:

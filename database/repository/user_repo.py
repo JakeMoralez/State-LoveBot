@@ -305,7 +305,7 @@ class UserRepository:
 
     @staticmethod
     async def can_use_portal(vk_id: int, server_id: int) -> bool:
-        """Вход на портал State Love: уровень ПГС (1) и выше."""
+        """Вход на портал State Love: уровень ПС (1) и выше."""
         if await UserRepository.is_developer(vk_id):
             return True
         level = await UserRepository.get_access_level(vk_id, server_id)
@@ -317,7 +317,7 @@ class UserRepository:
         server_id: int,
         peer_id: int,
     ) -> tuple[bool, str]:
-        """Вход в беседу след. ЦА: ур. 1 + доступ ЦА."""
+        """Вход в беседу след. ЦА: ур. 1 + доступ ЦА (только если уже следящий)."""
         user = await User.get(vk_id=vk_id)
         server = await Server.get(id=server_id)
         access, _ = await UserServerAccess.get_or_create(
@@ -329,7 +329,7 @@ class UserRepository:
         if access.access_level < AccessLevel.PGS:
             access.access_level = AccessLevel.PGS
             access.ca_auto_peer_id = peer_id
-            changed.append("ур. 1 (ПГС)")
+            changed.append("ур. 1 (ПС)")
         if not access.has_ca_access:
             access.has_ca_access = True
             changed.append("доступ ЦА")

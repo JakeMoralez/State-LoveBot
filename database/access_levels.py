@@ -24,7 +24,7 @@ DEVELOPER = 11
 
 # Краткие названия (колонка / бейджи / AccessLevel.NAMES)
 SHORT_NAMES: dict[int, str] = {
-    1: "ПГС",
+    1: "ПС",
     2: "Следящий",
     3: "ЗГС",
     4: "ГС",
