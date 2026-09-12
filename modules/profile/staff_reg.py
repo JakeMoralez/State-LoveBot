@@ -263,14 +263,6 @@ def register_staff_reg(bot: Bot, api: API, action_logger: ActionLogger) -> None:
             await message.answer(f"❌ {exc}")
             return
 
-        old_level = await UserRepository.get_access_level(resolved.vk_id, server_id)
-        if old_level > 0:
-            await message.answer(
-                "❌ У пользователя уже есть доступ следящего.\n"
-                "Измените уровень через /setlevel или профиль на сайте."
-            )
-            return
-
         ok, result = await assign_staff_via_panel(
             actor_vk_id=message.from_id or 0,
             server_id=server_id,
