@@ -18,7 +18,7 @@ class CommandCatalogEntry:
 
 COMMAND_CATALOG: tuple[CommandCatalogEntry, ...] = (
     CommandCatalogEntry("help", "Справка", "Общее", 0),
-    CommandCatalogEntry("ping", "Пинг", "Общее", 0),
+    CommandCatalogEntry("ping", "Пинг / статус сервисов", "Общее", 0),
     CommandCatalogEntry("me", "Мой профиль", "Общее", 0),
     CommandCatalogEntry("info", "Профиль пользователя", "Общее", 0),
     CommandCatalogEntry("find", "Поиск", "Общее", 0),

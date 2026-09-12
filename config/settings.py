@@ -46,6 +46,13 @@ def _default_panel_database_url() -> str:
 
 PANEL_DATABASE_URL: str = os.getenv("PANEL_DATABASE_URL", "") or _default_panel_database_url()
 
+# Health-check панели для /ping (по умолчанию PANEL_INTERNAL_URL/api/health)
+PANEL_INTERNAL_URL: str = (os.getenv("PANEL_INTERNAL_URL") or "http://127.0.0.1:8000").rstrip("/")
+_panel_health_override = (os.getenv("PANEL_HEALTH_URL") or "").strip()
+PANEL_HEALTH_URL: str = _panel_health_override or (
+    f"{PANEL_INTERNAL_URL}/api/health" if PANEL_INTERNAL_URL else ""
+)
+
 # Форум (cookies из браузера)
 FORUM_BASE_URL: str = os.getenv("FORUM_BASE_URL", "https://forum.arizona-rp.com")
 FORUM_USER_AGENT: str = os.getenv("FORUM_USER_AGENT", "")

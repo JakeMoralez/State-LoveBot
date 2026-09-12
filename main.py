@@ -25,7 +25,7 @@ from database import close_db, init_db
 from middlewares.access import AccessChecker, requires_developer, requires_level
 from middlewares.action_logger import ActionLogger
 from modules import register_all_modules
-from services.chat_admin import ChatAdminService
+from services.bot_ping import build_ping_report
 from services.command_utils import matches_cmd
 from services.court_claim_watch import CourtClaimWatcher
 from services.leader_complaint_watch import LeaderComplaintWatcher
@@ -151,12 +151,8 @@ def create_bot(token: str, group_id: int) -> tuple[Bot, API, ActionLogger]:
         server_id: int = 0,
         access_level: int = 0,
     ) -> None:
-        if _bot_started_at is None:
-            await message.answer("🏓 pong")
-            return
-        elapsed = int(time.monotonic() - _bot_started_at)
-        uptime = ChatAdminService.format_duration(elapsed)
-        await message.answer(f"🏓 pong\n⏱ Время работы: {uptime}")
+        report = await build_ping_report(api, started_at=_bot_started_at)
+        await message.answer(report)
 
     @bot.on.message(
         FuncRule(
