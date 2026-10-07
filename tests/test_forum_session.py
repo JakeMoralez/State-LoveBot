@@ -94,7 +94,7 @@ class ForumSessionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(store.load_persisted_cookies()["xf_session"], "rotated-session")
 
     async def test_configured_proxy_is_passed_to_forum_library(self):
-        report = await self.service.apply_proxy("http://proxy.example:8080")
+        report = await self.service.apply_cookies(NEW, "new-agent", proxy="http://proxy.example:8080")
         self.assertTrue(report.ok)
         self.assertEqual(self.service.api.proxy, "http://proxy.example:8080")
         self.assertEqual(store.load_persisted_proxy(), "http://proxy.example:8080")
@@ -102,7 +102,7 @@ class ForumSessionTests(unittest.IsolatedAsyncioTestCase):
     async def test_clear_proxy_overrides_environment_fallback(self):
         store.save_persisted_cookies(OLD, user_agent="old-agent", proxy="http://old.example:80", persist_proxy=True)
         with patch.object(forum, "FORUM_PROXY", "http://env.example:8080"):
-            report = await self.service.apply_proxy(clear_proxy=True)
+            report = await self.service.apply_cookies(NEW, "new-agent", clear_proxy=True)
             self.assertTrue(report.ok)
             self.assertIsNone(self.service.api.proxy)
             restarted = forum.ForumService()
@@ -114,7 +114,7 @@ class ForumSessionTests(unittest.IsolatedAsyncioTestCase):
     async def test_failed_proxy_probe_keeps_previous_session_and_setting(self):
         store.save_persisted_cookies(OLD, user_agent="old-agent", proxy="http://old.example:80", persist_proxy=True)
         FakeAPI.failure = TimeoutError("proxy failure")
-        report = await self.service.apply_proxy("http://new.example:80")
+        report = await self.service.apply_cookies(NEW, "new-agent", proxy="http://new.example:80")
         self.assertFalse(report.ok)
         self.assertFalse(report.applied)
         self.assertIs(self.service.api, self.previous)
@@ -142,16 +142,16 @@ class ForumSessionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(restarted.api.cookies, saved)
         await restarted.close()
 
-    async def test_internal_proxy_response_does_not_echo_proxy_address(self):
+    async def test_internal_cookie_update_does_not_echo_proxy_address(self):
         from services import sled_internal_api
 
         proxy = "http://user:secret@proxy.example:8080"
         request = SimpleNamespace(
             app={"forum_service": self.service},
-            json=AsyncMock(return_value={"proxy": proxy}),
+            json=AsyncMock(return_value={**NEW, "proxy": proxy}),
         )
         with patch.object(sled_internal_api, "_check_secret", return_value=True):
-            response = await sled_internal_api.handle_forum_proxy(request)
+            response = await sled_internal_api.handle_forum_cookies(request)
         response_text = response.body.decode("utf-8")
         self.assertEqual(response.status, 200)
         self.assertNotIn(proxy, response_text)

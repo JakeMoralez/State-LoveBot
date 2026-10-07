@@ -470,40 +470,6 @@ async def handle_forum_cookies(request: web.Request) -> web.Response:
         user_agent = user_agent.strip()
         if len(user_agent) > 1024 or "\r" in user_agent or "\n" in user_agent:
             return web.json_response({"error": "invalid user_agent"}, status=400)
-    if not cookies.get("xf_user") or not cookies.get("xf_session"):
-        return web.json_response({"error": "Нужны xf_user и xf_session"}, status=400)
-    try:
-        report = await forum.apply_cookies(cookies, user_agent=user_agent)
-    except Exception as exc:
-        return web.json_response({"error": str(exc)}, status=500)
-    cookies_meta = forum.cookies_status() if hasattr(forum, "cookies_status") else {}
-    return web.json_response(
-        {
-            "ok": report.ok,
-            "configured": report.configured,
-            "connected": report.connected,
-            "logged_in": report.logged_in,
-            "username": report.username,
-            "error": report.error,
-            "error_kind": report.error_kind,
-            "applied": report.applied,
-            "cookies": cookies_meta,
-        }
-    )
-
-
-async def handle_forum_proxy(request: web.Request) -> web.Response:
-    if not _check_secret(request):
-        return web.json_response({"error": "unauthorized"}, status=401)
-    forum = request.app.get("forum_service")
-    if forum is None:
-        return web.json_response({"error": "forum service unavailable"}, status=503)
-    try:
-        data = await request.json()
-    except Exception:
-        return web.json_response({"error": "invalid json"}, status=400)
-    if not isinstance(data, dict):
-        return web.json_response({"error": "invalid json"}, status=400)
     proxy = data.get("proxy")
     if proxy is not None and not isinstance(proxy, str):
         return web.json_response({"error": "invalid proxy"}, status=400)
@@ -518,11 +484,18 @@ async def handle_forum_proxy(request: web.Request) -> web.Response:
         return web.json_response({"error": "invalid clear_proxy"}, status=400)
     if proxy and clear_proxy:
         return web.json_response({"error": "proxy and clear_proxy are mutually exclusive"}, status=400)
+    if not cookies.get("xf_user") or not cookies.get("xf_session"):
+        return web.json_response({"error": "Нужны xf_user и xf_session"}, status=400)
     try:
-        report = await forum.apply_proxy(proxy, clear_proxy=clear_proxy)
+        report = await forum.apply_cookies(
+            cookies,
+            user_agent=user_agent,
+            proxy=proxy,
+            clear_proxy=clear_proxy,
+        )
     except Exception:
-        logger.warning("Forum proxy update failed")
-        return web.json_response({"error": "Не удалось применить настройки прокси."}, status=500)
+        logger.warning("Forum cookie update failed")
+        return web.json_response({"error": "Не удалось применить настройки форума."}, status=500)
     cookies_meta = forum.cookies_status() if hasattr(forum, "cookies_status") else {}
     return web.json_response(
         {
@@ -626,7 +599,6 @@ async def start_sled_internal_server(
     app.router.add_get("/internal/forum/status", handle_forum_status)
     app.router.add_post("/internal/forum/reconnect", handle_forum_reconnect)
     app.router.add_post("/internal/forum/cookies", handle_forum_cookies)
-    app.router.add_post("/internal/forum/proxy", handle_forum_proxy)
     app.router.add_post("/internal/forum/sync-judges", handle_forum_sync_judges)
     app.router.add_get("/internal/command-access", handle_command_access_get)
     app.router.add_put("/internal/command-access", handle_command_access_put)

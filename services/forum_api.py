@@ -258,6 +258,8 @@ class ForumService:
         self,
         cookies: dict[str, str],
         user_agent: str | None = None,
+        proxy: str | None = None,
+        clear_proxy: bool = False,
     ) -> ForumHealthReport:
         """Проверить отдельную сессию и заменить текущую только после сохранения."""
         async with self._session_lock:
@@ -272,50 +274,26 @@ class ForumService:
                 return ForumHealthReport(True, False, False,
                     error="Некорректный User-Agent. Новые cookies не применены.",
                     error_kind="validation", applied=False)
+            if proxy is not None and (len(proxy) > 2048 or "\r" in proxy or "\n" in proxy):
+                return ForumHealthReport(True, False, False,
+                    error="Некорректный адрес прокси. Новые cookies не применены.",
+                    error_kind="validation", applied=False)
+            if proxy and clear_proxy:
+                return ForumHealthReport(True, False, False,
+                    error="Нельзя одновременно задать и отключить прокси.",
+                    error_kind="validation", applied=False)
             selected_agent = self._user_agent() if user_agent is None else user_agent.strip() or FORUM_USER_AGENT or None
+            selected_proxy = proxy.strip() if proxy else (None if clear_proxy else self._proxy())
             report = await self._replace_connection(
                 cleaned,
                 selected_agent,
                 replacement=True,
-                proxy=self._proxy(),
+                proxy=selected_proxy,
+                persist_proxy=bool(proxy) or clear_proxy,
             )
             if not report.ok:
                 report.applied = False
                 report.error = f"{report.error} Новые cookies не применены; предыдущая конфигурация сохранена."
-            return report
-
-    async def apply_proxy(self, proxy: str | None = None, *, clear_proxy: bool = False) -> ForumHealthReport:
-        """Validate and switch the proxy using the currently saved forum cookies."""
-        if proxy is not None and (len(proxy) > 2048 or "\r" in proxy or "\n" in proxy):
-            return ForumHealthReport(True, False, False,
-                error="Некорректный адрес прокси. Настройка не применена.",
-                error_kind="validation", applied=False)
-        if proxy and clear_proxy:
-            return ForumHealthReport(True, False, False,
-                error="Нельзя одновременно задать и отключить прокси.",
-                error_kind="validation", applied=False)
-        if not proxy and not clear_proxy:
-            return ForumHealthReport(True, False, False,
-                error="Укажите адрес прокси или выберите его отключение.",
-                error_kind="validation", applied=False)
-
-        async with self._session_lock:
-            cookies = self._cookie_dict()
-            if not cookies.get("xf_user") or not cookies.get("xf_session"):
-                return ForumHealthReport(False, False, False,
-                    error="Сначала задайте xf_user и xf_session.",
-                    error_kind="validation", applied=False)
-            selected_proxy = proxy.strip() if proxy else None
-            report = await self._replace_connection(
-                cookies,
-                self._user_agent(),
-                replacement=True,
-                proxy=selected_proxy,
-                persist_proxy=True,
-            )
-            if not report.ok:
-                report.applied = False
-                report.error = f"{report.error} Настройка прокси не применена; предыдущая сессия сохранена."
             return report
 
     def cookies_status(self) -> dict[str, bool]:
