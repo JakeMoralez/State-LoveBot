@@ -1,4 +1,4 @@
-"""Локальное хранение cookies форума (xf_*), чтобы переживать ротацию сессии."""
+"""Локальное хранение cookies форума и проверки браузера."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from config.settings import BASE_DIR
 
 logger = logging.getLogger(__name__)
 
-_COOKIE_KEYS = ("xf_user", "xf_session", "xf_tfa_trust")
+FORUM_COOKIE_KEYS = ("xf_user", "xf_session", "xf_tfa_trust", "xf_csrf", "__Host-l7_clearance")
 _STORE_PATH = BASE_DIR / "forum_cookies.json"
 
 
@@ -32,7 +32,7 @@ def load_persisted_cookies() -> dict[str, str]:
     raw = _load_store()
     return {
         key: str(raw[key])
-        for key in _COOKIE_KEYS
+        for key in FORUM_COOKIE_KEYS
         if raw.get(key)
     }
 
@@ -51,7 +51,7 @@ def save_persisted_cookies(
 ) -> None:
     payload = {
         key: cookies[key]
-        for key in _COOKIE_KEYS
+        for key in FORUM_COOKIE_KEYS
         if cookies.get(key)
     }
     if not payload.get("xf_user") or not payload.get("xf_session"):
@@ -89,7 +89,7 @@ def clear_persisted_cookies() -> None:
 def merge_cookie_sources(*sources: dict[str, str]) -> dict[str, str]:
     merged: dict[str, str] = {}
     for source in sources:
-        for key in _COOKIE_KEYS:
+        for key in FORUM_COOKIE_KEYS:
             value = source.get(key)
             if value:
                 merged[key] = str(value).strip().strip('"').strip("'")

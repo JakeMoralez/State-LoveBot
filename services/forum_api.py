@@ -14,6 +14,7 @@ from config import FORUM_USER_AGENT
 from config.settings import BASE_DIR
 from database.repository.server_repo import ServerRepository
 from services.forum_cookies_store import (
+    FORUM_COOKIE_KEYS,
     load_persisted_cookies,
     load_persisted_user_agent,
     merge_cookie_sources,
@@ -139,7 +140,7 @@ class ForumService:
         jar = session.cookie_jar.filter_cookies(URL("https://forum.arizona-rp.com/"))
         return {
             key: jar[key].value
-            for key in ("xf_user", "xf_session", "xf_tfa_trust")
+            for key in FORUM_COOKIE_KEYS
             if key in jar and jar[key].value
         }
 

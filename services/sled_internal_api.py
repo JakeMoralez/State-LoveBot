@@ -14,6 +14,7 @@ from database.models.user import AccessLevel, User, UserServerAccess
 from database.repository.user_repo import UserRepository
 from middlewares.access import AccessChecker
 from services.court_form_notify import CourtFormNotifier
+from services.forum_cookies_store import FORUM_COOKIE_KEYS
 from services.request_id import REQUEST_ID_HEADER, get_or_create_request_id, set_request_id
 
 logger = logging.getLogger(__name__)
@@ -459,7 +460,7 @@ async def handle_forum_cookies(request: web.Request) -> web.Response:
         return web.json_response({"error": "invalid json"}, status=400)
     cookies = {
         key: str(data[key]).strip()
-        for key in ("xf_user", "xf_session", "xf_tfa_trust")
+        for key in FORUM_COOKIE_KEYS
         if data.get(key)
     }
     user_agent = data.get("user_agent")

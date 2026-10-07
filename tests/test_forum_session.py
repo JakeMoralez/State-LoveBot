@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import aiohttp
 from aiohttp import ClientResponseError, CookieJar, web
@@ -91,6 +91,43 @@ class ForumSessionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.service.api.cookies, {**NEW, "xf_session": "rotated-session"})
         await self.service.close()
         self.assertEqual(store.load_persisted_cookies()["xf_session"], "rotated-session")
+
+    async def test_internal_api_preserves_browser_clearance_and_csrf(self):
+        from services import sled_internal_api
+
+        cookies = {**NEW, "xf_csrf": "test-csrf", "__Host-l7_clearance": "test-clearance"}
+        request = SimpleNamespace(
+            app={"forum_service": self.service},
+            json=AsyncMock(return_value={**cookies, "user_agent": "test-agent", "unrelated_cookie": "ignored"}),
+        )
+        with patch.object(sled_internal_api, "_check_secret", return_value=True):
+            response = await sled_internal_api.handle_forum_cookies(request)
+        self.assertEqual(response.status, 200)
+        self.assertTrue(json.loads(response.body)["applied"])
+        self.assertEqual(self.service.api.cookies, cookies)
+        saved = {**cookies, "xf_session": "rotated-session"}
+        self.assertEqual(store.load_persisted_cookies(), saved)
+        restarted = forum.ForumService()
+        self.assertTrue((await restarted.reconnect()).ok)
+        self.assertEqual(restarted.api.cookies, saved)
+        await restarted.close()
+
+    async def test_generated_clearance_and_rotated_csrf_are_persisted(self):
+        class ClearanceAPI(FakeAPI):
+            async def connect(self):
+                await super().connect()
+                self._session.cookie_jar.update_cookies(
+                    {"__Host-l7_clearance": "generated-clearance", "xf_csrf": "rotated-csrf"},
+                    response_url=URL("https://forum.arizona-rp.com/"),
+                )
+
+        with patch.object(forum, "ArizonaAPI", ClearanceAPI):
+            report = await self.service.apply_cookies(NEW, "new-agent")
+        self.assertTrue(report.ok)
+        self.assertEqual(store.load_persisted_cookies()["__Host-l7_clearance"], "generated-clearance")
+        self.assertEqual(store.load_persisted_cookies()["xf_csrf"], "rotated-csrf")
+        self.assertTrue((await self.service.check_health()).ok)
+        self.assertEqual(store.load_persisted_cookies()["__Host-l7_clearance"], "generated-clearance")
 
     async def test_wrapped_401_preserves_previous_configuration(self):
         cause = ClientResponseError(None, (), status=401, message="sensitive-value")
