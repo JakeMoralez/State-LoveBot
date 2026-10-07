@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from config import FORUM_USER_AGENT
+from config import FORUM_PROXY, FORUM_USER_AGENT
 from config.settings import BASE_DIR
 from database.repository.server_repo import ServerRepository
 from services.forum_cookies_store import (
@@ -184,7 +184,7 @@ class ForumService:
         candidate = None
         accepted = False
         try:
-            candidate = ArizonaAPI(user_agent, cookies)
+            candidate = ArizonaAPI(user_agent, cookies, proxy=FORUM_PROXY or None)
             await candidate.connect()
             member = await candidate.get_current_member()
             if member is None:

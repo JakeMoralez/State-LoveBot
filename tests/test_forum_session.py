@@ -29,9 +29,10 @@ class FakeAPI:
     started = None
     proceed = None
 
-    def __init__(self, agent, cookies):
+    def __init__(self, agent, cookies, proxy=None):
         self.agent = agent
         self.cookies = dict(cookies)
+        self.proxy = proxy
         self.closed = False
         jar = CookieJar()
         jar.update_cookies(cookies, response_url=URL("https://forum.arizona-rp.com/"))
@@ -91,6 +92,12 @@ class ForumSessionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.service.api.cookies, {**NEW, "xf_session": "rotated-session"})
         await self.service.close()
         self.assertEqual(store.load_persisted_cookies()["xf_session"], "rotated-session")
+
+    async def test_configured_proxy_is_passed_to_forum_library(self):
+        with patch.object(forum, "FORUM_PROXY", "http://proxy.example:8080"):
+            report = await self.service.apply_cookies(NEW, "new-agent")
+        self.assertTrue(report.ok)
+        self.assertEqual(self.service.api.proxy, "http://proxy.example:8080")
 
     async def test_internal_api_preserves_browser_clearance_and_csrf(self):
         from services import sled_internal_api

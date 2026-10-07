@@ -56,6 +56,7 @@ PANEL_HEALTH_URL: str = _panel_health_override or (
 # Форум (cookies из браузера)
 FORUM_BASE_URL: str = os.getenv("FORUM_BASE_URL", "https://forum.arizona-rp.com")
 FORUM_USER_AGENT: str = os.getenv("FORUM_USER_AGENT", "")
+FORUM_PROXY: str = os.getenv("FORUM_PROXY", "").strip()
 FORUM_COOKIES: dict[str, str | None] = {
     "xf_user": os.getenv("FORUM_XF_USER"),
     "xf_session": os.getenv("FORUM_XF_SESSION"),
