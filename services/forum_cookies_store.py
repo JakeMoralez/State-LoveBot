@@ -44,10 +44,21 @@ def load_persisted_user_agent() -> str | None:
     return user_agent.strip() or None
 
 
+def load_persisted_proxy() -> str | None:
+    """Return None when unset, an empty string when explicitly disabled."""
+    raw = _load_store()
+    if "proxy" not in raw:
+        return None
+    proxy = raw.get("proxy")
+    return str(proxy).strip() if proxy else ""
+
+
 def save_persisted_cookies(
     cookies: dict[str, str],
     *,
     user_agent: str | None = None,
+    proxy: str | None = None,
+    persist_proxy: bool = False,
 ) -> None:
     payload = {
         key: cookies[key]
@@ -56,12 +67,19 @@ def save_persisted_cookies(
     }
     if not payload.get("xf_user") or not payload.get("xf_session"):
         raise ValueError("Нужны xf_user и xf_session")
+    existing_store = _load_store()
     existing_user_agent = load_persisted_user_agent()
     selected_user_agent = (
         existing_user_agent if user_agent is None else user_agent.strip() or None
     )
     if selected_user_agent:
         payload["user_agent"] = selected_user_agent
+    if persist_proxy:
+        # Empty string is a persisted instruction to disable the environment fallback.
+        payload["proxy"] = proxy.strip() if proxy else ""
+    elif "proxy" in existing_store:
+        value = existing_store.get("proxy")
+        payload["proxy"] = str(value).strip() if value else ""
     temporary_path: str | None = None
     try:
         with tempfile.NamedTemporaryFile(

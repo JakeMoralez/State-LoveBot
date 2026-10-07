@@ -492,6 +492,53 @@ async def handle_forum_cookies(request: web.Request) -> web.Response:
     )
 
 
+async def handle_forum_proxy(request: web.Request) -> web.Response:
+    if not _check_secret(request):
+        return web.json_response({"error": "unauthorized"}, status=401)
+    forum = request.app.get("forum_service")
+    if forum is None:
+        return web.json_response({"error": "forum service unavailable"}, status=503)
+    try:
+        data = await request.json()
+    except Exception:
+        return web.json_response({"error": "invalid json"}, status=400)
+    if not isinstance(data, dict):
+        return web.json_response({"error": "invalid json"}, status=400)
+    proxy = data.get("proxy")
+    if proxy is not None and not isinstance(proxy, str):
+        return web.json_response({"error": "invalid proxy"}, status=400)
+    if proxy is not None:
+        proxy = proxy.strip()
+        if len(proxy) > 2048 or "\r" in proxy or "\n" in proxy:
+            return web.json_response({"error": "invalid proxy"}, status=400)
+        if not proxy:
+            proxy = None
+    clear_proxy = data.get("clear_proxy", False)
+    if not isinstance(clear_proxy, bool):
+        return web.json_response({"error": "invalid clear_proxy"}, status=400)
+    if proxy and clear_proxy:
+        return web.json_response({"error": "proxy and clear_proxy are mutually exclusive"}, status=400)
+    try:
+        report = await forum.apply_proxy(proxy, clear_proxy=clear_proxy)
+    except Exception:
+        logger.warning("Forum proxy update failed")
+        return web.json_response({"error": "Не удалось применить настройки прокси."}, status=500)
+    cookies_meta = forum.cookies_status() if hasattr(forum, "cookies_status") else {}
+    return web.json_response(
+        {
+            "ok": report.ok,
+            "configured": report.configured,
+            "connected": report.connected,
+            "logged_in": report.logged_in,
+            "username": report.username,
+            "error": report.error,
+            "error_kind": report.error_kind,
+            "applied": report.applied,
+            "cookies": cookies_meta,
+        }
+    )
+
+
 async def handle_forum_sync_judges(request: web.Request) -> web.Response:
     if not _check_secret(request):
         return web.json_response({"error": "unauthorized"}, status=401)
@@ -579,6 +626,7 @@ async def start_sled_internal_server(
     app.router.add_get("/internal/forum/status", handle_forum_status)
     app.router.add_post("/internal/forum/reconnect", handle_forum_reconnect)
     app.router.add_post("/internal/forum/cookies", handle_forum_cookies)
+    app.router.add_post("/internal/forum/proxy", handle_forum_proxy)
     app.router.add_post("/internal/forum/sync-judges", handle_forum_sync_judges)
     app.router.add_get("/internal/command-access", handle_command_access_get)
     app.router.add_put("/internal/command-access", handle_command_access_put)

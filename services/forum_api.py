@@ -16,6 +16,7 @@ from database.repository.server_repo import ServerRepository
 from services.forum_cookies_store import (
     FORUM_COOKIE_KEYS,
     load_persisted_cookies,
+    load_persisted_proxy,
     load_persisted_user_agent,
     merge_cookie_sources,
     save_persisted_cookies,
@@ -130,6 +131,13 @@ class ForumService:
         return load_persisted_user_agent() or FORUM_USER_AGENT or None
 
     @staticmethod
+    def _proxy() -> str | None:
+        persisted = load_persisted_proxy()
+        if persisted is not None:
+            return persisted or None
+        return FORUM_PROXY or None
+
+    @staticmethod
     def _session_cookies(api: Any, initial: dict[str, str]) -> dict[str, str]:
         session = getattr(api, "_session", None)
         if session is None or session.closed:
@@ -176,7 +184,13 @@ class ForumService:
             logger.warning("Не удалось закрыть HTTP-сессию форума")
 
     async def _replace_connection(
-        self, cookies: dict[str, str], user_agent: str | None, *, replacement: bool = False,
+        self,
+        cookies: dict[str, str],
+        user_agent: str | None,
+        *,
+        replacement: bool = False,
+        proxy: str | None = None,
+        persist_proxy: bool = False,
     ) -> ForumHealthReport:
         if not _HAS_ARIZONA or ArizonaAPI is None:
             return ForumHealthReport(True, False, False,
@@ -184,7 +198,7 @@ class ForumService:
         candidate = None
         accepted = False
         try:
-            candidate = ArizonaAPI(user_agent, cookies, proxy=FORUM_PROXY or None)
+            candidate = ArizonaAPI(user_agent, cookies, proxy=proxy)
             await candidate.connect()
             member = await candidate.get_current_member()
             if member is None:
@@ -195,7 +209,12 @@ class ForumService:
                 return ForumHealthReport(True, True, False,
                     error="После подключения отсутствуют cookies авторизации форума.", error_kind="authentication")
             try:
-                save_persisted_cookies(rotated, user_agent=user_agent or "")
+                save_persisted_cookies(
+                    rotated,
+                    user_agent=user_agent or "",
+                    proxy=proxy,
+                    persist_proxy=persist_proxy,
+                )
             except OSError:
                 return ForumHealthReport(True, True, True,
                     error="Не удалось сохранить cookies в файл на сервере бота.", error_kind="storage")
@@ -236,7 +255,9 @@ class ForumService:
             raise RuntimeError(report.error or "Форум недоступен")
 
     async def apply_cookies(
-        self, cookies: dict[str, str], user_agent: str | None = None,
+        self,
+        cookies: dict[str, str],
+        user_agent: str | None = None,
     ) -> ForumHealthReport:
         """Проверить отдельную сессию и заменить текущую только после сохранения."""
         async with self._session_lock:
@@ -252,10 +273,49 @@ class ForumService:
                     error="Некорректный User-Agent. Новые cookies не применены.",
                     error_kind="validation", applied=False)
             selected_agent = self._user_agent() if user_agent is None else user_agent.strip() or FORUM_USER_AGENT or None
-            report = await self._replace_connection(cleaned, selected_agent, replacement=True)
+            report = await self._replace_connection(
+                cleaned,
+                selected_agent,
+                replacement=True,
+                proxy=self._proxy(),
+            )
             if not report.ok:
                 report.applied = False
                 report.error = f"{report.error} Новые cookies не применены; предыдущая конфигурация сохранена."
+            return report
+
+    async def apply_proxy(self, proxy: str | None = None, *, clear_proxy: bool = False) -> ForumHealthReport:
+        """Validate and switch the proxy using the currently saved forum cookies."""
+        if proxy is not None and (len(proxy) > 2048 or "\r" in proxy or "\n" in proxy):
+            return ForumHealthReport(True, False, False,
+                error="Некорректный адрес прокси. Настройка не применена.",
+                error_kind="validation", applied=False)
+        if proxy and clear_proxy:
+            return ForumHealthReport(True, False, False,
+                error="Нельзя одновременно задать и отключить прокси.",
+                error_kind="validation", applied=False)
+        if not proxy and not clear_proxy:
+            return ForumHealthReport(True, False, False,
+                error="Укажите адрес прокси или выберите его отключение.",
+                error_kind="validation", applied=False)
+
+        async with self._session_lock:
+            cookies = self._cookie_dict()
+            if not cookies.get("xf_user") or not cookies.get("xf_session"):
+                return ForumHealthReport(False, False, False,
+                    error="Сначала задайте xf_user и xf_session.",
+                    error_kind="validation", applied=False)
+            selected_proxy = proxy.strip() if proxy else None
+            report = await self._replace_connection(
+                cookies,
+                self._user_agent(),
+                replacement=True,
+                proxy=selected_proxy,
+                persist_proxy=True,
+            )
+            if not report.ok:
+                report.applied = False
+                report.error = f"{report.error} Настройка прокси не применена; предыдущая сессия сохранена."
             return report
 
     def cookies_status(self) -> dict[str, bool]:
@@ -267,6 +327,7 @@ class ForumService:
             "env_xf_tfa_trust": bool(env.get("xf_tfa_trust")),
             "file_present": bool(file_cookies.get("xf_user") and file_cookies.get("xf_session")),
             "panel_user_agent": bool(load_persisted_user_agent()),
+            "proxy_configured": bool(self._proxy()),
         }
 
     async def reconnect(self) -> ForumHealthReport:
@@ -276,7 +337,7 @@ class ForumService:
             if not cookies.get("xf_user") or not cookies.get("xf_session"):
                 return ForumHealthReport(False, False, False,
                     error="Задайте xf_user и xf_session в панели или .env", error_kind="validation")
-            return await self._replace_connection(cookies, self._user_agent())
+            return await self._replace_connection(cookies, self._user_agent(), proxy=self._proxy())
 
     async def check_health(self) -> ForumHealthReport:
         async with self._session_lock:

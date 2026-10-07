@@ -94,10 +94,33 @@ class ForumSessionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(store.load_persisted_cookies()["xf_session"], "rotated-session")
 
     async def test_configured_proxy_is_passed_to_forum_library(self):
-        with patch.object(forum, "FORUM_PROXY", "http://proxy.example:8080"):
-            report = await self.service.apply_cookies(NEW, "new-agent")
+        report = await self.service.apply_proxy("http://proxy.example:8080")
         self.assertTrue(report.ok)
         self.assertEqual(self.service.api.proxy, "http://proxy.example:8080")
+        self.assertEqual(store.load_persisted_proxy(), "http://proxy.example:8080")
+
+    async def test_clear_proxy_overrides_environment_fallback(self):
+        store.save_persisted_cookies(OLD, user_agent="old-agent", proxy="http://old.example:80", persist_proxy=True)
+        with patch.object(forum, "FORUM_PROXY", "http://env.example:8080"):
+            report = await self.service.apply_proxy(clear_proxy=True)
+            self.assertTrue(report.ok)
+            self.assertIsNone(self.service.api.proxy)
+            restarted = forum.ForumService()
+            self.assertTrue((await restarted.reconnect()).ok)
+            self.assertIsNone(restarted.api.proxy)
+            await restarted.close()
+        self.assertEqual(store.load_persisted_proxy(), "")
+
+    async def test_failed_proxy_probe_keeps_previous_session_and_setting(self):
+        store.save_persisted_cookies(OLD, user_agent="old-agent", proxy="http://old.example:80", persist_proxy=True)
+        FakeAPI.failure = TimeoutError("proxy failure")
+        report = await self.service.apply_proxy("http://new.example:80")
+        self.assertFalse(report.ok)
+        self.assertFalse(report.applied)
+        self.assertIs(self.service.api, self.previous)
+        self.assertFalse(self.previous.closed)
+        self.assertEqual(store.load_persisted_proxy(), "http://old.example:80")
+        self.assertTrue(FakeAPI.instances[-1].closed)
 
     async def test_internal_api_preserves_browser_clearance_and_csrf(self):
         from services import sled_internal_api
@@ -118,6 +141,21 @@ class ForumSessionTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue((await restarted.reconnect()).ok)
         self.assertEqual(restarted.api.cookies, saved)
         await restarted.close()
+
+    async def test_internal_proxy_response_does_not_echo_proxy_address(self):
+        from services import sled_internal_api
+
+        proxy = "http://user:secret@proxy.example:8080"
+        request = SimpleNamespace(
+            app={"forum_service": self.service},
+            json=AsyncMock(return_value={"proxy": proxy}),
+        )
+        with patch.object(sled_internal_api, "_check_secret", return_value=True):
+            response = await sled_internal_api.handle_forum_proxy(request)
+        response_text = response.body.decode("utf-8")
+        self.assertEqual(response.status, 200)
+        self.assertNotIn(proxy, response_text)
+        self.assertTrue(json.loads(response.body)["cookies"]["proxy_configured"])
 
     async def test_generated_clearance_and_rotated_csrf_are_persisted(self):
         class ClearanceAPI(FakeAPI):
