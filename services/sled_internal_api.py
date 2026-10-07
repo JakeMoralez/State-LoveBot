@@ -458,10 +458,17 @@ async def handle_forum_cookies(request: web.Request) -> web.Response:
         for key in ("xf_user", "xf_session", "xf_tfa_trust")
         if data.get(key)
     }
+    user_agent = data.get("user_agent")
+    if user_agent is not None and not isinstance(user_agent, str):
+        return web.json_response({"error": "invalid user_agent"}, status=400)
+    if user_agent is not None:
+        user_agent = user_agent.strip()
+        if len(user_agent) > 1024 or "\r" in user_agent or "\n" in user_agent:
+            return web.json_response({"error": "invalid user_agent"}, status=400)
     if not cookies.get("xf_user") or not cookies.get("xf_session"):
         return web.json_response({"error": "Нужны xf_user и xf_session"}, status=400)
     try:
-        report = await forum.apply_cookies(cookies)
+        report = await forum.apply_cookies(cookies, user_agent=user_agent)
     except Exception as exc:
         return web.json_response({"error": str(exc)}, status=500)
     cookies_meta = forum.cookies_status() if hasattr(forum, "cookies_status") else {}

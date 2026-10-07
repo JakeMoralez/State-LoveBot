@@ -15,6 +15,7 @@ from config.settings import BASE_DIR
 from database.repository.server_repo import ServerRepository
 from services.forum_cookies_store import (
     load_persisted_cookies,
+    load_persisted_user_agent,
     merge_cookie_sources,
     save_persisted_cookies,
 )
@@ -120,6 +121,10 @@ class ForumService:
             load_persisted_cookies(),
         )
 
+    @staticmethod
+    def _user_agent() -> str | None:
+        return load_persisted_user_agent() or FORUM_USER_AGENT or None
+
     async def _persist_session_cookies(self) -> None:
         if not self._api or not getattr(self._api, "_session", None):
             return
@@ -167,14 +172,18 @@ class ForumService:
             )
 
         cookies = self._cookie_dict()
-        self._api = ArizonaAPI(FORUM_USER_AGENT or None, cookies)
+        self._api = ArizonaAPI(self._user_agent(), cookies)
         await self._api.connect()
         await self._persist_session_cookies()
         self._backend = "arizona"
         logger.info("✅ Подключение к форуму установлено (arizona_forum_async)")
 
-    async def apply_cookies(self, cookies: dict[str, str]) -> ForumHealthReport:
-        """Сохранить cookies (из панели) и переподключиться."""
+    async def apply_cookies(
+        self,
+        cookies: dict[str, str],
+        user_agent: str | None = None,
+    ) -> ForumHealthReport:
+        """Сохранить cookies и User-Agent из панели, затем переподключиться."""
         await self.close()
         merged = merge_cookie_sources(self._read_cookies_from_env(), cookies)
         if not merged.get("xf_user") or not merged.get("xf_session"):
@@ -184,7 +193,16 @@ class ForumService:
                 logged_in=False,
                 error="Нужны xf_user и xf_session",
             )
-        save_persisted_cookies(merged)
+        if user_agent is not None and (
+            len(user_agent) > 1024 or "\r" in user_agent or "\n" in user_agent
+        ):
+            return ForumHealthReport(
+                configured=True,
+                connected=False,
+                logged_in=False,
+                error="Некорректный User-Agent браузера",
+            )
+        save_persisted_cookies(merged, user_agent=user_agent)
         self._cookies_ok = True
         self._available = True
         if not _HAS_ARIZONA or ArizonaAPI is None:
@@ -195,7 +213,7 @@ class ForumService:
                 error=_ARIZONA_IMPORT_ERROR or "arizona_forum_async не установлен",
             )
         try:
-            self._api = ArizonaAPI(FORUM_USER_AGENT or None, merged)
+            self._api = ArizonaAPI(self._user_agent(), merged)
             await self._api.connect()
             await self._persist_session_cookies()
             self._backend = "arizona"
@@ -218,6 +236,7 @@ class ForumService:
             "env_xf_session": bool(env.get("xf_session")),
             "env_xf_tfa_trust": bool(env.get("xf_tfa_trust")),
             "file_present": bool(file_cookies.get("xf_user") and file_cookies.get("xf_session")),
+            "panel_user_agent": bool(load_persisted_user_agent()),
         }
 
     async def reconnect(self) -> ForumHealthReport:
@@ -234,7 +253,7 @@ class ForumService:
                 error="Задайте xf_user и xf_session в панели или FORUM_XF_USER / FORUM_XF_SESSION в .env",
             )
         try:
-            self._api = ArizonaAPI(FORUM_USER_AGENT or None, cookies)
+            self._api = ArizonaAPI(self._user_agent(), cookies)
             await self._api.connect()
             await self._persist_session_cookies()
             self._backend = "arizona"
