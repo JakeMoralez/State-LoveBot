@@ -411,6 +411,8 @@ async def handle_forum_status(request: web.Request) -> web.Response:
             "logged_in": report.logged_in,
             "username": report.username,
             "error": report.error,
+            "error_kind": report.error_kind,
+            "applied": report.applied,
             "ok": report.ok,
             "cookies": cookies,
         }
@@ -436,6 +438,8 @@ async def handle_forum_reconnect(request: web.Request) -> web.Response:
             "logged_in": report.logged_in,
             "username": report.username,
             "error": report.error,
+            "error_kind": report.error_kind,
+            "applied": report.applied,
             "cookies": cookies,
         }
     )
@@ -480,6 +484,8 @@ async def handle_forum_cookies(request: web.Request) -> web.Response:
             "logged_in": report.logged_in,
             "username": report.username,
             "error": report.error,
+            "error_kind": report.error_kind,
+            "applied": report.applied,
             "cookies": cookies_meta,
         }
     )

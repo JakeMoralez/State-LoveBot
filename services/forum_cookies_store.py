@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -53,20 +55,27 @@ def save_persisted_cookies(
         if cookies.get(key)
     }
     if not payload.get("xf_user") or not payload.get("xf_session"):
-        return
+        raise ValueError("Нужны xf_user и xf_session")
     existing_user_agent = load_persisted_user_agent()
     selected_user_agent = (
         existing_user_agent if user_agent is None else user_agent.strip() or None
     )
     if selected_user_agent:
         payload["user_agent"] = selected_user_agent
+    temporary_path: str | None = None
     try:
-        _STORE_PATH.write_text(
-            json.dumps(payload, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
-    except OSError as exc:
-        logger.warning("forum cookies store write: %s", exc)
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=_STORE_PATH.parent,
+            prefix=".forum_cookies-", suffix=".tmp", delete=False,
+        ) as temporary:
+            temporary_path = temporary.name
+            json.dump(payload, temporary, ensure_ascii=False, indent=2)
+            temporary.flush()
+            os.fsync(temporary.fileno())
+        os.replace(temporary_path, _STORE_PATH)
+    finally:
+        if temporary_path is not None and os.path.exists(temporary_path):
+            os.unlink(temporary_path)
 
 
 def clear_persisted_cookies() -> None:

@@ -54,10 +54,12 @@ class ForumHealthReport:
     logged_in: bool
     username: str | None = None
     error: str | None = None
+    error_kind: str | None = None
+    applied: bool | None = None
 
     @property
     def ok(self) -> bool:
-        return self.configured and self.connected and self.logged_in
+        return self.configured and self.connected and self.logged_in and self.error is None
 
 
 def format_forum_health(report: ForumHealthReport) -> str:
@@ -94,6 +96,7 @@ def format_forum_health(report: ForumHealthReport) -> str:
 
 class ForumService:
     def __init__(self) -> None:
+        self._session_lock = asyncio.Lock()
         self._api: Any = None
         self._backend: str | None = None
         self._cookies_ok = self._cookies_configured()
@@ -116,34 +119,103 @@ class ForumService:
         return self._api
 
     def _cookie_dict(self) -> dict[str, str]:
-        return merge_cookie_sources(
-            self._read_cookies_from_env(),
-            load_persisted_cookies(),
-        )
+        persisted = load_persisted_cookies()
+        if persisted.get("xf_user") and persisted.get("xf_session"):
+            return persisted
+        return merge_cookie_sources(self._read_cookies_from_env())
 
     @staticmethod
     def _user_agent() -> str | None:
         return load_persisted_user_agent() or FORUM_USER_AGENT or None
 
+    @staticmethod
+    def _session_cookies(api: Any, initial: dict[str, str]) -> dict[str, str]:
+        session = getattr(api, "_session", None)
+        if session is None or session.closed:
+            return dict(initial)
+        from yarl import URL
+
+        # Only cookies actually sent to the forum, including scoped rotations.
+        jar = session.cookie_jar.filter_cookies(URL("https://forum.arizona-rp.com/"))
+        return {
+            key: jar[key].value
+            for key in ("xf_user", "xf_session", "xf_tfa_trust")
+            if key in jar and jar[key].value
+        }
+
     async def _persist_session_cookies(self) -> None:
-        if not self._api or not getattr(self._api, "_session", None):
+        if self._api is None or self._backend is None:
             return
-        session = self._api._session
-        if session.closed:
-            return
-        from_jar: dict[str, str] = {}
-        for cookie in session.cookie_jar:
-            if cookie.key.startswith("xf_"):
-                from_jar[cookie.key] = cookie.value
-        if not from_jar:
-            return
-        save_persisted_cookies(
-            merge_cookie_sources(
-                self._read_cookies_from_env(),
-                load_persisted_cookies(),
-                from_jar,
-            )
-        )
+        save_persisted_cookies(self._session_cookies(self._api, self._cookie_dict()))
+
+    @staticmethod
+    def _connection_error(exc: Exception) -> tuple[str, str]:
+        from aiohttp import ClientResponseError
+        from arizona_forum_async.exceptions import IncorrectLoginData
+
+        cause: BaseException | None = exc
+        seen: set[int] = set()
+        while cause is not None and id(cause) not in seen:
+            seen.add(id(cause))
+            if isinstance(cause, IncorrectLoginData):
+                return "authentication", "Форум отклонил авторизацию. Проверьте cookies и User-Agent из одной сессии браузера."
+            if isinstance(cause, ClientResponseError):
+                if cause.status in (401, 403):
+                    return "authentication", f"Форум отклонил запрос (HTTP {cause.status}). Проверьте cookies и User-Agent; возможен отказ защиты форума."
+                return "connection", f"Ошибка ответа форума (HTTP {cause.status})."
+            cause = cause.__cause__ or cause.__context__
+        # Do not expose arbitrary dependency exceptions: they may contain credentials.
+        return "connection", "Не удалось подключиться к форуму или проверить аккаунт."
+
+    @staticmethod
+    async def _close_api(api: Any) -> None:
+        try:
+            await api.close()
+        except Exception:
+            logger.warning("Не удалось закрыть HTTP-сессию форума")
+
+    async def _replace_connection(
+        self, cookies: dict[str, str], user_agent: str | None, *, replacement: bool = False,
+    ) -> ForumHealthReport:
+        if not _HAS_ARIZONA or ArizonaAPI is None:
+            return ForumHealthReport(True, False, False,
+                error="Библиотека arizona_forum_async недоступна", error_kind="dependency")
+        candidate = None
+        accepted = False
+        try:
+            candidate = ArizonaAPI(user_agent, cookies)
+            await candidate.connect()
+            member = await candidate.get_current_member()
+            if member is None:
+                return ForumHealthReport(True, True, False,
+                    error="Форум не подтвердил авторизацию аккаунта.", error_kind="authentication")
+            rotated = self._session_cookies(candidate, cookies)
+            if not rotated.get("xf_user") or not rotated.get("xf_session"):
+                return ForumHealthReport(True, True, False,
+                    error="После подключения отсутствуют cookies авторизации форума.", error_kind="authentication")
+            try:
+                save_persisted_cookies(rotated, user_agent=user_agent or "")
+            except OSError:
+                return ForumHealthReport(True, True, True,
+                    error="Не удалось сохранить cookies в файл на сервере бота.", error_kind="storage")
+            previous = self._api
+            self._api = candidate
+            self._backend = "arizona"
+            self._cookies_ok = True
+            self._available = True
+            accepted = True
+            # The old jar must never overwrite the newly saved cookies.
+            if previous is not None:
+                await self._close_api(previous)
+            return ForumHealthReport(True, True, True,
+                username=getattr(member, "username", None), applied=True if replacement else None)
+        except Exception as exc:
+            kind, message = self._connection_error(exc)
+            logger.warning("Форум: проверка подключения не удалась (%s)", kind)
+            return ForumHealthReport(True, False, False, error=message, error_kind=kind)
+        finally:
+            if candidate is not None and not accepted:
+                await self._close_api(candidate)
 
     @staticmethod
     def _read_cookies_from_env() -> dict[str, str]:
@@ -158,75 +230,32 @@ class ForumService:
         return {k: str(v) for k, v in raw.items() if v}
 
     async def connect(self) -> None:
-        if not self._cookies_ok:
-            raise RuntimeError(
-                "Задайте xf_user и xf_session в панели или "
-                "FORUM_XF_USER и FORUM_XF_SESSION в .env"
-            )
-
-        if not _HAS_ARIZONA or ArizonaAPI is None:
-            raise RuntimeError(
-                "arizona_forum_async не установлен. "
-                f"{_ARIZONA_IMPORT_ERROR or ''} "
-                "Выполните: pip install -r requirements.txt"
-            )
-
-        cookies = self._cookie_dict()
-        self._api = ArizonaAPI(self._user_agent(), cookies)
-        await self._api.connect()
-        await self._persist_session_cookies()
-        self._backend = "arizona"
-        logger.info("✅ Подключение к форуму установлено (arizona_forum_async)")
+        report = await self.reconnect()
+        if not report.ok:
+            raise RuntimeError(report.error or "Форум недоступен")
 
     async def apply_cookies(
-        self,
-        cookies: dict[str, str],
-        user_agent: str | None = None,
+        self, cookies: dict[str, str], user_agent: str | None = None,
     ) -> ForumHealthReport:
-        """Сохранить cookies и User-Agent из панели, затем переподключиться."""
-        await self.close()
-        merged = merge_cookie_sources(self._read_cookies_from_env(), cookies)
-        if not merged.get("xf_user") or not merged.get("xf_session"):
-            return ForumHealthReport(
-                configured=False,
-                connected=False,
-                logged_in=False,
-                error="Нужны xf_user и xf_session",
-            )
-        if user_agent is not None and (
-            len(user_agent) > 1024 or "\r" in user_agent or "\n" in user_agent
-        ):
-            return ForumHealthReport(
-                configured=True,
-                connected=False,
-                logged_in=False,
-                error="Некорректный User-Agent браузера",
-            )
-        save_persisted_cookies(merged, user_agent=user_agent)
-        self._cookies_ok = True
-        self._available = True
-        if not _HAS_ARIZONA or ArizonaAPI is None:
-            return ForumHealthReport(
-                configured=True,
-                connected=False,
-                logged_in=False,
-                error=_ARIZONA_IMPORT_ERROR or "arizona_forum_async не установлен",
-            )
-        try:
-            self._api = ArizonaAPI(self._user_agent(), merged)
-            await self._api.connect()
-            await self._persist_session_cookies()
-            self._backend = "arizona"
-            logger.info("✅ Форум: cookies из панели применены")
-        except Exception as exc:
-            logger.error("Форум: apply_cookies failed: %s", exc)
-            return ForumHealthReport(
-                configured=True,
-                connected=False,
-                logged_in=False,
-                error=str(exc),
-            )
-        return await self.check_health()
+        """Проверить отдельную сессию и заменить текущую только после сохранения."""
+        async with self._session_lock:
+            cleaned = merge_cookie_sources(cookies)
+            if not cleaned.get("xf_user") or not cleaned.get("xf_session"):
+                return ForumHealthReport(False, False, False,
+                    error="Нужны xf_user и xf_session. Новые cookies не применены.",
+                    error_kind="validation", applied=False)
+            if user_agent is not None and (
+                len(user_agent) > 1024 or "\r" in user_agent or "\n" in user_agent
+            ):
+                return ForumHealthReport(True, False, False,
+                    error="Некорректный User-Agent. Новые cookies не применены.",
+                    error_kind="validation", applied=False)
+            selected_agent = self._user_agent() if user_agent is None else user_agent.strip() or FORUM_USER_AGENT or None
+            report = await self._replace_connection(cleaned, selected_agent, replacement=True)
+            if not report.ok:
+                report.applied = False
+                report.error = f"{report.error} Новые cookies не применены; предыдущая конфигурация сохранена."
+            return report
 
     def cookies_status(self) -> dict[str, bool]:
         env = self._read_cookies_from_env()
@@ -240,82 +269,41 @@ class ForumService:
         }
 
     async def reconnect(self) -> ForumHealthReport:
-        """Переподключиться с cookies панели, если они сохранены, иначе из .env."""
-        await self.close()
-        cookies = self._cookie_dict()
-        self._cookies_ok = bool(cookies.get("xf_user") and cookies.get("xf_session"))
-        self._available = self._cookies_ok
-        if not self._cookies_ok:
-            return ForumHealthReport(
-                configured=False,
-                connected=False,
-                logged_in=False,
-                error="Задайте xf_user и xf_session в панели или FORUM_XF_USER / FORUM_XF_SESSION в .env",
-            )
-        try:
-            self._api = ArizonaAPI(self._user_agent(), cookies)
-            await self._api.connect()
-            await self._persist_session_cookies()
-            self._backend = "arizona"
-            logger.info("✅ Форум: переподключение успешно")
-        except Exception as exc:
-            logger.error("Форум: переподключение не удалось: %s", exc)
-            return ForumHealthReport(
-                configured=True,
-                connected=False,
-                logged_in=False,
-                error=str(exc),
-            )
-        return await self.check_health()
+        """Переподключение сериализовано с заменой cookies и проверкой сессии."""
+        async with self._session_lock:
+            cookies = self._cookie_dict()
+            if not cookies.get("xf_user") or not cookies.get("xf_session"):
+                return ForumHealthReport(False, False, False,
+                    error="Задайте xf_user и xf_session в панели или .env", error_kind="validation")
+            return await self._replace_connection(cookies, self._user_agent())
 
     async def check_health(self) -> ForumHealthReport:
-        if not self._cookies_ok:
-            return ForumHealthReport(
-                configured=False,
-                connected=False,
-                logged_in=False,
-                error="Cookies не заданы в .env",
-            )
-        if not self._api or not self._backend:
-            return ForumHealthReport(
-                configured=True,
-                connected=False,
-                logged_in=False,
-                error="HTTP-сессия не открыта (ошибка при старте?)",
-            )
-        try:
-            member = await self._api.get_current_member()
-            if member:
-                await self._persist_session_cookies()
-                return ForumHealthReport(
-                    configured=True,
-                    connected=True,
-                    logged_in=True,
-                    username=getattr(member, "username", None),
-                )
-            return ForumHealthReport(
-                configured=True,
-                connected=True,
-                logged_in=False,
-                error="xf_session протух — обновите cookies",
-            )
-        except Exception as exc:
-            return ForumHealthReport(
-                configured=True,
-                connected=True,
-                logged_in=False,
-                error=str(exc)[:200],
-            )
+        async with self._session_lock:
+            if not self._cookies_ok:
+                return ForumHealthReport(False, False, False, error="Cookies не заданы")
+            if not self._api or not self._backend:
+                return ForumHealthReport(True, False, False, error="HTTP-сессия не открыта")
+            try:
+                member = await self._api.get_current_member()
+                if member is None:
+                    return ForumHealthReport(True, True, False,
+                        error="Форум не подтвердил авторизацию аккаунта.", error_kind="authentication")
+                try:
+                    await self._persist_session_cookies()
+                except OSError:
+                    return ForumHealthReport(True, True, True,
+                        error="Не удалось сохранить cookies в файл на сервере бота.", error_kind="storage")
+                return ForumHealthReport(True, True, True, username=getattr(member, "username", None))
+            except Exception as exc:
+                kind, message = self._connection_error(exc)
+                return ForumHealthReport(True, True, False, error=message, error_kind=kind)
 
     async def close(self) -> None:
-        if self._api:
-            try:
-                await self._persist_session_cookies()
-                await self._api.close()
-            except Exception as exc:
-                logger.warning("forum close: %s", exc)
-            self._api = None
-        self._backend = None
+        async with self._session_lock:
+            if self._api is not None:
+                await self._close_api(self._api)
+                self._api = None
+            self._backend = None
 
     @staticmethod
     def parse_thread_id(text: str) -> int | None:
