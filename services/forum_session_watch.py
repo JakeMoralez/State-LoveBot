@@ -143,5 +143,8 @@ class ForumSessionWatcher:
             message=f"Forum session watchdog: {error}",
             level="error",
             url="forum-session-watch",
-            context={"hint": "Обновите FORUM_XF_* cookies и /forumcheck reconnect"},
+            context={
+                "hint": "Замените cookies в State Love Admin или FORUM_XF_* в .env, "
+                "затем выполните /forumcheck reconnect"
+            },
         )

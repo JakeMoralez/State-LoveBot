@@ -10,11 +10,10 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from config import FORUM_COOKIES, FORUM_USER_AGENT
+from config import FORUM_USER_AGENT
 from config.settings import BASE_DIR
 from database.repository.server_repo import ServerRepository
 from services.forum_cookies_store import (
-    clear_persisted_cookies,
     load_persisted_cookies,
     merge_cookie_sources,
     save_persisted_cookies,
@@ -63,7 +62,10 @@ class ForumHealthReport:
 def format_forum_health(report: ForumHealthReport) -> str:
     lines = ["🔍 Проверка форума", ""]
     if not report.configured:
-        lines.append("❌ Cookies: не заданы (FORUM_XF_USER / FORUM_XF_SESSION)")
+        lines.append(
+            "❌ Cookies: не заданы "
+            "(xf_user / xf_session в панели или FORUM_XF_USER / FORUM_XF_SESSION в .env)"
+        )
     else:
         lines.append("✅ Cookies: заданы")
     if not report.connected:
@@ -82,7 +84,7 @@ def format_forum_health(report: ForumHealthReport) -> str:
         lines.extend(
             [
                 "",
-                "Обновите cookies в .env и выполните /forumcheck reconnect",
+                "Замените cookies в State Love Admin или .env и выполните /forumcheck reconnect",
                 "или перезапустите бота (pm2 restart main).",
             ]
         )
@@ -96,9 +98,8 @@ class ForumService:
         self._cookies_ok = self._cookies_configured()
         self._available = self._cookies_ok
 
-    @staticmethod
-    def _cookies_configured() -> bool:
-        cookies = {k: v for k, v in FORUM_COOKIES.items() if v}
+    def _cookies_configured(self) -> bool:
+        cookies = self._cookie_dict()
         return bool(cookies.get("xf_user") and cookies.get("xf_session"))
 
     @property
@@ -132,7 +133,11 @@ class ForumService:
         if not from_jar:
             return
         save_persisted_cookies(
-            merge_cookie_sources(self._read_cookies_from_env(), from_jar)
+            merge_cookie_sources(
+                self._read_cookies_from_env(),
+                load_persisted_cookies(),
+                from_jar,
+            )
         )
 
     @staticmethod
@@ -147,15 +152,12 @@ class ForumService:
         }
         return {k: str(v) for k, v in raw.items() if v}
 
-    def _apply_env_cookies(self) -> bool:
-        cookies = self._read_cookies_from_env()
-        self._cookies_ok = bool(cookies.get("xf_user") and cookies.get("xf_session"))
-        self._available = self._cookies_ok
-        return self._cookies_ok
-
     async def connect(self) -> None:
         if not self._cookies_ok:
-            raise RuntimeError("Заполните FORUM_XF_USER и FORUM_XF_SESSION в .env")
+            raise RuntimeError(
+                "Задайте xf_user и xf_session в панели или "
+                "FORUM_XF_USER и FORUM_XF_SESSION в .env"
+            )
 
         if not _HAS_ARIZONA or ArizonaAPI is None:
             raise RuntimeError(
@@ -219,19 +221,19 @@ class ForumService:
         }
 
     async def reconnect(self) -> ForumHealthReport:
-        """Перечитать .env и переподключиться (после обновления cookies)."""
+        """Переподключиться с cookies панели, если они сохранены, иначе из .env."""
         await self.close()
-        # Старый forum_cookies.json иначе перекрывал свежие значения из .env
-        clear_persisted_cookies()
-        if not self._apply_env_cookies():
+        cookies = self._cookie_dict()
+        self._cookies_ok = bool(cookies.get("xf_user") and cookies.get("xf_session"))
+        self._available = self._cookies_ok
+        if not self._cookies_ok:
             return ForumHealthReport(
                 configured=False,
                 connected=False,
                 logged_in=False,
-                error="FORUM_XF_USER / FORUM_XF_SESSION не заданы в .env",
+                error="Задайте xf_user и xf_session в панели или FORUM_XF_USER / FORUM_XF_SESSION в .env",
             )
         try:
-            cookies = self._read_cookies_from_env()
             self._api = ArizonaAPI(FORUM_USER_AGENT or None, cookies)
             await self._api.connect()
             await self._persist_session_cookies()
@@ -426,7 +428,8 @@ class ForumService:
             return (
                 f"{base}.\n"
                 "Сессия форума обновлена автоматически — повтор не помог.\n"
-                "Если ошибка остаётся, обновите cookies в .env и выполните /forumcheck reconnect."
+                "Если ошибка остаётся, замените cookies в State Love Admin или .env "
+                "и выполните /forumcheck reconnect."
             )
         return f"{base} или нет прав на просмотр."
 

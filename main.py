@@ -216,7 +216,7 @@ async def run_bot() -> None:
                 logger.error(
                     "❌ Не удалось подключиться к форуму: %s. "
                     "!info/!edit не будут работать. "
-                    "Проверьте FORUM_XF_* cookies в .env.",
+                    "Проверьте cookies в State Love Admin или FORUM_XF_* в .env.",
                     exc,
                 )
                 if not _HAS_ARIZONA:
